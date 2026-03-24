@@ -10,7 +10,8 @@
   },
   "main": "./out/main/index.js",
   "author": {
-    "name": "Auto Claude Team"
+    "name": "Auto Claude Team",
+    "email": "auto-claude@users.noreply.github.com"
   },
   "license": "AGPL-3.0",
   "engines": {
