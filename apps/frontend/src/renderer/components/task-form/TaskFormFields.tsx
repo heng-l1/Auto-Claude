@@ -35,7 +35,7 @@ import type {
   ModelType,
   ThinkingLevel
 } from '../../../shared/types';
-import type { PhaseModelConfig, PhaseThinkingConfig } from '../../../shared/types/settings';
+import type { PhaseModelConfig, PhaseThinkingConfig, PhaseUltrathinkConfig } from '../../../shared/types/settings';
 
 interface TaskFormFieldsProps {
   // Project context (for loading image thumbnails from disk)
@@ -66,6 +66,8 @@ interface TaskFormFieldsProps {
   onThinkingLevelChange: (level: ThinkingLevel | '') => void;
   onPhaseModelsChange: (config: PhaseModelConfig | undefined) => void;
   onPhaseThinkingChange: (config: PhaseThinkingConfig | undefined) => void;
+  phaseUltrathink?: PhaseUltrathinkConfig;
+  onPhaseUltrathinkChange?: (config: PhaseUltrathinkConfig | undefined) => void;
 
   // Classification
   category: TaskCategory | '';
@@ -127,6 +129,8 @@ export function TaskFormFields({
   onThinkingLevelChange,
   onPhaseModelsChange,
   onPhaseThinkingChange,
+  phaseUltrathink,
+  onPhaseUltrathinkChange,
   category,
   priority,
   complexity,
@@ -474,11 +478,13 @@ export function TaskFormFields({
           thinkingLevel={thinkingLevel}
           phaseModels={phaseModels}
           phaseThinking={phaseThinking}
+          phaseUltrathink={phaseUltrathink}
           onProfileChange={onProfileChange}
           onModelChange={onModelChange}
           onThinkingLevelChange={onThinkingLevelChange}
           onPhaseModelsChange={onPhaseModelsChange}
           onPhaseThinkingChange={onPhaseThinkingChange}
+          onPhaseUltrathinkChange={onPhaseUltrathinkChange}
           disabled={disabled}
         />
 
