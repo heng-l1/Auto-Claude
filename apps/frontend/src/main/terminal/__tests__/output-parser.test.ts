@@ -100,6 +100,20 @@ describe('output-parser', () => {
         expect(detectClaudeExit(mixedOutput)).toBe(false);
       });
     });
+
+    describe('ANSI escape code handling', () => {
+      it('detects ANSI-wrapped shell prompts as exit', () => {
+        // Colored ❯ starship prompt
+        expect(detectClaudeExit('\x1b[32m❯\x1b[0m ')).toBe(true);
+        // Colored user@host:~$
+        expect(detectClaudeExit('\x1b[1;32muser@host\x1b[0m:\x1b[1;34m~\x1b[0m$ ')).toBe(true);
+      });
+
+      it('returns false for ANSI-wrapped Claude busy output', () => {
+        // ANSI-coded busy indicator should still be recognized as busy, not exit
+        expect(detectClaudeExit('\x1b[1m●\x1b[0m Processing...\n\x1b[32muser@host\x1b[0m:\x1b[34m~\x1b[0m$ ')).toBe(false);
+      });
+    });
   });
 
   describe('isClaudeExitOutput', () => {
@@ -120,6 +134,31 @@ describe('output-parser', () => {
 
     it('detects session ended', () => {
       expect(isClaudeExitOutput('Session ended')).toBe(true);
+    });
+
+    describe('ANSI escape code handling', () => {
+      it('detects colored ❯ starship prompt', () => {
+        // Green colored ❯: \x1b[32m starts green, \x1b[0m resets
+        expect(isClaudeExitOutput('\x1b[32m❯\x1b[0m ')).toBe(true);
+      });
+
+      it('detects colored user@host:~$ prompt', () => {
+        // Bold green user@host with reset and path
+        expect(isClaudeExitOutput('\x1b[1;32muser@hostname\x1b[0m:\x1b[1;34m~\x1b[0m$ ')).toBe(true);
+      });
+
+      it('detects colored path + ❯ prompt', () => {
+        // Colored path followed by colored prompt character
+        expect(isClaudeExitOutput('\x1b[36m~/projects\x1b[0m \x1b[32m❯\x1b[0m ')).toBe(true);
+      });
+
+      it('detects ANSI-wrapped ➜ oh-my-zsh prompt', () => {
+        expect(isClaudeExitOutput('\x1b[38;5;76m➜\x1b[0m ')).toBe(true);
+      });
+
+      it('detects ANSI-wrapped bracket prompt', () => {
+        expect(isClaudeExitOutput('\x1b[1m[\x1b[32muser@host\x1b[0m \x1b[34m~\x1b[0m\x1b[1m]\x1b[0m$ ')).toBe(true);
+      });
     });
   });
 
@@ -142,6 +181,15 @@ describe('output-parser', () => {
 
     it('returns false for normal text', () => {
       expect(isClaudeBusyOutput('Hello, how can I help?')).toBe(false);
+    });
+
+    describe('ANSI escape code handling', () => {
+      it('detects ANSI-wrapped busy output as busy (no false negatives)', () => {
+        // Claude busy indicator wrapped in color codes
+        expect(isClaudeBusyOutput('\x1b[1m●\x1b[0m Working on your request...')).toBe(true);
+        expect(isClaudeBusyOutput('\x1b[33mLoading...\x1b[0m')).toBe(true);
+        expect(isClaudeBusyOutput('\x1b[36mRead\x1b[0m(/path/to/file.ts)')).toBe(true);
+      });
     });
   });
 
