@@ -1858,6 +1858,63 @@ export function registerWorktreeHandlers(
   );
 
   /**
+   * Parse a full unified diff (output of `git diff`) into per-file patch strings.
+   *
+   * Splits by `diff --git a/... b/...` boundaries. For each file section:
+   *   - Extracts the new path from `b/...`
+   *   - Extracts the old path from `a/...` (for renames where a/ ≠ b/)
+   *   - Checks byte size against sizeLimit (default 500KB)
+   *   - Returns a Map keyed by new file path
+   *
+   * @param fullPatch - The complete unified diff output from git diff
+   * @param sizeLimit - Maximum byte size per file patch (default: 500KB)
+   * @returns Map of file path → { patch, truncated, oldPath? }
+   */
+  function parseUnifiedDiffIntoFiles(
+    fullPatch: string,
+    sizeLimit: number = 500 * 1024
+  ): Map<string, { patch: string; truncated: boolean; oldPath?: string }> {
+    const result = new Map<string, { patch: string; truncated: boolean; oldPath?: string }>();
+
+    if (!fullPatch || !fullPatch.trim()) {
+      return result;
+    }
+
+    // Split by "diff --git a/... b/..." boundaries
+    // Each section starts with "diff --git" — split but keep the delimiter
+    const sections = fullPatch.split(/(?=^diff --git )/m);
+
+    for (const section of sections) {
+      if (!section.trim()) continue;
+
+      // Extract file paths from "diff --git a/path b/path"
+      const headerMatch = section.match(/^diff --git a\/(.+?) b\/(.+?)$/m);
+      if (!headerMatch) continue;
+
+      const oldFilePath = headerMatch[1];
+      const newFilePath = headerMatch[2];
+
+      // Check byte size of this file's patch
+      const patchBytes = Buffer.byteLength(section, 'utf-8');
+      const truncated = patchBytes > sizeLimit;
+
+      const entry: { patch: string; truncated: boolean; oldPath?: string } = {
+        patch: truncated ? '' : section,
+        truncated,
+      };
+
+      // Track old path for renamed files (where old path differs from new path)
+      if (oldFilePath !== newFilePath) {
+        entry.oldPath = oldFilePath;
+      }
+
+      result.set(newFilePath, entry);
+    }
+
+    return result;
+  }
+
+  /**
    * Get the diff for a task's worktree
    * Per-spec architecture: Each spec has its own worktree at .auto-claude/worktrees/tasks/{spec-name}/
    */
@@ -1902,8 +1959,9 @@ export function registerWorktreeHandlers(
             stdio: ['pipe', 'pipe', 'pipe']
           }).trim();
 
-          // Parse name-status to get file statuses
+          // Parse name-status to get file statuses and old paths for renames
           const statusMap: Record<string, 'added' | 'modified' | 'deleted' | 'renamed'> = {};
+          const oldPathMap: Record<string, string> = {};
           nameStatus.split('\n').filter(Boolean).forEach((line: string) => {
             const [status, ...pathParts] = line.split('\t');
             const filePath = pathParts.join('\t'); // Handle files with tabs in name
@@ -1911,7 +1969,15 @@ export function registerWorktreeHandlers(
               case 'A': statusMap[filePath] = 'added'; break;
               case 'M': statusMap[filePath] = 'modified'; break;
               case 'D': statusMap[filePath] = 'deleted'; break;
-              case 'R': statusMap[pathParts[1] || filePath] = 'renamed'; break;
+              case 'R': {
+                // For renames: pathParts[0] = old path, pathParts[1] = new path
+                const newPath = pathParts[1] || filePath;
+                statusMap[newPath] = 'renamed';
+                if (pathParts[0] && pathParts[1] && pathParts[0] !== pathParts[1]) {
+                  oldPathMap[newPath] = pathParts[0];
+                }
+                break;
+              }
               default: statusMap[filePath] = 'modified';
             }
           });
@@ -1919,15 +1985,51 @@ export function registerWorktreeHandlers(
           // Parse numstat for additions/deletions
           numstat.split('\n').filter(Boolean).forEach((line: string) => {
             const [adds, dels, filePath] = line.split('\t');
-            files.push({
+            const file: WorktreeDiffFile = {
               path: filePath,
               status: statusMap[filePath] || 'modified',
               additions: parseInt(adds, 10) || 0,
               deletions: parseInt(dels, 10) || 0
-            });
+            };
+            // Attach old path for renamed files
+            if (oldPathMap[filePath]) {
+              file.oldPath = oldPathMap[filePath];
+            }
+            files.push(file);
           });
         } catch (diffError) {
           console.error('Error getting diff:', diffError);
+        }
+
+        // Get full unified diff and attach per-file patch strings
+        let fullPatch = '';
+        try {
+          fullPatch = execFileSync(getToolPath('git'), ['diff', `${baseBranch}...HEAD`], {
+            cwd: worktreePath,
+            encoding: 'utf-8',
+            maxBuffer: 10 * 1024 * 1024, // 10MB buffer for large diffs
+            stdio: ['pipe', 'pipe', 'pipe']
+          }).trim();
+
+          if (fullPatch) {
+            const patchMap = parseUnifiedDiffIntoFiles(fullPatch);
+
+            // Attach per-file patches to the corresponding WorktreeDiffFile objects
+            for (const file of files) {
+              const patchEntry = patchMap.get(file.path);
+              if (patchEntry) {
+                file.patch = patchEntry.patch;
+                file.truncated = patchEntry.truncated;
+                // If parseUnifiedDiffIntoFiles detected a rename, use it as fallback
+                if (patchEntry.oldPath && !file.oldPath) {
+                  file.oldPath = patchEntry.oldPath;
+                }
+              }
+            }
+          }
+        } catch (patchError) {
+          // Gracefully handle git diff failure — fall back to file list without patches
+          console.error('Error getting full diff patch:', patchError);
         }
 
         // Generate summary
@@ -1937,7 +2039,7 @@ export function registerWorktreeHandlers(
 
         return {
           success: true,
-          data: { files, summary }
+          data: { files, summary, patch: fullPatch || undefined }
         };
       } catch (error) {
         console.error('Failed to get worktree diff:', error);
