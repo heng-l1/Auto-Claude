@@ -2,6 +2,16 @@
 
 All notable changes to Auto Claude will be documented in this file.
 
+## 1.0.5 - Tab Color Coding
+
+### ✨ New Features
+- **Project tab color coding** — Right-click any project tab to assign a color, making it easy to visually distinguish between projects. Colors persist across sessions and tint the drag overlay during reordering.
+
+### 🛠️ Improvements
+- Initial open-source release of Auto Claude (LI)
+
+---
+
 ## 1.0.2
 
 ### Improvements
