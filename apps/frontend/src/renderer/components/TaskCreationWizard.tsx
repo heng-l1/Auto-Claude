@@ -27,7 +27,7 @@ import { useProjectStore } from '../stores/project-store';
 import { buildBranchOptions } from '../lib/branch-utils';
 import { cn } from '../lib/utils';
 import type { Task, TaskCategory, TaskPriority, TaskComplexity, TaskImpact, TaskMetadata, ImageAttachment, TaskDraft, ModelType, ThinkingLevel, ReferencedFile, GitBranchDetail } from '../../shared/types';
-import type { PhaseModelConfig, PhaseThinkingConfig } from '../../shared/types/settings';
+import type { PhaseModelConfig, PhaseThinkingConfig, PhaseUltrathinkConfig } from '../../shared/types/settings';
 import {
   DEFAULT_AGENT_PROFILES,
   DEFAULT_PHASE_MODELS,
@@ -124,6 +124,9 @@ export function TaskCreationWizard({
   const [phaseThinking, setPhaseThinking] = useState<PhaseThinkingConfig | undefined>(
     settings.customPhaseThinking || selectedProfile.phaseThinking || DEFAULT_PHASE_THINKING
   );
+  const [phaseUltrathink, setPhaseUltrathink] = useState<PhaseUltrathinkConfig | undefined>(
+    settings.customPhaseUltrathink
+  );
 
   // Images and files
   const [images, setImages] = useState<ImageAttachment[]>([]);
@@ -176,6 +179,7 @@ export function TaskCreationWizard({
         setThinkingLevel(draft.thinkingLevel || selectedProfile.thinkingLevel);
         setPhaseModels(draft.phaseModels || settings.customPhaseModels || selectedProfile.phaseModels || DEFAULT_PHASE_MODELS);
         setPhaseThinking(draft.phaseThinking || settings.customPhaseThinking || selectedProfile.phaseThinking || DEFAULT_PHASE_THINKING);
+        setPhaseUltrathink(draft.phaseUltrathink || settings.customPhaseUltrathink);
         setImages(draft.images);
         setReferencedFiles(draft.referencedFiles ?? []);
         setRequireReviewBeforeCoding(draft.requireReviewBeforeCoding ?? false);
@@ -199,6 +203,7 @@ export function TaskCreationWizard({
         setThinkingLevel(selectedProfile.thinkingLevel);
         setPhaseModels(settings.customPhaseModels || selectedProfile.phaseModels || DEFAULT_PHASE_MODELS);
         setPhaseThinking(settings.customPhaseThinking || selectedProfile.phaseThinking || DEFAULT_PHASE_THINKING);
+        setPhaseUltrathink(settings.customPhaseUltrathink);
         setImages([]);
         setReferencedFiles([]);
         setRequireReviewBeforeCoding(false);
@@ -211,7 +216,7 @@ export function TaskCreationWizard({
         setShowGitOptions(false);
       }
     }
-  }, [open, projectId, initialDescription, settings.selectedAgentProfile, settings.customPhaseModels, settings.customPhaseThinking, selectedProfile.model, selectedProfile.thinkingLevel, selectedProfile.phaseModels, selectedProfile.phaseThinking]);
+  }, [open, projectId, initialDescription, settings.selectedAgentProfile, settings.customPhaseModels, settings.customPhaseThinking, settings.customPhaseUltrathink, selectedProfile.model, selectedProfile.thinkingLevel, selectedProfile.phaseModels, selectedProfile.phaseThinking]);
 
   // Fetch branches when dialog opens - using structured branch data with type indicators
   useEffect(() => {
@@ -276,12 +281,13 @@ export function TaskCreationWizard({
     thinkingLevel,
     phaseModels,
     phaseThinking,
+    phaseUltrathink,
     images,
     referencedFiles,
     requireReviewBeforeCoding,
     fastMode,
     savedAt: new Date()
-  }), [projectId, title, description, category, priority, complexity, impact, profileId, model, thinkingLevel, phaseModels, phaseThinking, images, referencedFiles, requireReviewBeforeCoding, fastMode]);
+  }), [projectId, title, description, category, priority, complexity, impact, profileId, model, thinkingLevel, phaseModels, phaseThinking, phaseUltrathink, images, referencedFiles, requireReviewBeforeCoding, fastMode]);
 
   /**
    * Detect @ mention being typed and show autocomplete
@@ -447,6 +453,9 @@ export function TaskCreationWizard({
         metadata.phaseModels = phaseModels;
         metadata.phaseThinking = phaseThinking;
       }
+      if (phaseUltrathink && Object.values(phaseUltrathink).some(v => v)) {
+        metadata.phaseUltrathink = phaseUltrathink;
+      }
       if (images.length > 0) metadata.attachedImages = images;
       if (allReferencedFiles.length > 0) metadata.referencedFiles = allReferencedFiles;
       if (requireReviewBeforeCoding) metadata.requireReviewBeforeCoding = true;
@@ -493,6 +502,7 @@ export function TaskCreationWizard({
     setThinkingLevel(selectedProfile.thinkingLevel);
     setPhaseModels(settings.customPhaseModels || selectedProfile.phaseModels || DEFAULT_PHASE_MODELS);
     setPhaseThinking(settings.customPhaseThinking || selectedProfile.phaseThinking || DEFAULT_PHASE_THINKING);
+    setPhaseUltrathink(settings.customPhaseUltrathink);
     setImages([]);
     setReferencedFiles([]);
     setRequireReviewBeforeCoding(false);
@@ -665,6 +675,8 @@ export function TaskCreationWizard({
           onThinkingLevelChange={setThinkingLevel}
           onPhaseModelsChange={setPhaseModels}
           onPhaseThinkingChange={setPhaseThinking}
+          phaseUltrathink={phaseUltrathink}
+          onPhaseUltrathinkChange={setPhaseUltrathink}
           category={category}
           priority={priority}
           complexity={complexity}
