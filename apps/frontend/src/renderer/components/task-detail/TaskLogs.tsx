@@ -93,9 +93,11 @@ function getPhaseConfig(
   if (metadata.isAutoProfile && metadata.phaseModels && metadata.phaseThinking) {
     const model = metadata.phaseModels[configPhase];
     const thinking = metadata.phaseThinking[configPhase];
+    // Check if ultrathink is enabled for this phase (overrides thinking level)
+    const isUltrathink = metadata.phaseUltrathink?.[configPhase];
     return {
       model: MODEL_SHORT_LABELS[model] || model,
-      thinking: THINKING_SHORT_LABELS[thinking] || thinking
+      thinking: isUltrathink ? 'Ultra' : (THINKING_SHORT_LABELS[thinking] || thinking)
     };
   }
 
