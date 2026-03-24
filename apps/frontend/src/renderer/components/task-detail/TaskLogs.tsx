@@ -76,7 +76,8 @@ const MODEL_SHORT_LABELS: Record<ModelTypeShort, string> = {
 const THINKING_SHORT_LABELS: Record<ThinkingLevel, string> = {
   low: 'Low',
   medium: 'Med',
-  high: 'High'
+  high: 'High',
+  max: 'Max'
 };
 
 // Helper to get model and thinking info for a log phase

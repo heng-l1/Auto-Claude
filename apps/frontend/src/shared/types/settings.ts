@@ -158,7 +158,7 @@ export interface ColorThemeDefinition {
 }
 
 // Thinking level for Claude model (budget token allocation)
-export type ThinkingLevel = 'low' | 'medium' | 'high';
+export type ThinkingLevel = 'low' | 'medium' | 'high' | 'max';
 
 // Model type shorthand
 export type ModelTypeShort = 'haiku' | 'sonnet' | 'opus' | 'opus-1m' | 'opus-4.5';
@@ -178,6 +178,15 @@ export interface PhaseThinkingConfig {
   planning: ThinkingLevel;
   coding: ThinkingLevel;
   qa: ThinkingLevel;
+}
+
+// Per-phase ultrathink override (128K thinking tokens, max effort)
+// When enabled for a phase, overrides the thinking level dropdown value
+export interface PhaseUltrathinkConfig {
+  spec?: boolean;
+  planning?: boolean;
+  coding?: boolean;
+  qa?: boolean;
 }
 
 // Feature-specific model configuration (for non-pipeline features)
@@ -262,6 +271,7 @@ export interface AppSettings {
   // Custom phase configuration for Auto profile (overrides defaults)
   customPhaseModels?: PhaseModelConfig;
   customPhaseThinking?: PhaseThinkingConfig;
+  customPhaseUltrathink?: PhaseUltrathinkConfig;
   // Feature-specific configuration (insights, ideation, roadmap)
   featureModels?: FeatureModelConfig;
   featureThinking?: FeatureThinkingConfig;

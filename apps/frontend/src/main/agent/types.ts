@@ -63,14 +63,20 @@ export interface SpecCreationMetadata {
     qa: 'haiku' | 'sonnet' | 'opus' | 'opus-1m' | 'opus-4.5';
   };
   phaseThinking?: {
-    spec: 'low' | 'medium' | 'high';
-    planning: 'low' | 'medium' | 'high';
-    coding: 'low' | 'medium' | 'high';
-    qa: 'low' | 'medium' | 'high';
+    spec: 'low' | 'medium' | 'high' | 'max';
+    planning: 'low' | 'medium' | 'high' | 'max';
+    coding: 'low' | 'medium' | 'high' | 'max';
+    qa: 'low' | 'medium' | 'high' | 'max';
+  };
+  phaseUltrathink?: {
+    spec?: boolean;
+    planning?: boolean;
+    coding?: boolean;
+    qa?: boolean;
   };
   // Non-auto profile - single model and thinking level
   model?: 'haiku' | 'sonnet' | 'opus' | 'opus-1m' | 'opus-4.5';
-  thinkingLevel?: 'low' | 'medium' | 'high';
+  thinkingLevel?: 'low' | 'medium' | 'high' | 'max';
   // Workspace mode - whether to use worktree isolation
   useWorktree?: boolean; // If false, use --direct mode (no worktree isolation)
   useLocalBranch?: boolean; // If true, use local branch directly instead of preferring origin/branch
