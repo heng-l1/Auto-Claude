@@ -79,6 +79,35 @@ import { ViewStateProvider } from './contexts/ViewStateContext';
 // Version constant for version-specific warnings (e.g., reauthentication notices)
 const VERSION_WARNING_275 = '2.7.5';
 
+// Sidebar view persistence helpers — stores last-used view per project in localStorage
+const SIDEBAR_VIEW_KEY_PREFIX = 'sidebar-view';
+
+const VALID_SIDEBAR_VIEWS: ReadonlySet<string> = new Set([
+  'kanban', 'terminals', 'roadmap', 'context', 'ideation',
+  'github-issues', 'gitlab-issues', 'github-prs', 'gitlab-merge-requests',
+  'changelog', 'insights', 'worktrees', 'agent-tools',
+]);
+
+function loadSidebarView(projectId: string): SidebarView {
+  try {
+    const stored = localStorage.getItem(`${SIDEBAR_VIEW_KEY_PREFIX}-${projectId}`);
+    if (stored && VALID_SIDEBAR_VIEWS.has(stored)) {
+      return stored as SidebarView;
+    }
+  } catch {
+    // localStorage read failed, non-critical
+  }
+  return 'kanban';
+}
+
+function saveSidebarView(projectId: string, view: SidebarView): void {
+  try {
+    localStorage.setItem(`${SIDEBAR_VIEW_KEY_PREFIX}-${projectId}`, view);
+  } catch {
+    // localStorage write failed, non-critical
+  }
+}
+
 // Wrapper component for ProjectTabBar
 interface ProjectTabBarWithContextProps {
   projects: Project[];
@@ -154,6 +183,24 @@ export function App() {
   const [settingsInitialSection, setSettingsInitialSection] = useState<AppSection | undefined>(undefined);
   const [settingsInitialProjectSection, setSettingsInitialProjectSection] = useState<ProjectSettingsSection | undefined>(undefined);
   const [activeView, setActiveView] = useState<SidebarView>('kanban');
+
+  // Persist sidebar view changes to localStorage per project
+  const changeActiveView = useCallback((view: SidebarView) => {
+    setActiveView(view);
+    const projectId = activeProjectId || selectedProjectId;
+    if (projectId) {
+      saveSidebarView(projectId, view);
+    }
+  }, [activeProjectId, selectedProjectId]);
+
+  // Restore persisted sidebar view when project changes
+  useEffect(() => {
+    const projectId = activeProjectId || selectedProjectId;
+    if (projectId) {
+      setActiveView(loadSidebarView(projectId));
+    }
+  }, [activeProjectId, selectedProjectId]);
+
   const [isOnboardingWizardOpen, setIsOnboardingWizardOpen] = useState(false);
   const [isVersionWarningModalOpen, setIsVersionWarningModalOpen] = useState(false);
   const [isRefreshingTasks, setIsRefreshingTasks] = useState(false);
@@ -634,7 +681,7 @@ export function App() {
     console.warn('[App] Opening inbuilt terminal:', { cwd });
 
     // Switch to terminals view
-    setActiveView('terminals');
+    changeActiveView('terminals');
 
     // Close modal
     setSelectedTask(null);
@@ -674,7 +721,7 @@ export function App() {
     ].join('\n');
 
     // Switch to terminals view
-    setActiveView('terminals');
+    changeActiveView('terminals');
 
     // Create terminal
     const terminal = useTerminalStore.getState().addTerminal(projectPath, projectPath);
@@ -876,7 +923,7 @@ export function App() {
 
   const handleGoToTask = (taskId: string) => {
     // Switch to kanban view
-    setActiveView('kanban');
+    changeActiveView('kanban');
     // Find and select the task (match by id or specId)
     const task = tasks.find((t) => t.id === taskId || t.specId === taskId);
     if (task) {
@@ -895,7 +942,7 @@ export function App() {
           onSettingsClick={() => setIsSettingsDialogOpen(true)}
           onNewTaskClick={() => setIsNewTaskDialogOpen(true)}
           activeView={activeView}
-          onViewChange={setActiveView}
+          onViewChange={changeActiveView}
         />
 
         {/* Main content */}
@@ -1043,7 +1090,7 @@ export function App() {
           open={!!selectedTask}
           task={selectedTask}
           onOpenChange={(open) => !open && handleCloseTaskDetail()}
-          onSwitchToTerminals={() => setActiveView('terminals')}
+          onSwitchToTerminals={() => changeActiveView('terminals')}
           onOpenInbuiltTerminal={handleOpenInbuiltTerminal}
         />
 
