@@ -133,5 +133,38 @@
     "alreadyExisted": "already existed",
     "noWorktree": "No worktree found for this task",
     "resultsDescriptionWithSkipped": "{{success}} succeeded, {{skipped}} skipped, {{failed}} failed"
+  },
+  "diffViewer": {
+    "title": "Code Changes",
+    "summary": "{{count}} file changed",
+    "summary_other": "{{count}} files changed",
+    "noChanges": "No changes found",
+    "noFileSelected": "Select a file to view changes",
+    "fileTruncated": "File too large to display (exceeds size limit)",
+    "binaryFile": "Binary file changed",
+    "noPatch": "No diff available for this file",
+    "viewMode": {
+      "unified": "Unified",
+      "split": "Side by side"
+    },
+    "comments": {
+      "add": "Add comment",
+      "submit": "Submit",
+      "cancel": "Cancel",
+      "delete": "Delete comment",
+      "placeholder": "Leave a review comment...",
+      "count": "{{count}} comment",
+      "count_other": "{{count}} comments"
+    },
+    "requestChanges": "Request Changes",
+    "requestChangesDisabled": "Add inline comments to request changes",
+    "close": "Close",
+    "fileStatus": {
+      "added": "Added",
+      "modified": "Modified",
+      "deleted": "Deleted",
+      "renamed": "Renamed"
+    },
+    "renamedFrom": "Renamed from {{oldPath}}"
   }
 }
