@@ -1,6 +1,6 @@
 {
   "name": "auto-claude",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Autonomous multi-agent coding framework powered by Claude AI",
   "license": "AGPL-3.0",
   "author": "Auto Claude Team",
