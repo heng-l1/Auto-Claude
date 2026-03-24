@@ -185,7 +185,13 @@ Examples:
         "--thinking-level",
         type=str,
         default="medium",
-        help="Thinking level for extended thinking (low, medium, high)",
+        help="Thinking level for extended thinking (low, medium, high, max)",
+    )
+    parser.add_argument(
+        "--phase-ultrathink",
+        type=str,
+        default=None,
+        help='JSON string of per-phase ultrathink flags, e.g. \'{"spec":true,"coding":true}\'',
     )
     parser.add_argument(
         "--no-ai-assessment",
@@ -223,6 +229,27 @@ Examples:
 
     # Validate and sanitize thinking level (handles legacy values like 'ultrathink')
     args.thinking_level = sanitize_thinking_level(args.thinking_level)
+
+    # Parse --phase-ultrathink JSON and override thinking level for spec phase if needed
+    phase_ultrathink = {}
+    if args.phase_ultrathink:
+        try:
+            phase_ultrathink = json.loads(args.phase_ultrathink)
+        except json.JSONDecodeError as e:
+            debug_error(
+                "spec_runner",
+                f"Invalid JSON for --phase-ultrathink, ignoring: {e}",
+            )
+            phase_ultrathink = {}
+
+        # If spec phase has ultrathink enabled, override thinking level
+        # (spec_runner uses thinking_level for its internal spec creation phases)
+        if phase_ultrathink.get("spec"):
+            args.thinking_level = "ultrathink"
+            debug(
+                "spec_runner",
+                "Overriding thinking level to 'ultrathink' for spec phase",
+            )
 
     # Warn user about direct mode risks
     if args.direct:

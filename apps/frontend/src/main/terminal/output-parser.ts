@@ -249,14 +249,16 @@ const ONBOARDING_COMPLETE_PATTERNS = [
  * Check if output indicates Claude is busy (processing)
  */
 export function isClaudeBusyOutput(data: string): boolean {
-  return CLAUDE_BUSY_PATTERNS.some(pattern => pattern.test(data));
+  const cleanData = stripAnsi(data);
+  return CLAUDE_BUSY_PATTERNS.some(pattern => pattern.test(cleanData));
 }
 
 /**
  * Check if output indicates Claude is idle (ready for input)
  */
 export function isClaudeIdleOutput(data: string): boolean {
-  return CLAUDE_IDLE_PATTERNS.some(pattern => pattern.test(data));
+  const cleanData = stripAnsi(data);
+  return CLAUDE_IDLE_PATTERNS.some(pattern => pattern.test(cleanData));
 }
 
 /**
@@ -272,15 +274,16 @@ export function isOnboardingCompleteOutput(data: string): boolean {
  * Returns: 'busy' | 'idle' | null (no change detected)
  */
 export function detectClaudeBusyState(data: string): 'busy' | 'idle' | null {
+  const cleanData = stripAnsi(data);
   // Check for busy indicators FIRST - they're more definitive
   // Progress bars and "Loading..." mean Claude is definitely working,
   // even if there's a ">" prompt visible elsewhere in the output
-  if (isClaudeBusyOutput(data)) {
+  if (isClaudeBusyOutput(cleanData)) {
     return 'busy';
   }
   // Only check for idle if no busy indicators found
   // The ">" prompt alone at end of output means Claude is waiting for input
-  if (isClaudeIdleOutput(data)) {
+  if (isClaudeIdleOutput(cleanData)) {
     return 'idle';
   }
   return null;
@@ -352,7 +355,8 @@ const CLAUDE_EXIT_PATTERNS = [
  * that indicate we've returned to a shell AFTER being in Claude mode.
  */
 export function isClaudeExitOutput(data: string): boolean {
-  return CLAUDE_EXIT_PATTERNS.some(pattern => pattern.test(data));
+  const cleanData = stripAnsi(data);
+  return CLAUDE_EXIT_PATTERNS.some(pattern => pattern.test(cleanData));
 }
 
 /**
@@ -363,12 +367,13 @@ export function isClaudeExitOutput(data: string): boolean {
  * to detect if Claude has exited (user typed /exit, Ctrl+D, etc.)
  */
 export function detectClaudeExit(data: string): boolean {
+  const cleanData = stripAnsi(data);
   // First, make sure this doesn't look like Claude activity
   // If we see Claude busy indicators, Claude hasn't exited
-  if (isClaudeBusyOutput(data)) {
+  if (isClaudeBusyOutput(cleanData)) {
     return false;
   }
 
   // Check for Claude exit patterns (shell prompt return)
-  return isClaudeExitOutput(data);
+  return isClaudeExitOutput(cleanData);
 }

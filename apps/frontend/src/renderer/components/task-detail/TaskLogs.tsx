@@ -76,7 +76,8 @@ const MODEL_SHORT_LABELS: Record<ModelTypeShort, string> = {
 const THINKING_SHORT_LABELS: Record<ThinkingLevel, string> = {
   low: 'Low',
   medium: 'Med',
-  high: 'High'
+  high: 'High',
+  max: 'Max'
 };
 
 // Helper to get model and thinking info for a log phase
@@ -92,9 +93,11 @@ function getPhaseConfig(
   if (metadata.isAutoProfile && metadata.phaseModels && metadata.phaseThinking) {
     const model = metadata.phaseModels[configPhase];
     const thinking = metadata.phaseThinking[configPhase];
+    // Check if ultrathink is enabled for this phase (overrides thinking level)
+    const isUltrathink = metadata.phaseUltrathink?.[configPhase];
     return {
       model: MODEL_SHORT_LABELS[model] || model,
-      thinking: THINKING_SHORT_LABELS[thinking] || thinking
+      thinking: isUltrathink ? 'Ultra' : (THINKING_SHORT_LABELS[thinking] || thinking)
     };
   }
 

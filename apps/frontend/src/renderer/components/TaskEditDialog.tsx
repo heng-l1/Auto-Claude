@@ -43,7 +43,7 @@ import {
   FAST_MODE_MODELS,
   PHASE_KEYS
 } from '../../shared/constants';
-import type { PhaseModelConfig, PhaseThinkingConfig } from '../../shared/types/settings';
+import type { PhaseModelConfig, PhaseThinkingConfig, PhaseUltrathinkConfig } from '../../shared/types/settings';
 import { useSettingsStore } from '../stores/settings-store';
 
 /**
@@ -113,6 +113,9 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
   const [phaseThinking, setPhaseThinking] = useState<PhaseThinkingConfig | undefined>(
     task.metadata?.phaseThinking || selectedProfile.phaseThinking || DEFAULT_PHASE_THINKING
   );
+  const [phaseUltrathink, setPhaseUltrathink] = useState<PhaseUltrathinkConfig | undefined>(
+    task.metadata?.phaseUltrathink || settings.customPhaseUltrathink
+  );
 
   // Image attachments
   const [images, setImages] = useState<ImageAttachment[]>(task.metadata?.attachedImages || []);
@@ -155,6 +158,7 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
         setThinkingLevel(taskThinking || selectedProfile.thinkingLevel);
         setPhaseModels(task.metadata?.phaseModels || DEFAULT_PHASE_MODELS);
         setPhaseThinking(task.metadata?.phaseThinking || DEFAULT_PHASE_THINKING);
+        setPhaseUltrathink(task.metadata?.phaseUltrathink || settings.customPhaseUltrathink);
       } else if (taskModel && taskThinking) {
         const matchingProfile = DEFAULT_AGENT_PROFILES.find(
           p => p.model === taskModel && p.thinkingLevel === taskThinking && !p.isAutoProfile
@@ -164,12 +168,14 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
         setThinkingLevel(taskThinking);
         setPhaseModels(task.metadata?.phaseModels || DEFAULT_PHASE_MODELS);
         setPhaseThinking(task.metadata?.phaseThinking || DEFAULT_PHASE_THINKING);
+        setPhaseUltrathink(task.metadata?.phaseUltrathink || settings.customPhaseUltrathink);
       } else {
         setProfileId(settings.selectedAgentProfile || 'auto');
         setModel(selectedProfile.model);
         setThinkingLevel(selectedProfile.thinkingLevel);
         setPhaseModels(selectedProfile.phaseModels || DEFAULT_PHASE_MODELS);
         setPhaseThinking(selectedProfile.phaseThinking || DEFAULT_PHASE_THINKING);
+        setPhaseUltrathink(settings.customPhaseUltrathink);
       }
 
       setImages(task.metadata?.attachedImages || []);
@@ -184,7 +190,7 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
         setShowClassification(false);
       }
     }
-  }, [open, task, settings.selectedAgentProfile, selectedProfile.model, selectedProfile.thinkingLevel, selectedProfile.phaseModels, selectedProfile.phaseThinking]);
+  }, [open, task, settings.selectedAgentProfile, settings.customPhaseUltrathink, selectedProfile.model, selectedProfile.thinkingLevel, selectedProfile.phaseModels, selectedProfile.phaseThinking]);
 
   /**
    * Handle file reference drop from FileTreeItem drag
@@ -222,7 +228,8 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
       fastMode !== (task.metadata?.fastMode ?? false) ||
       JSON.stringify(images) !== JSON.stringify(task.metadata?.attachedImages || []) ||
       JSON.stringify(phaseModels) !== JSON.stringify(task.metadata?.phaseModels || DEFAULT_PHASE_MODELS) ||
-      JSON.stringify(phaseThinking) !== JSON.stringify(task.metadata?.phaseThinking || DEFAULT_PHASE_THINKING);
+      JSON.stringify(phaseThinking) !== JSON.stringify(task.metadata?.phaseThinking || DEFAULT_PHASE_THINKING) ||
+      JSON.stringify(phaseUltrathink) !== JSON.stringify(task.metadata?.phaseUltrathink);
 
     if (!hasChanges) {
       onOpenChange(false);
@@ -244,6 +251,9 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
       metadataUpdates.isAutoProfile = profileId === 'auto';
       metadataUpdates.phaseModels = phaseModels;
       metadataUpdates.phaseThinking = phaseThinking;
+    }
+    if (phaseUltrathink && Object.values(phaseUltrathink).some(v => v)) {
+      metadataUpdates.phaseUltrathink = phaseUltrathink;
     }
     // Always set attachedImages to persist removal when all images are deleted
     metadataUpdates.attachedImages = images.length > 0 ? images : [];
@@ -314,6 +324,8 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
         onThinkingLevelChange={setThinkingLevel}
         onPhaseModelsChange={setPhaseModels}
         onPhaseThinkingChange={setPhaseThinking}
+        phaseUltrathink={phaseUltrathink}
+        onPhaseUltrathinkChange={setPhaseUltrathink}
         category={category}
         priority={priority}
         complexity={complexity}

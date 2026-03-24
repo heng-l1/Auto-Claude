@@ -27,8 +27,9 @@ import {
   DEFAULT_PHASE_THINKING,
   ADAPTIVE_THINKING_MODELS
 } from '../../shared/constants';
+import { Switch } from './ui/switch';
 import type { ModelType, ThinkingLevel } from '../../shared/types';
-import type { PhaseModelConfig, PhaseThinkingConfig } from '../../shared/types/settings';
+import type { PhaseModelConfig, PhaseThinkingConfig, PhaseUltrathinkConfig } from '../../shared/types/settings';
 import { cn } from '../lib/utils';
 
 interface AgentProfileSelectorProps {
@@ -52,6 +53,10 @@ interface AgentProfileSelectorProps {
   onPhaseModelsChange?: (phaseModels: PhaseModelConfig) => void;
   /** Called when phase thinking changes (in auto mode) */
   onPhaseThinkingChange?: (phaseThinking: PhaseThinkingConfig) => void;
+  /** Phase ultrathink configuration (for auto profile) */
+  phaseUltrathink?: PhaseUltrathinkConfig;
+  /** Called when phase ultrathink changes (in auto mode) */
+  onPhaseUltrathinkChange?: (phaseUltrathink: PhaseUltrathinkConfig | undefined) => void;
   /** Whether the selector is disabled */
   disabled?: boolean;
 }
@@ -82,6 +87,8 @@ export function AgentProfileSelector({
   onThinkingLevelChange,
   onPhaseModelsChange,
   onPhaseThinkingChange,
+  phaseUltrathink,
+  onPhaseUltrathinkChange,
   disabled
 }: AgentProfileSelectorProps) {
   const { t } = useTranslation('settings');
@@ -128,6 +135,15 @@ export function AgentProfileSelector({
       onPhaseThinkingChange({
         ...currentPhaseThinking,
         [phase]: value
+      });
+    }
+  };
+
+  const handlePhaseUltrathinkChange = (phase: keyof PhaseUltrathinkConfig, enabled: boolean) => {
+    if (onPhaseUltrathinkChange) {
+      onPhaseUltrathinkChange({
+        ...phaseUltrathink,
+        [phase]: enabled
       });
     }
   };
@@ -265,72 +281,95 @@ export function AgentProfileSelector({
           {/* Detailed Phase Configuration */}
           {showPhaseDetails && (
             <div className="px-4 pb-4 space-y-4 border-t border-border pt-4">
-              {(Object.keys(PHASE_LABEL_KEYS) as Array<keyof PhaseModelConfig>).map((phase) => (
-                <div key={phase} className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-medium text-foreground">
-                      {t(PHASE_LABEL_KEYS[phase].label)}
-                    </Label>
-                    <span className="text-[10px] text-muted-foreground">
-                      {t(PHASE_LABEL_KEYS[phase].description)}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <Label className="text-[10px] text-muted-foreground">{t('agentProfile.model')}</Label>
-                      <Select
-                        value={currentPhaseModels[phase]}
-                        onValueChange={(value) => handlePhaseModelChange(phase, value as ModelType)}
-                        disabled={disabled}
-                      >
-                        <SelectTrigger className="h-8 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {AVAILABLE_MODELS.map((m) => (
-                            <SelectItem key={m.value} value={m.value}>
-                              {m.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+              {(Object.keys(PHASE_LABEL_KEYS) as Array<keyof PhaseModelConfig>).map((phase) => {
+                const isUltrathink = phaseUltrathink?.[phase] === true;
+                return (
+                  <div key={phase} className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-medium text-foreground">
+                        {t(PHASE_LABEL_KEYS[phase].label)}
+                      </Label>
+                      <span className="text-[10px] text-muted-foreground">
+                        {t(PHASE_LABEL_KEYS[phase].description)}
+                      </span>
                     </div>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-1.5">
-                        <Label className="text-[10px] text-muted-foreground">{t('agentProfile.thinking')}</Label>
-                        {ADAPTIVE_THINKING_MODELS.includes(currentPhaseModels[phase]) && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium text-primary cursor-help">
-                                {t('agentProfile.adaptiveThinking.badge')}
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className="max-w-xs">
-                              <p className="text-xs">{t('agentProfile.adaptiveThinking.tooltip')}</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        )}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-[10px] text-muted-foreground">{t('agentProfile.model')}</Label>
+                        <Select
+                          value={currentPhaseModels[phase]}
+                          onValueChange={(value) => handlePhaseModelChange(phase, value as ModelType)}
+                          disabled={disabled}
+                        >
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {AVAILABLE_MODELS.map((m) => (
+                              <SelectItem key={m.value} value={m.value}>
+                                {m.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
-                      <Select
-                        value={currentPhaseThinking[phase]}
-                        onValueChange={(value) => handlePhaseThinkingChange(phase, value as ThinkingLevel)}
-                        disabled={disabled}
-                      >
-                        <SelectTrigger className="h-8 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {THINKING_LEVELS.map((level) => (
-                            <SelectItem key={level.value} value={level.value}>
-                              {level.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1.5">
+                          <Label className="text-[10px] text-muted-foreground">{t('agentProfile.thinking')}</Label>
+                          {ADAPTIVE_THINKING_MODELS.includes(currentPhaseModels[phase]) && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium text-primary cursor-help">
+                                  {t('agentProfile.adaptiveThinking.badge')}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="max-w-xs">
+                                <p className="text-xs">{t('agentProfile.adaptiveThinking.tooltip')}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                        </div>
+                        <Select
+                          value={currentPhaseThinking[phase]}
+                          onValueChange={(value) => handlePhaseThinkingChange(phase, value as ThinkingLevel)}
+                          disabled={disabled || isUltrathink}
+                        >
+                          <SelectTrigger className={cn('h-8 text-xs', isUltrathink && 'opacity-50')}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {THINKING_LEVELS.map((level) => (
+                              <SelectItem key={level.value} value={level.value}>
+                                {level.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
+                    {/* Ultrathink Toggle */}
+                    {onPhaseUltrathinkChange && (
+                      <div className="flex items-center justify-between rounded-md bg-background/50 px-2 py-1.5">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Label className="text-[10px] text-muted-foreground cursor-help">
+                              {t('agentProfile.ultrathink')}
+                            </Label>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-xs">
+                            <p className="text-xs">{t('agentProfile.ultrathinkTooltip')}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                        <Switch
+                          checked={isUltrathink}
+                          onCheckedChange={(checked) => handlePhaseUltrathinkChange(phase, checked)}
+                          disabled={disabled}
+                        />
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

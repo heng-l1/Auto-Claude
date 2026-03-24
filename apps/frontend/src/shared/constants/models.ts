@@ -31,7 +31,8 @@ export const MODEL_ID_MAP: Record<string, string> = {
 export const THINKING_BUDGET_MAP: Record<string, number> = {
   low: 1024,
   medium: 4096,
-  high: 16384
+  high: 16384,
+  max: 32768
 } as const;
 
 // ============================================
@@ -42,7 +43,8 @@ export const THINKING_BUDGET_MAP: Record<string, number> = {
 export const THINKING_LEVELS = [
   { value: 'low', label: 'Low', description: 'Brief consideration' },
   { value: 'medium', label: 'Medium', description: 'Moderate analysis' },
-  { value: 'high', label: 'High', description: 'Deep thinking' }
+  { value: 'high', label: 'High', description: 'Deep thinking' },
+  { value: 'max', label: 'Max', description: 'Very deep analysis' }
 ] as const;
 
 // ============================================
@@ -202,10 +204,10 @@ export const FAST_MODE_MODELS: readonly string[] = ['opus', 'opus-1m'] as const;
 export const ADAPTIVE_THINKING_MODELS: readonly string[] = ['opus', 'opus-1m'] as const;
 
 // Valid thinking levels for validation
-export const VALID_THINKING_LEVELS = ['low', 'medium', 'high'] as const;
+export const VALID_THINKING_LEVELS = ['low', 'medium', 'high', 'max', 'ultrathink'] as const;
 
 // Legacy thinking level mappings (must match backend phase_config.py LEGACY_THINKING_LEVEL_MAP)
-export const LEGACY_THINKING_MAP: Record<string, string> = { ultrathink: 'high', none: 'low' } as const;
+export const LEGACY_THINKING_MAP: Record<string, string> = { none: 'low' } as const;
 
 /** Sanitize a thinking level value, mapping legacy values to valid ones */
 export function sanitizeThinkingLevel(val: string): string {

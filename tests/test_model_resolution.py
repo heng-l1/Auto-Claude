@@ -513,6 +513,24 @@ class TestGetThinkingKwargsForModel:
         assert "effort_level" not in result
         assert result["max_thinking_tokens"] == 16384
 
+    def test_opus_max_thinking(self):
+        """Opus with 'max' thinking level gets max effort and 32768 tokens."""
+        result = get_thinking_kwargs_for_model("claude-opus-4-6", "max")
+        assert result["effort_level"] == "max"
+        assert result["max_thinking_tokens"] == 32768
+
+    def test_opus_ultrathink(self):
+        """Opus with 'ultrathink' thinking level gets max effort and 128000 tokens."""
+        result = get_thinking_kwargs_for_model("claude-opus-4-6", "ultrathink")
+        assert result["effort_level"] == "max"
+        assert result["max_thinking_tokens"] == 128000
+
+    def test_sonnet_max_no_effort(self):
+        """Sonnet with 'max' thinking level gets 32768 tokens but no effort_level."""
+        result = get_thinking_kwargs_for_model("claude-sonnet-4-5-20250929", "max")
+        assert "max_thinking_tokens" in result
+        assert "effort_level" not in result
+        assert result["max_thinking_tokens"] == 32768
 
 
 class TestCreateClientFastMode:
