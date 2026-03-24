@@ -49,6 +49,8 @@ interface TaskReviewProps {
   onOpenInbuiltTerminal?: (id: string, cwd: string) => void;
   onLaunchClaudeCode?: () => void;
   onReviewAgain?: () => void;
+  /** Callback when user requests changes from the diff viewer with formatted inline comments */
+  onRequestChanges?: (feedback: string) => void;
   // PR creation
   showPRDialog: boolean;
   isCreatingPR: boolean;
@@ -100,6 +102,7 @@ export function TaskReview({
   onOpenInbuiltTerminal,
   onLaunchClaudeCode,
   onReviewAgain,
+  onRequestChanges,
   showPRDialog,
   isCreatingPR,
   onShowPRDialog,
@@ -186,6 +189,7 @@ export function TaskReview({
         open={showDiffDialog}
         worktreeDiff={worktreeDiff}
         onOpenChange={onShowDiffDialog}
+        onRequestChanges={onRequestChanges}
       />
 
       {/* Conflict Details Dialog */}
