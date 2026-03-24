@@ -272,6 +272,8 @@
     "fastModeLabel": "Fast Mode",
     "fastModeDescription": "Same Opus 4.6 model with faster output. Higher cost per token.",
     "fastModeNotice": "Requires \"extra usage\" enabled on your Claude subscription.",
+    "ultrathinkLabel": "Ultrathink",
+    "ultrathinkDescription": "128K thinking tokens with max effort. Overrides the thinking level for this phase.",
     "errors": {
       "descriptionRequired": "Please provide a description",
       "maxImagesReached": "Maximum of 5 images allowed",
