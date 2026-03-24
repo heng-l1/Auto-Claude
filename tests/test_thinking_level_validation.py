@@ -20,7 +20,7 @@ class TestThinkingLevelValidation:
 
     def test_valid_thinking_levels(self):
         """Test that all valid thinking levels return correct budgets."""
-        valid_levels = ["low", "medium", "high"]
+        valid_levels = ["low", "medium", "high", "max", "ultrathink"]
 
         for level in valid_levels:
             budget = get_thinking_budget(level)
@@ -47,7 +47,7 @@ class TestThinkingLevelValidation:
             get_thinking_budget("bad_value")
 
             # Check all valid levels are mentioned
-            for level in ["low", "medium", "high"]:
+            for level in ["low", "medium", "high", "max", "ultrathink"]:
                 assert level in caplog.text
 
     def test_empty_string_level(self, caplog):
@@ -81,6 +81,8 @@ class TestThinkingLevelValidation:
         assert get_thinking_budget("low") == 1024
         assert get_thinking_budget("medium") == 4096
         assert get_thinking_budget("high") == 16384
+        assert get_thinking_budget("max") == 32768
+        assert get_thinking_budget("ultrathink") == 128000
 
     def test_removed_none_treated_as_invalid(self, caplog):
         """Test that removed 'none' level is treated as invalid and defaults to medium."""
@@ -89,12 +91,13 @@ class TestThinkingLevelValidation:
             assert budget == THINKING_BUDGET_MAP["medium"]
             assert "Invalid thinking_level 'none'" in caplog.text
 
-    def test_removed_ultrathink_treated_as_invalid(self, caplog):
-        """Test that removed 'ultrathink' level is treated as invalid and defaults to medium."""
+    def test_ultrathink_is_valid_with_correct_budget(self, caplog):
+        """Test that 'ultrathink' is a valid level with 128000 token budget."""
         with caplog.at_level(logging.WARNING):
             budget = get_thinking_budget("ultrathink")
-            assert budget == THINKING_BUDGET_MAP["medium"]
-            assert "Invalid thinking_level 'ultrathink'" in caplog.text
+            assert budget == 128000
+            # Should NOT log a warning — ultrathink is now a valid level
+            assert len(caplog.records) == 0
 
 
 class TestSanitizeThinkingLevel:
@@ -105,10 +108,12 @@ class TestSanitizeThinkingLevel:
         assert sanitize_thinking_level("low") == "low"
         assert sanitize_thinking_level("medium") == "medium"
         assert sanitize_thinking_level("high") == "high"
+        assert sanitize_thinking_level("max") == "max"
+        assert sanitize_thinking_level("ultrathink") == "ultrathink"
 
-    def test_ultrathink_maps_to_high(self):
-        """Test that legacy 'ultrathink' is mapped to 'high'."""
-        assert sanitize_thinking_level("ultrathink") == "high"
+    def test_ultrathink_passes_through(self):
+        """Test that 'ultrathink' is now a first-class valid level (no longer mapped to 'high')."""
+        assert sanitize_thinking_level("ultrathink") == "ultrathink"
 
     def test_none_maps_to_low(self):
         """Test that legacy 'none' is mapped to 'low'."""
