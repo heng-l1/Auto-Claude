@@ -1,0 +1,436 @@
+name: Release
+# Triggers on version tags (v*) to build and publish releases
+#
+# This workflow builds binaries for macOS (ARM64), Windows, and Linux,
+# then creates a GitHub release with all artifacts attached.
+# No code signing or notarization (out of scope for this fork).
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Test build without creating release'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build-macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Link node_modules for electron-builder
+        run: |
+          if [ -e "apps/frontend/node_modules" ] || [ -L "apps/frontend/node_modules" ]; then
+            rm -rf "apps/frontend/node_modules"
+          fi
+          ln -s ../../node_modules apps/frontend/node_modules
+
+      - name: Cache pip wheel cache
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/pip
+          key: pip-wheel-${{ runner.os }}-arm64-${{ hashFiles('apps/backend/requirements.txt') }}
+          restore-keys: |
+            pip-wheel-${{ runner.os }}-arm64-
+
+      - name: Cache bundled Python
+        uses: actions/cache@v4
+        with:
+          path: apps/frontend/python-runtime
+          key: python-bundle-${{ runner.os }}-arm64-3.12.8-${{ hashFiles('apps/backend/requirements.txt') }}
+          restore-keys: |
+            python-bundle-${{ runner.os }}-arm64-3.12.8-
+
+      - name: Build application
+        run: cd apps/frontend && npm run build
+
+      - name: Package macOS (Apple Silicon)
+        run: cd apps/frontend && npm run package:mac -- --arm64
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64-builds
+          path: |
+            apps/frontend/dist/*.dmg
+            apps/frontend/dist/*.zip
+            apps/frontend/dist/*.yml
+            apps/frontend/dist/*.blockmap
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Link node_modules for electron-builder
+        shell: bash
+        run: |
+          if [ -e "apps/frontend/node_modules" ] || [ -L "apps/frontend/node_modules" ]; then
+            rm -rf "apps/frontend/node_modules"
+          fi
+          abs_target=$(cygpath -w "$(pwd)/node_modules")
+          link_path=$(cygpath -w "$(pwd)/apps/frontend/node_modules")
+          powershell -Command "New-Item -ItemType Junction -Path '$link_path' -Target '$abs_target'" > /dev/null
+
+      - name: Cache pip wheel cache
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: pip-wheel-${{ runner.os }}-x64-${{ hashFiles('apps/backend/requirements.txt') }}
+          restore-keys: |
+            pip-wheel-${{ runner.os }}-x64-
+
+      - name: Cache bundled Python
+        uses: actions/cache@v4
+        with:
+          path: apps/frontend/python-runtime
+          key: python-bundle-${{ runner.os }}-x64-3.12.8-${{ hashFiles('apps/backend/requirements.txt') }}
+          restore-keys: |
+            python-bundle-${{ runner.os }}-x64-3.12.8-
+
+      - name: Build application
+        run: cd apps/frontend && npm run build
+
+      - name: Package Windows
+        run: cd apps/frontend && npm run package:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-builds
+          path: |
+            apps/frontend/dist/*.exe
+            apps/frontend/dist/*.yml
+            apps/frontend/dist/*.blockmap
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Link node_modules for electron-builder
+        run: |
+          if [ -e "apps/frontend/node_modules" ] || [ -L "apps/frontend/node_modules" ]; then
+            rm -rf "apps/frontend/node_modules"
+          fi
+          ln -s ../../node_modules apps/frontend/node_modules
+
+      - name: Setup Flatpak build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder libarchive-tools
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install -y --user flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08
+          flatpak install -y --user flathub org.electronjs.Electron2.BaseApp//25.08
+
+      - name: Cache pip wheel cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-wheel-${{ runner.os }}-x64-${{ hashFiles('apps/backend/requirements.txt') }}
+          restore-keys: |
+            pip-wheel-${{ runner.os }}-x64-
+
+      - name: Cache bundled Python
+        uses: actions/cache@v4
+        with:
+          path: apps/frontend/python-runtime
+          key: python-bundle-${{ runner.os }}-x64-3.12.8-${{ hashFiles('apps/backend/requirements.txt') }}
+          restore-keys: |
+            python-bundle-${{ runner.os }}-x64-3.12.8-
+
+      - name: Build application
+        run: cd apps/frontend && npm run build
+
+      - name: Package Linux
+        run: cd apps/frontend && npm run package:linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify Linux packages
+        run: cd apps/frontend && npm run verify:linux
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-builds
+          path: |
+            apps/frontend/dist/*.AppImage
+            apps/frontend/dist/*.deb
+            apps/frontend/dist/*.flatpak
+            apps/frontend/dist/*.yml
+            apps/frontend/dist/*.blockmap
+
+  create-release:
+    needs: [build-macos, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Collect release assets
+        run: |
+          mkdir -p release-assets
+
+          # Copy macOS artifacts
+          find dist/macos-arm64-builds -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.yml" -o -name "*.blockmap" \) -exec cp {} release-assets/ \; 2>/dev/null || true
+
+          # Copy Windows artifacts
+          find dist/windows-builds -type f \( -name "*.exe" -o -name "*.yml" -o -name "*.blockmap" \) -exec cp {} release-assets/ \; 2>/dev/null || true
+
+          # Copy Linux artifacts
+          find dist/linux-builds -type f \( -name "*.AppImage" -o -name "*.deb" -o -name "*.flatpak" -o -name "*.yml" -o -name "*.blockmap" \) -exec cp {} release-assets/ \; 2>/dev/null || true
+
+          # Validate that installer files exist
+          installer_count=$(find release-assets -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.flatpak" \) | wc -l)
+          if [ "$installer_count" -eq 0 ]; then
+            echo "::error::No installer artifacts found! Expected .dmg, .zip, .exe, .AppImage, .deb, or .flatpak files."
+            exit 1
+          fi
+
+          echo "Found $installer_count binary artifact(s):"
+          find release-assets -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.flatpak" \) -exec basename {} \;
+
+      - name: Validate manifests
+        run: |
+          yml_count=$(find release-assets -type f -name "*.yml" | wc -l)
+          if [ "$yml_count" -eq 0 ]; then
+            echo "::error::No update manifest (.yml) files found! Auto-update will not work."
+            exit 1
+          fi
+
+          echo "Found $yml_count manifest file(s):"
+          find release-assets -type f -name "*.yml" -exec basename {} \;
+
+          # Validate required manifests exist
+          missing=""
+          [ ! -f "release-assets/latest-mac.yml" ] && missing="$missing latest-mac.yml"
+          [ ! -f "release-assets/latest.yml" ] && missing="$missing latest.yml"
+          [ ! -f "release-assets/latest-linux.yml" ] && missing="$missing latest-linux.yml"
+
+          if [ -n "$missing" ]; then
+            echo "::error::Missing required manifests:$missing"
+            echo "::error::Auto-update will fail on affected platforms!"
+            exit 1
+          fi
+
+          echo ""
+          echo "All required manifests present:"
+          echo "  - latest-mac.yml (macOS)"
+          echo "  - latest.yml (Windows)"
+          echo "  - latest-linux.yml (Linux)"
+
+          echo ""
+          echo "All release assets:"
+          ls -la release-assets/
+
+      - name: Generate checksums
+        run: |
+          cd release-assets
+          sha256sum ./* > checksums.sha256
+          cat checksums.sha256
+
+      - name: Dry run summary
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}
+        run: |
+          echo "## Dry Run Complete" >> $GITHUB_STEP_SUMMARY
+          echo "Build artifacts created successfully:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          ls -la release-assets/ >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "### Checksums" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          cat release-assets/checksums.sha256 >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Extract changelog from CHANGELOG.md
+        if: ${{ github.event_name == 'push' }}
+        id: changelog
+        run: |
+          # Extract version from tag (v2.7.2 -> 2.7.2)
+          VERSION=${GITHUB_REF_NAME#v}
+          CHANGELOG_FILE="CHANGELOG.md"
+
+          echo "Extracting release notes for version $VERSION from CHANGELOG.md..."
+
+          if [ ! -f "$CHANGELOG_FILE" ]; then
+            echo "::warning::CHANGELOG.md not found, using minimal release notes"
+            echo "body=Release v$VERSION" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Extract changelog section for this version
+          # Looks for "## X.Y.Z" header and captures until next "## " or "---"
+          CHANGELOG_CONTENT=$(awk -v ver="$VERSION" '
+            BEGIN { found=0; content="" }
+            /^## / {
+              if (found) exit
+              # Match version at start of header (e.g., "## 2.7.3 -" or "## 2.7.3")
+              if ($2 == ver || $2 ~ "^"ver"[[:space:]]*-") {
+                found=1
+                next
+              }
+            }
+            /^---$/ { if (found) exit }
+            found { content = content $0 "\n" }
+            END {
+              if (!found) {
+                print "NOT_FOUND"
+                exit 0
+              }
+              # Trim leading/trailing whitespace
+              gsub(/^[[:space:]]+|[[:space:]]+$/, "", content)
+              print content
+            }
+          ' "$CHANGELOG_FILE")
+
+          if [ "$CHANGELOG_CONTENT" = "NOT_FOUND" ] || [ -z "$CHANGELOG_CONTENT" ]; then
+            echo "::warning::Version $VERSION not found in CHANGELOG.md, using minimal release notes"
+            REPO="${{ github.repository }}"
+            CHANGELOG_CONTENT="Release v$VERSION"$'\n\n'"See [CHANGELOG.md](https://github.com/${REPO}/blob/main/CHANGELOG.md) for details."
+          fi
+
+          echo "Extracted changelog content"
+
+          # Save to file first (more reliable for multiline)
+          echo "$CHANGELOG_CONTENT" > changelog-body.md
+
+          # Use file-based output for multiline content
+          {
+            echo "body<<CHANGELOG_EOF"
+            cat changelog-body.md
+            echo "CHANGELOG_EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        if: ${{ github.event_name == 'push' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          body: |
+            ${{ steps.changelog.outputs.body }}
+
+            ---
+
+            **Full Changelog**: https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md
+          files: release-assets/*
+          draft: false
+          prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'alpha') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Update README with new version after successful release
+  update-readme:
+    needs: [create-release]
+    runs-on: ubuntu-latest
+    # Only update README on actual releases (tag push), not dry runs
+    if: ${{ github.event_name == 'push' }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Extract version and detect release type
+        id: version
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+          if [[ "$VERSION" == *-* ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update README.md
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          IS_PRERELEASE="${{ steps.version.outputs.is_prerelease }}"
+
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            python3 scripts/update-readme.py "$VERSION" --prerelease
+          else
+            python3 scripts/update-readme.py "$VERSION"
+          fi
+
+      - name: Commit and push README update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet README.md; then
+            echo "No changes to README.md, skipping commit"
+            exit 0
+          fi
+
+          git add README.md
+          git commit -m "docs: update README to v${{ steps.version.outputs.version }} [skip ci]"
+          git push origin main
