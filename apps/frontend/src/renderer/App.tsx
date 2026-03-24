@@ -16,6 +16,7 @@ import {
   SortableContext,
   horizontalListSortingStrategy
 } from '@dnd-kit/sortable';
+import { cn } from './lib/utils';
 import { TooltipProvider } from './components/ui/tooltip';
 import { Button } from './components/ui/button';
 import { Toaster } from './components/ui/toaster';
@@ -57,7 +58,7 @@ import { OnboardingWizard } from './components/onboarding';
 import { AppUpdateNotification } from './components/AppUpdateNotification';
 import { ProactiveSwapListener } from './components/ProactiveSwapListener';
 import { GitHubSetupModal } from './components/GitHubSetupModal';
-import { useProjectStore, loadProjects, addProject, initializeProject, removeProject, renameProjectTab } from './stores/project-store';
+import { useProjectStore, loadProjects, addProject, initializeProject, removeProject, renameProjectTab, setProjectTabColor } from './stores/project-store';
 import { useTaskStore, loadTasks } from './stores/task-store';
 import { useSettingsStore, loadSettings, loadProfiles, saveSettings } from './stores/settings-store';
 import { useClaudeProfileStore, loadClaudeProfiles } from './stores/claude-profile-store';
@@ -69,7 +70,7 @@ import { GlobalDownloadIndicator } from './components/GlobalDownloadIndicator';
 import { useIpcListeners } from './hooks/useIpc';
 import { useGlobalTerminalListeners } from './hooks/useGlobalTerminalListeners';
 import { useTerminalProfileChange } from './hooks/useTerminalProfileChange';
-import { COLOR_THEMES, UI_SCALE_MIN, UI_SCALE_MAX, UI_SCALE_DEFAULT } from '../shared/constants';
+import { COLOR_THEMES, UI_SCALE_MIN, UI_SCALE_MAX, UI_SCALE_DEFAULT, TAB_COLORS } from '../shared/constants';
 import type { Task, Project, ColorTheme } from '../shared/types';
 import { ProjectTabBar } from './components/ProjectTabBar';
 import { AddProjectModal } from './components/AddProjectModal';
@@ -87,6 +88,7 @@ interface ProjectTabBarWithContextProps {
   onAddProject: () => void;
   onSettingsClick: () => void;
   onRenameTab?: (projectId: string, name: string | undefined) => void;
+  onTabColorChange?: (projectId: string, color: string | undefined) => void;
 }
 
 function ProjectTabBarWithContext({
@@ -96,7 +98,8 @@ function ProjectTabBarWithContext({
   onProjectClose,
   onAddProject,
   onSettingsClick,
-  onRenameTab
+  onRenameTab,
+  onTabColorChange
 }: ProjectTabBarWithContextProps) {
   return (
     <ProjectTabBar
@@ -107,6 +110,7 @@ function ProjectTabBarWithContext({
       onAddProject={onAddProject}
       onSettingsClick={onSettingsClick}
       onRenameTab={onRenameTab}
+      onTabColorChange={onTabColorChange}
     />
   );
 }
@@ -913,19 +917,23 @@ export function App() {
                   onAddProject={handleAddProject}
                   onSettingsClick={() => setIsSettingsDialogOpen(true)}
                   onRenameTab={renameProjectTab}
+                  onTabColorChange={setProjectTabColor}
                 />
               </SortableContext>
 
               {/* Drag overlay - shows what's being dragged */}
               <DragOverlay>
-                {activeDragProject && (
-                  <div className="flex items-center gap-2 bg-card border border-border rounded-md px-4 py-2.5 shadow-lg max-w-[200px]">
-                    <div className="w-1 h-4 bg-muted-foreground rounded-full" />
-                    <span className="truncate font-medium text-sm">
-                      {activeDragProject.settings?.customTabName || activeDragProject.name}
-                    </span>
-                  </div>
-                )}
+                {activeDragProject && (() => {
+                  const dragTabColor = TAB_COLORS.find(c => c.id === activeDragProject.settings?.tabColor);
+                  return (
+                    <div className={cn('flex items-center gap-2 bg-card border border-border rounded-md px-4 py-2.5 shadow-lg max-w-[200px]', dragTabColor?.bg)}>
+                      <div className="w-1 h-4 bg-muted-foreground rounded-full" />
+                      <span className="truncate font-medium text-sm">
+                        {activeDragProject.settings?.customTabName || activeDragProject.name}
+                      </span>
+                    </div>
+                  );
+                })()}
               </DragOverlay>
             </DndContext>
           )}
