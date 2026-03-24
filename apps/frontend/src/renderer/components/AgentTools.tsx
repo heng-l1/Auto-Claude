@@ -1454,7 +1454,7 @@ export function AgentTools() {
                           thinkingLabel={getThinkingLabel(thinking)}
                           overrides={envConfig?.agentMcpOverrides?.[id]}
                           mcpServerStates={envConfig?.mcpServers}
-                          customServers={envConfig?.customMcpServers || []}
+                          customServers={[...(envConfig?.customMcpServers || []), ...claudeCodeServers]}
                           onAddMcp={handleAddMcp}
                           onRemoveMcp={handleRemoveMcp}
                         />
