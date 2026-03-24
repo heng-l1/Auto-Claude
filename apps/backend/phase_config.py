@@ -36,11 +36,22 @@ THINKING_BUDGET_MAP: dict[str, int] = {
     "low": 1024,
     "medium": 4096,  # Moderate analysis
     "high": 16384,  # Deep thinking for QA review
+    "max": 32768,  # Very deep analysis
+    "ultrathink": 128000,  # Maximum thinking capacity (per-phase toggle)
 }
+
+# Budget constant for ultrathink mode (128K tokens)
+ULTRATHINK_BUDGET = 128000
 
 # Effort level mapping for adaptive thinking models (e.g., Opus 4.6)
 # These models support CLAUDE_CODE_EFFORT_LEVEL env var for effort-based routing
-EFFORT_LEVEL_MAP: dict[str, str] = {"low": "low", "medium": "medium", "high": "high"}
+EFFORT_LEVEL_MAP: dict[str, str] = {
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "max": "max",
+    "ultrathink": "max",
+}
 
 # Models that support adaptive thinking via effort level (env var)
 # These models get both max_thinking_tokens AND effort_level
@@ -95,12 +106,20 @@ class PhaseThinkingConfig(TypedDict, total=False):
     qa: str
 
 
+class PhaseUltrathinkConfig(TypedDict, total=False):
+    spec: bool
+    planning: bool
+    coding: bool
+    qa: bool
+
+
 class TaskMetadataConfig(TypedDict, total=False):
     """Structure of model-related fields in task_metadata.json"""
 
     isAutoProfile: bool
     phaseModels: PhaseModelConfig
     phaseThinking: PhaseThinkingConfig
+    phaseUltrathink: PhaseUltrathinkConfig
     model: str
     thinkingLevel: str
     fastMode: bool
@@ -164,11 +183,10 @@ def get_model_betas(model_short: str) -> list[str]:
     return MODEL_BETAS_MAP.get(model_short, [])
 
 
-VALID_THINKING_LEVELS = {"low", "medium", "high"}
+VALID_THINKING_LEVELS = {"low", "medium", "high", "max", "ultrathink"}
 
 # Mapping from legacy/removed thinking levels to valid ones
 LEGACY_THINKING_LEVEL_MAP: dict[str, str] = {
-    "ultrathink": "high",
     "none": "low",
 }
 
@@ -177,7 +195,7 @@ def sanitize_thinking_level(thinking_level: str) -> str:
     """
     Validate and sanitize a thinking level string.
 
-    Maps legacy values (e.g., 'ultrathink') to valid equivalents and falls
+    Maps legacy values (e.g., 'none') to valid equivalents and falls
     back to 'medium' for completely unknown values. Used by CLI argparse
     handlers to make the backend resilient to invalid values from the frontend.
 
@@ -185,7 +203,7 @@ def sanitize_thinking_level(thinking_level: str) -> str:
         thinking_level: Raw thinking level string from CLI or task_metadata.json
 
     Returns:
-        A valid thinking level string (low, medium, high)
+        A valid thinking level string (low, medium, high, max, ultrathink)
     """
     if thinking_level in VALID_THINKING_LEVELS:
         return thinking_level
@@ -200,7 +218,7 @@ def get_thinking_budget(thinking_level: str) -> int:
     Get the thinking budget for a thinking level.
 
     Args:
-        thinking_level: Thinking level (low, medium, high)
+        thinking_level: Thinking level (low, medium, high, max, ultrathink)
 
     Returns:
         Token budget for extended thinking
@@ -329,9 +347,10 @@ def get_phase_thinking(
 
     Priority:
     1. CLI argument (if provided)
-    2. Phase-specific config from task_metadata.json (if auto profile)
-    3. Single thinking level from task_metadata.json (if not auto profile)
-    4. Default phase configuration
+    2. Per-phase ultrathink flag from task_metadata.json (returns 'ultrathink')
+    3. Phase-specific config from task_metadata.json (if auto profile)
+    4. Single thinking level from task_metadata.json (if not auto profile)
+    5. Default phase configuration
 
     Args:
         spec_dir: Path to the spec directory
@@ -339,7 +358,7 @@ def get_phase_thinking(
         cli_thinking: Thinking level from CLI argument (optional)
 
     Returns:
-        Thinking level string
+        Thinking level string (low, medium, high, max, or ultrathink)
     """
     # CLI argument takes precedence
     if cli_thinking:
@@ -349,6 +368,15 @@ def get_phase_thinking(
     metadata = load_task_metadata(spec_dir)
 
     if metadata:
+        # Check for per-phase ultrathink override (128K tokens, max effort)
+        phase_ultrathink = metadata.get("phaseUltrathink", {})
+        if phase_ultrathink.get(phase):
+            logger.info(
+                "[Ultrathink] Phase '%s' has ultrathink enabled — using 128K tokens",
+                phase,
+            )
+            return "ultrathink"
+
         # Check for auto profile with phase-specific config
         if metadata.get("isAutoProfile") and metadata.get("phaseThinking"):
             phase_thinking = metadata["phaseThinking"]
