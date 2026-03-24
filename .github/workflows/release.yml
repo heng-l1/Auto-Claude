@@ -433,4 +433,4 @@ jobs:
 
           git add README.md
           git commit -m "docs: update README to v${{ steps.version.outputs.version }} [skip ci]"
-          git push origin main
+          git push origin main || echo "::warning::Could not push README update to main (branch protection). You may need to update README manually."
