@@ -29,7 +29,16 @@
     "renameTab": "Rename tab",
     "renameTabPlaceholder": "Enter tab name...",
     "renameTabAriaLabel": "Rename tab",
-    "renameTabShortcut": "F2"
+    "renameTabShortcut": "F2",
+    "setColor": "Set color",
+    "removeColor": "Remove color",
+    "colorRed": "Red",
+    "colorOrange": "Orange",
+    "colorYellow": "Yellow",
+    "colorGreen": "Green",
+    "colorBlue": "Blue",
+    "colorPurple": "Purple",
+    "colorPink": "Pink"
   },
   "accessibility": {
     "deleteFeatureAriaLabel": "Delete feature",

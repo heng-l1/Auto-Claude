@@ -19,6 +19,8 @@ interface ProjectTabBarProps {
   onSettingsClick?: () => void;
   /** Callback when user renames a tab. Pass undefined to clear custom name. */
   onRenameTab?: (projectId: string, name: string | undefined) => void;
+  /** Callback when user changes the tab color. Pass undefined to remove color. */
+  onTabColorChange?: (projectId: string, color: string | undefined) => void;
 }
 
 export function ProjectTabBar({
@@ -29,7 +31,8 @@ export function ProjectTabBar({
   onAddProject,
   className,
   onSettingsClick,
-  onRenameTab
+  onRenameTab,
+  onTabColorChange
 }: ProjectTabBarProps) {
   const { t } = useTranslation('common');
   const [renamingProjectId, setRenamingProjectId] = useState<string | null>(null);
@@ -121,6 +124,7 @@ export function ProjectTabBar({
               onRename={onRenameTab ? (name) => onRenameTab(project.id, name) : undefined}
               isRenaming={project.id === renamingProjectId}
               onRenameComplete={() => setRenamingProjectId(null)}
+              onColorChange={onTabColorChange ? (color) => onTabColorChange(project.id, color) : undefined}
             />
           );
         })}

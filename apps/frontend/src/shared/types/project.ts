@@ -30,6 +30,8 @@ export interface ProjectSettings {
   maxParallelTasks?: number;
   /** Display name shown on the project tab, falls back to project.name when unset */
   customTabName?: string;
+  /** Color tint for the project tab (e.g. "red", "blue"). Maps to TAB_COLORS id. */
+  tabColor?: string;
   /** Custom prefix for task branch names (default: 'auto-claude'). Branches are created as {branchPrefix}/{spec-name} */
   branchPrefix?: string;
 }

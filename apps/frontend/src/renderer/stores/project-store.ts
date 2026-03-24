@@ -419,6 +419,17 @@ export async function renameProjectTab(
 }
 
 /**
+ * Set or remove a project tab's color tint.
+ * Pass a color id (e.g. "red", "blue") to set, or undefined to clear.
+ */
+export async function setProjectTabColor(
+  projectId: string,
+  tabColor: string | undefined
+): Promise<boolean> {
+  return updateProjectSettings(projectId, { tabColor });
+}
+
+/**
  * Check auto-claude version status for a project
  */
 export async function checkProjectVersion(
