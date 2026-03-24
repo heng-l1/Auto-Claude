@@ -94,8 +94,25 @@ export const DEFAULT_PROJECT_SETTINGS = {
   // Include CLAUDE.md instructions in agent context (enabled by default)
   useClaudeMd: true,
   // Custom display name for project tab (undefined = use default project name)
-  customTabName: undefined as string | undefined
+  customTabName: undefined as string | undefined,
+  // Color tint for the project tab (undefined = no color tint)
+  tabColor: undefined as string | undefined
 };
+
+// ============================================
+// Tab Color Constants
+// ============================================
+
+/** Available color tints for project tabs. All class strings are literal for Tailwind JIT safety. */
+export const TAB_COLORS = [
+  { id: 'red', bg: 'bg-red-500/10', swatch: 'bg-red-500', labelKey: 'projectTab.colorRed' },
+  { id: 'orange', bg: 'bg-orange-500/10', swatch: 'bg-orange-500', labelKey: 'projectTab.colorOrange' },
+  { id: 'yellow', bg: 'bg-yellow-500/10', swatch: 'bg-yellow-500', labelKey: 'projectTab.colorYellow' },
+  { id: 'green', bg: 'bg-green-500/10', swatch: 'bg-green-500', labelKey: 'projectTab.colorGreen' },
+  { id: 'blue', bg: 'bg-blue-500/10', swatch: 'bg-blue-500', labelKey: 'projectTab.colorBlue' },
+  { id: 'purple', bg: 'bg-purple-500/10', swatch: 'bg-purple-500', labelKey: 'projectTab.colorPurple' },
+  { id: 'pink', bg: 'bg-pink-500/10', swatch: 'bg-pink-500', labelKey: 'projectTab.colorPink' },
+] as const;
 
 // ============================================
 // Auto Build File Paths
