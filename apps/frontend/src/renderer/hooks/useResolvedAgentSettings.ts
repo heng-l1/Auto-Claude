@@ -24,6 +24,7 @@ import {
 } from '../../shared/constants/models';
 import type {
   AppSettings,
+  AgentSettingsSource,
   PhaseModelConfig,
   PhaseThinkingConfig,
   FeatureModelConfig,
@@ -47,14 +48,8 @@ export interface ResolvedAgentSettings {
   featureThinking: FeatureThinkingConfig;
 }
 
-/**
- * Agent settings source configuration
- * Determines where an agent's model and thinking settings come from
- */
-export type AgentSettingsSource =
-  | { type: 'phase'; phase: 'spec' | 'planning' | 'coding' | 'qa' }
-  | { type: 'feature'; feature: 'insights' | 'ideation' | 'roadmap' | 'githubIssues' | 'githubPrs' | 'utility' }
-  | { type: 'fixed'; model: ModelTypeShort; thinking: ThinkingLevel };
+// Re-export AgentSettingsSource from shared types for backward compatibility
+export type { AgentSettingsSource };
 
 /**
  * Resolved model and thinking for an agent

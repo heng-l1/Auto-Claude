@@ -4,7 +4,7 @@ export {
   useResolvedAgentSettings,
   resolveAgentSettings,
   type ResolvedAgentSettings,
-  type AgentSettingsSource,
 } from './useResolvedAgentSettings';
+export type { AgentSettingsSource } from '../../shared/types/settings';
 export { useVirtualizedTree } from './useVirtualizedTree';
 export { useTerminalProfileChange } from './useTerminalProfileChange';
