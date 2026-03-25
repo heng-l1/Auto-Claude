@@ -124,16 +124,8 @@ export function useTerminalEvents({
     return cleanup;
   }, [terminalId]);
 
-  // Handle Claude busy state changes (for visual indicator)
-  useEffect(() => {
-    const cleanup = window.electronAPI.onTerminalClaudeBusy((id, isBusy) => {
-      if (id === terminalId) {
-        useTerminalStore.getState().setClaudeBusy(terminalId, isBusy);
-      }
-    });
-
-    return cleanup;
-  }, [terminalId]);
+  // NOTE: onTerminalClaudeBusy listener has been migrated to useGlobalTerminalListeners.ts
+  // to ensure busy state is tracked even when terminal components are unmounted
 
   // Handle Claude exit (user closed Claude within terminal, returned to shell)
   useEffect(() => {
