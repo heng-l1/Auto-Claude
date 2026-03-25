@@ -1397,16 +1397,21 @@ export function invokeClaude(
   profileId: string | undefined,
   getWindow: WindowGetter,
   onSessionCapture: (terminalId: string, projectPath: string, startTime: number) => void,
-  dangerouslySkipPermissions?: boolean
+  dangerouslySkipPermissions?: boolean,
+  effortMax?: boolean
 ): void {
   debugLog('[ClaudeIntegration:invokeClaude] ========== INVOKE CLAUDE START ==========');
   debugLog('[ClaudeIntegration:invokeClaude] Terminal ID:', terminal.id);
   debugLog('[ClaudeIntegration:invokeClaude] Requested profile ID:', profileId);
   debugLog('[ClaudeIntegration:invokeClaude] CWD:', cwd);
   debugLog('[ClaudeIntegration:invokeClaude] Dangerously skip permissions:', dangerouslySkipPermissions);
+  debugLog('[ClaudeIntegration:invokeClaude] Effort max:', effortMax);
 
   // Compute extra flags for YOLO mode
   const extraFlags = dangerouslySkipPermissions ? YOLO_MODE_FLAG : undefined;
+
+  // Compute env vars for effort max mode
+  const envVars = effortMax ? { [EFFORT_MAX_ENV_VAR]: EFFORT_MAX_VALUE } : undefined;
 
   // Track terminal state for cleanup on error
   const wasClaudeMode = terminal.isClaudeMode;
@@ -1416,6 +1421,8 @@ export function invokeClaude(
     terminal.isClaudeMode = true;
     // Store YOLO mode setting so it persists across profile switches
     terminal.dangerouslySkipPermissions = dangerouslySkipPermissions;
+    // Store effort max setting so it persists across profile switches
+    terminal.effortMax = effortMax;
     SessionHandler.releaseSessionId(terminal.id);
     terminal.claudeSessionId = undefined;
 
@@ -1459,6 +1466,7 @@ export function invokeClaude(
       pathPrefix,
       escapedClaudeCmd,
       extraFlags,
+      envVars,
       terminal,
       profileManager,
       projectPath,
@@ -1477,7 +1485,7 @@ export function invokeClaude(
       debugLog('[ClaudeIntegration:invokeClaude] Using terminal environment for non-default profile:', activeProfile.name);
     }
 
-    const command = buildClaudeShellCommand(cwdCommand, pathPrefix, escapedClaudeCmd, { method: 'default' }, extraFlags);
+    const command = buildClaudeShellCommand(cwdCommand, pathPrefix, escapedClaudeCmd, { method: 'default' }, extraFlags, envVars);
     debugLog('[ClaudeIntegration:invokeClaude] Executing command (default method):', command);
     PtyManager.writeToPty(terminal, command);
 
@@ -1549,7 +1557,12 @@ export function resumeClaude(
     // Preserve YOLO mode flag from terminal's stored state
     const extraFlags = terminal.dangerouslySkipPermissions ? YOLO_MODE_FLAG : '';
 
-    const command = `${pathPrefix}${escapedClaudeCmd} --continue${extraFlags}`;
+    // Preserve effort max env var from terminal's stored state
+    const envVarsPrefix = terminal.effortMax
+      ? buildEnvPrefix(EFFORT_MAX_ENV_VAR, EFFORT_MAX_VALUE)
+      : '';
+
+    const command = `${envVarsPrefix}${pathPrefix}${escapedClaudeCmd} --continue${extraFlags}`;
 
     // Use PtyManager.writeToPty for safer write with error handling
     PtyManager.writeToPty(terminal, `${command}\r`);
@@ -1591,7 +1604,8 @@ export async function invokeClaudeAsync(
   profileId: string | undefined,
   getWindow: WindowGetter,
   onSessionCapture: (terminalId: string, projectPath: string, startTime: number) => void,
-  dangerouslySkipPermissions?: boolean
+  dangerouslySkipPermissions?: boolean,
+  effortMax?: boolean
 ): Promise<void> {
   // Track terminal state for cleanup on error
   const wasClaudeMode = terminal.isClaudeMode;
@@ -1605,13 +1619,19 @@ export async function invokeClaudeAsync(
     debugLog('[ClaudeIntegration:invokeClaudeAsync] Requested profile ID:', profileId);
     debugLog('[ClaudeIntegration:invokeClaudeAsync] CWD:', cwd);
     debugLog('[ClaudeIntegration:invokeClaudeAsync] Dangerously skip permissions:', dangerouslySkipPermissions);
+    debugLog('[ClaudeIntegration:invokeClaudeAsync] Effort max:', effortMax);
 
     // Compute extra flags for YOLO mode
     const extraFlags = dangerouslySkipPermissions ? YOLO_MODE_FLAG : undefined;
 
+    // Compute env vars for effort max mode
+    const envVars = effortMax ? { [EFFORT_MAX_ENV_VAR]: EFFORT_MAX_VALUE } : undefined;
+
     terminal.isClaudeMode = true;
     // Store YOLO mode setting so it persists across profile switches
     terminal.dangerouslySkipPermissions = dangerouslySkipPermissions;
+    // Store effort max setting so it persists across profile switches
+    terminal.effortMax = effortMax;
     SessionHandler.releaseSessionId(terminal.id);
     terminal.claudeSessionId = undefined;
 
@@ -1667,6 +1687,7 @@ export async function invokeClaudeAsync(
       pathPrefix,
       escapedClaudeCmd,
       extraFlags,
+      envVars,
       terminal,
       profileManager,
       projectPath,
@@ -1685,7 +1706,7 @@ export async function invokeClaudeAsync(
       debugLog('[ClaudeIntegration:invokeClaudeAsync] Using terminal environment for non-default profile:', activeProfile.name);
     }
 
-    const command = buildClaudeShellCommand(cwdCommand, pathPrefix, escapedClaudeCmd, { method: 'default' }, extraFlags);
+    const command = buildClaudeShellCommand(cwdCommand, pathPrefix, escapedClaudeCmd, { method: 'default' }, extraFlags, envVars);
     debugLog('[ClaudeIntegration:invokeClaudeAsync] Executing command (default method):', command);
     PtyManager.writeToPty(terminal, command);
 
@@ -1771,7 +1792,12 @@ export async function resumeClaudeAsync(
     // Preserve YOLO mode flag from terminal's stored state
     const extraFlags = terminal.dangerouslySkipPermissions ? YOLO_MODE_FLAG : '';
 
-    const command = `${pathPrefix}${escapedClaudeCmd} --continue${extraFlags}`;
+    // Preserve effort max env var from terminal's stored state
+    const envVarsPrefix = terminal.effortMax
+      ? buildEnvPrefix(EFFORT_MAX_ENV_VAR, EFFORT_MAX_VALUE)
+      : '';
+
+    const command = `${envVarsPrefix}${pathPrefix}${escapedClaudeCmd} --continue${extraFlags}`;
 
     // Use PtyManager.writeToPty for safer write with error handling
     PtyManager.writeToPty(terminal, `${command}\r`);
@@ -1900,7 +1926,7 @@ export async function switchClaudeProfile(
   terminal: TerminalProcess,
   profileId: string,
   _getWindow: WindowGetter,
-  invokeClaudeCallback: (terminalId: string, cwd: string | undefined, profileId: string, dangerouslySkipPermissions?: boolean) => Promise<void>,
+  invokeClaudeCallback: (terminalId: string, cwd: string | undefined, profileId: string, dangerouslySkipPermissions?: boolean, effortMax?: boolean) => Promise<void>,
   clearRateLimitCallback: (terminalId: string) => void
 ): Promise<{ success: boolean; error?: string }> {
   // Always-on tracing
@@ -1983,15 +2009,16 @@ export async function switchClaudeProfile(
   clearRateLimitCallback(terminal.id);
 
   const projectPath = terminal.projectPath || terminal.cwd;
-  console.warn('[ClaudeIntegration:switchClaudeProfile] Invoking Claude with profile:', profileId, '| cwd:', projectPath, '| YOLO:', terminal.dangerouslySkipPermissions);
+  console.warn('[ClaudeIntegration:switchClaudeProfile] Invoking Claude with profile:', profileId, '| cwd:', projectPath, '| YOLO:', terminal.dangerouslySkipPermissions, '| effortMax:', terminal.effortMax);
   debugLog('[ClaudeIntegration:switchClaudeProfile] Invoking Claude with new profile:', {
     terminalId: terminal.id,
     projectPath,
     profileId,
-    dangerouslySkipPermissions: terminal.dangerouslySkipPermissions
+    dangerouslySkipPermissions: terminal.dangerouslySkipPermissions,
+    effortMax: terminal.effortMax
   });
-  // Pass the stored dangerouslySkipPermissions value to preserve YOLO mode across profile switches
-  await invokeClaudeCallback(terminal.id, projectPath, profileId, terminal.dangerouslySkipPermissions);
+  // Pass the stored dangerouslySkipPermissions and effortMax values to preserve flags across profile switches
+  await invokeClaudeCallback(terminal.id, projectPath, profileId, terminal.dangerouslySkipPermissions, terminal.effortMax);
 
   debugLog('[ClaudeIntegration:switchClaudeProfile] Setting active profile in profile manager');
   profileManager.setActiveProfile(profileId);
