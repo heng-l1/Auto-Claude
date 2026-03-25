@@ -192,6 +192,45 @@ function buildPathPrefix(pathEnv: string): string {
 }
 
 /**
+ * Build environment variable prefix for Claude CLI invocation.
+ *
+ * Generates a platform-aware prefix that sets an environment variable
+ * before the command execution. Follows the same pattern as buildPathPrefix().
+ *
+ * On Windows, uses `set "VAR=value" && ` syntax with cmd.exe escaping.
+ * On Unix/macOS, uses `VAR='value' ` prefix syntax with bash escaping.
+ *
+ * @param envName - Environment variable name (e.g., 'CLAUDE_CODE_EFFORT_LEVEL')
+ * @param envValue - Environment variable value (e.g., 'max')
+ * @returns Empty string if envName is empty, otherwise platform-specific env var prefix
+ *
+ * @example
+ * // Unix/macOS
+ * buildEnvPrefix('CLAUDE_CODE_EFFORT_LEVEL', 'max');
+ * // Returns: "CLAUDE_CODE_EFFORT_LEVEL='max' "
+ *
+ * // Windows
+ * buildEnvPrefix('CLAUDE_CODE_EFFORT_LEVEL', 'max');
+ * // Returns: 'set "CLAUDE_CODE_EFFORT_LEVEL=max" && '
+ */
+function buildEnvPrefix(envName: string, envValue: string): string {
+  if (!envName) {
+    return '';
+  }
+
+  if (isWindows()) {
+    // Windows: Use set "VAR=value" && syntax with double-quote escaping
+    // For values inside double quotes, use escapeForWindowsDoubleQuote() because
+    // caret is literal inside double quotes in cmd.exe (only " needs escaping).
+    const escapedValue = escapeForWindowsDoubleQuote(envValue);
+    return `set "${envName}=${escapedValue}" && `;
+  }
+
+  // Unix/macOS: Use VAR='value' prefix syntax with bash escaping
+  return `${envName}=${escapeShellArg(envValue)} `;
+}
+
+/**
  * Escape a command for safe use in shell commands.
  *
  * On Windows, wraps in double quotes for cmd.exe. Since the value is inside
@@ -218,6 +257,19 @@ function escapeShellCommand(cmd: string): string {
  * Extracted as constant to ensure consistency across invokeClaude and invokeClaudeAsync
  */
 const YOLO_MODE_FLAG = ' --dangerously-skip-permissions';
+
+/**
+ * Environment variable name for setting Claude Code effort level.
+ * When set to EFFORT_MAX_VALUE, enables deepest reasoning in Claude CLI.
+ * Injected as a platform-aware shell prefix via buildEnvPrefix().
+ */
+const EFFORT_MAX_ENV_VAR = 'CLAUDE_CODE_EFFORT_LEVEL';
+
+/**
+ * Value for maximum effort level.
+ * Combined with EFFORT_MAX_ENV_VAR to form the env var prefix.
+ */
+const EFFORT_MAX_VALUE = 'max';
 
 // ============================================================================
 // TOKEN USAGE PARSING FOR API KEY PROFILES
