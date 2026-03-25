@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Code, Terminal, RefreshCw, Loader2, Check, FolderOpen, AlertTriangle } from 'lucide-react';
+import { Code, Terminal, RefreshCw, Loader2, Check, FolderOpen, AlertTriangle, Zap } from 'lucide-react';
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
@@ -401,7 +401,8 @@ export function DevToolsSettings({ settings, onSettingsChange }: DevToolsSetting
             </div>
             <Switch
               id="yolo-mode"
-              checked={settings.dangerouslySkipPermissions ?? false}
+              checked={settings.yoloMaxMode || settings.dangerouslySkipPermissions || false}
+              disabled={settings.yoloMaxMode ?? false}
               onCheckedChange={(checked) => {
                 onSettingsChange({
                   ...settings,
@@ -413,12 +414,64 @@ export function DevToolsSettings({ settings, onSettingsChange }: DevToolsSetting
           <p className="text-xs text-amber-400/80">
             {t('devtools.yoloMode.description', 'Start Claude with --dangerously-skip-permissions flag, bypassing all safety prompts. Use with extreme caution.')}
           </p>
-          {settings.dangerouslySkipPermissions && (
+          {(settings.yoloMaxMode || settings.dangerouslySkipPermissions) && (
             <p className="text-xs text-amber-500 font-medium flex items-center gap-1">
               <AlertTriangle className="h-3 w-3" />
               {t('devtools.yoloMode.warning', 'This mode bypasses Claude\'s permission system. Only enable if you fully trust the code being executed.')}
             </p>
           )}
+        </div>
+
+        {/* YOLO Max Toggle */}
+        <div className={`yolo-max-rainbow ${settings.yoloMaxMode ? 'active' : ''}`}>
+          <div className="yolo-max-rainbow-inner p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Zap className={`h-4 w-4 ${settings.yoloMaxMode ? 'text-fuchsia-500' : 'text-muted-foreground'}`} />
+                <Label
+                  htmlFor="yolo-max-mode"
+                  className={settings.yoloMaxMode
+                    ? 'bg-gradient-to-r from-red-500 via-fuchsia-500 to-violet-500 bg-clip-text text-transparent font-bold'
+                    : ''
+                  }
+                >
+                  {t('devtools.yoloMaxMode.label', 'YOLO Max')}
+                </Label>
+                {settings.yoloMaxMode && (
+                  <span className="inline-flex items-center rounded-full bg-gradient-to-r from-fuchsia-600 to-violet-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                    {t('devtools.yoloMaxMode.badge', 'MAX')}
+                  </span>
+                )}
+              </div>
+              <Switch
+                id="yolo-max-mode"
+                checked={settings.yoloMaxMode ?? false}
+                onCheckedChange={(checked) => {
+                  if (checked) {
+                    onSettingsChange({
+                      ...settings,
+                      yoloMaxMode: true,
+                      dangerouslySkipPermissions: true
+                    });
+                  } else {
+                    onSettingsChange({
+                      ...settings,
+                      yoloMaxMode: false
+                    });
+                  }
+                }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t('devtools.yoloMaxMode.description', 'Maximum power: combines YOLO mode (skip all permissions) with max effort level for Claude.')}
+            </p>
+            {settings.yoloMaxMode && (
+              <p className="text-xs text-fuchsia-500 font-medium flex items-center gap-1">
+                <Zap className="h-3 w-3" />
+                {t('devtools.yoloMaxMode.warning', 'YOLO Max enables both permission bypass AND maximum compute effort.')}
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Detection Summary */}

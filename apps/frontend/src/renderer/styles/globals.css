@@ -106,6 +106,55 @@
   animation: indeterminate 1.5s ease-in-out infinite;
 }
 
+/* YOLO Max rainbow animations */
+@keyframes rainbow-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes rainbow-pulse {
+  0%, 100% { opacity: 0.8; filter: blur(4px); }
+  50% { opacity: 1; filter: blur(8px); }
+}
+
+.yolo-max-rainbow {
+  position: relative;
+  padding: 2px;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.yolo-max-rainbow::before {
+  content: '';
+  position: absolute;
+  inset: -50%;
+  background: conic-gradient(
+    from 0deg,
+    #ff0000, #ff8800, #ffff00, #00ff00, #0088ff, #8800ff, #ff0088, #ff0000
+  );
+  animation: rainbow-rotate 3s linear infinite;
+  opacity: 0.3;
+}
+
+.yolo-max-rainbow.active::before {
+  opacity: 0.8;
+  animation: rainbow-pulse 2s ease-in-out infinite;
+}
+
+.yolo-max-rainbow.active {
+  box-shadow:
+    0 0 15px rgba(255, 0, 136, 0.3),
+    0 0 30px rgba(136, 0, 255, 0.2),
+    0 0 45px rgba(0, 136, 255, 0.1);
+}
+
+.yolo-max-rainbow-inner {
+  position: relative;
+  background: var(--card);
+  border-radius: calc(0.5rem - 2px);
+  z-index: 1;
+}
+
 /* CSS variables for light mode (secondary consideration per design system) */
 :root {
   /* Light Mode - Warm off-white tones */

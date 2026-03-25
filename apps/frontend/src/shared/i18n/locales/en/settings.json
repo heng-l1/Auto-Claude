@@ -290,6 +290,12 @@
       "label": "YOLO Mode",
       "description": "Start Claude with --dangerously-skip-permissions flag, bypassing all safety prompts. Use with extreme caution.",
       "warning": "This mode bypasses Claude's permission system. Only enable if you fully trust the code being executed."
+    },
+    "yoloMaxMode": {
+      "label": "YOLO Max",
+      "description": "Maximum power: combines YOLO mode (skip all permissions) with max effort level for Claude.",
+      "warning": "YOLO Max enables both permission bypass AND maximum compute effort.",
+      "badge": "MAX"
     }
   },
   "updates": {
