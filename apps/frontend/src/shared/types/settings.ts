@@ -2,7 +2,7 @@
  * Application settings types
  */
 
-import type { NotificationSettings, GraphitiEmbeddingProvider } from './project';
+import type { NotificationSettings, GraphitiEmbeddingProvider, CustomMcpServer } from './project';
 import type { ChangelogFormat, ChangelogAudience, ChangelogEmojiLevel } from './changelog';
 import type { SupportedLanguage } from '../constants/i18n';
 
@@ -225,6 +225,14 @@ export interface AgentProfile {
   isAutoProfile?: boolean;
 }
 
+// Global MCP server toggle defaults (no graphitiEnabled - it's provider-dependent)
+export interface GlobalMcpServers {
+  context7Enabled?: boolean;
+  linearMcpEnabled?: boolean;
+  electronEnabled?: boolean;
+  puppeteerEnabled?: boolean;
+}
+
 export interface AppSettings {
   theme: 'light' | 'dark' | 'system';
   colorTheme?: ColorTheme;
@@ -308,6 +316,10 @@ export interface AppSettings {
   sidebarCollapsed?: boolean;
   // GPU acceleration for terminal rendering (WebGL)
   gpuAcceleration?: GpuAcceleration;
+  // Global MCP server defaults (applied to all projects unless overridden)
+  globalMcpServers?: GlobalMcpServers;
+  // Global custom MCP servers (applied to all projects)
+  globalCustomMcpServers?: CustomMcpServer[];
 }
 
 // GPU acceleration mode for terminal WebGL rendering
