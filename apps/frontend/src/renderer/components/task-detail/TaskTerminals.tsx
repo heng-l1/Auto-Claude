@@ -225,7 +225,9 @@ export function TaskTerminals({ task, projectPath, isActive, autoLaunchClaude, c
       if (terminalId && (autoLaunchClaude || (claudeInvocationTrigger ?? 0) > 0) && !autoLaunchDoneRef.current) {
         autoLaunchDoneRef.current = true;
         setClaudeMode(terminalId, true);
-        window.electronAPI.invokeClaudeInTerminal(terminalId, cwd);
+        useTerminalStore.getState().updateTerminal(terminalId, {
+          pendingClaudeInvocation: { contextMessage: '' }
+        });
       }
     };
 
