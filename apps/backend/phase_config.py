@@ -523,6 +523,38 @@ def get_fast_mode(spec_dir: Path) -> bool:
     return False
 
 
+def is_coding_critic_enabled(spec_dir: Path) -> bool:
+    """
+    Check if the Coding Critic review step should run for this task.
+
+    The Coding Critic is enabled only for complex tasks, as determined by
+    the AI complexity assessment. It provides an additional review pass
+    after each subtask implementation.
+
+    Args:
+        spec_dir: Path to the spec directory
+
+    Returns:
+        True if Coding Critic is enabled (complex tasks), False otherwise
+    """
+    from analysis.risk_classifier import RiskClassifier
+
+    classifier = RiskClassifier()
+    assessment = classifier.load_assessment(spec_dir)
+    if assessment and assessment.complexity == "complex":
+        logger.info(
+            "[Coding Critic] ENABLED — complexity is '%s'", assessment.complexity
+        )
+        return True
+    if assessment:
+        logger.info(
+            "[Coding Critic] disabled — complexity is '%s'", assessment.complexity
+        )
+    else:
+        logger.info("[Coding Critic] disabled — no complexity_assessment.json found")
+    return False
+
+
 def get_spec_phase_thinking_budget(phase_name: str) -> int:
     """
     Get the thinking budget for a specific spec runner phase.
