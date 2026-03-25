@@ -23,6 +23,7 @@ from typing import Any
 
 from core.fast_mode import ensure_fast_mode_in_user_settings
 from core.platform import (
+    is_macos,
     is_windows,
     validate_cli_path,
 )
@@ -473,6 +474,82 @@ def _load_claude_code_mcp_servers() -> dict[str, dict]:
     except (json.JSONDecodeError, OSError) as e:
         logger.debug("Failed to read Claude Code MCP config: %s", e)
         return {}
+
+
+def _get_electron_settings_path() -> Path:
+    """
+    Get the path to the Electron app's settings.json file.
+
+    Returns the platform-specific path to the Auto-Claude settings file
+    stored in the Electron app's userData directory.
+
+    Returns:
+        Path to the settings.json file
+    """
+    if is_macos():
+        return Path.home() / "Library" / "Application Support" / "Auto-Claude" / "settings.json"
+    elif is_windows():
+        return Path(os.environ.get("APPDATA", "")) / "Auto-Claude" / "settings.json"
+    else:  # Linux
+        return Path.home() / ".config" / "Auto-Claude" / "settings.json"
+
+
+def _load_global_mcp_config() -> dict:
+    """
+    Load global MCP configuration from the Electron app's settings.json.
+
+    Reads 'globalMcpServers' (built-in toggle states) and 'globalCustomMcpServers'
+    (user-defined custom MCP servers) from the global settings file.
+
+    Returns:
+        Dict with:
+        - 'toggles': dict of toggle key -> bool (defaults: context7=True, linear=True,
+          electron=False, puppeteer=False)
+        - 'custom_servers': list of validated custom MCP server configurations
+    """
+    default_toggles = {
+        "context7Enabled": True,
+        "linearMcpEnabled": True,
+        "electronEnabled": False,
+        "puppeteerEnabled": False,
+    }
+
+    settings_path = _get_electron_settings_path()
+    if not settings_path.exists():
+        logger.debug("Global settings file not found: %s", settings_path)
+        return {"toggles": default_toggles, "custom_servers": []}
+
+    try:
+        with open(settings_path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        logger.debug("Failed to read global settings file: %s", e)
+        return {"toggles": default_toggles, "custom_servers": []}
+
+    if not isinstance(data, dict):
+        return {"toggles": default_toggles, "custom_servers": []}
+
+    # Extract built-in server toggles
+    toggles = dict(default_toggles)
+    global_mcp_servers = data.get("globalMcpServers")
+    if isinstance(global_mcp_servers, dict):
+        for key in default_toggles:
+            if key in global_mcp_servers and isinstance(global_mcp_servers[key], bool):
+                toggles[key] = global_mcp_servers[key]
+
+    # Extract and validate custom servers
+    custom_servers: list[dict] = []
+    global_custom_servers = data.get("globalCustomMcpServers")
+    if isinstance(global_custom_servers, list):
+        for i, server in enumerate(global_custom_servers):
+            if _validate_custom_mcp_server(server):
+                custom_servers.append(server)
+            else:
+                logger.warning(
+                    "Skipping invalid global custom MCP server at index %d", i
+                )
+
+    return {"toggles": toggles, "custom_servers": custom_servers}
 
 
 def load_project_mcp_config(project_dir: Path) -> dict:
