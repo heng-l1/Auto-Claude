@@ -824,6 +824,24 @@ export function AgentTools() {
     }
   }, [selectedProjectId, envConfig]);
 
+  // Reset MCP override to global default
+  const resetMcpOverride = useCallback(async (key: string) => {
+    if (!selectedProjectId) return;
+
+    try {
+      await window.electronAPI.updateProjectEnv(selectedProjectId, {
+        clearMcpServerOverrides: [key],
+      });
+      // Re-fetch env config to get updated state
+      const result = await window.electronAPI.getProjectEnv(selectedProjectId);
+      if (result.success && result.data) {
+        setEnvConfig(result.data);
+      }
+    } catch (error) {
+      console.error('Failed to reset MCP override:', error);
+    }
+  }, [selectedProjectId]);
+
   // Handle saving a custom MCP server
   const handleSaveCustomServer = useCallback(async (server: CustomMcpServer) => {
     if (!selectedProjectId || !envConfig) return;
@@ -1109,10 +1127,29 @@ export function AgentTools() {
                       <p className="text-xs text-muted-foreground">{t('settings:mcp.servers.context7.description')}</p>
                     </div>
                   </div>
-                  <Switch
-                    checked={mcpServers.context7Enabled !== false}
-                    onCheckedChange={(checked) => updateMcpServer('context7Enabled', checked)}
-                  />
+                  <div className="flex items-center gap-2">
+                    {envConfig.mcpServersOverridden?.context7Enabled ? (
+                      <span className="inline-flex items-center text-xs px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                        {t('settings:mcp.projectOverride')}
+                        <button
+                          type="button"
+                          onClick={() => resetMcpOverride('context7Enabled')}
+                          className="ml-1 hover:opacity-70"
+                          title={t('settings:mcp.resetToGlobal')}
+                        >
+                          <RotateCcw className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                        {t('settings:mcp.globalDefault')}
+                      </span>
+                    )}
+                    <Switch
+                      checked={mcpServers.context7Enabled !== false}
+                      onCheckedChange={(checked) => updateMcpServer('context7Enabled', checked)}
+                    />
+                  </div>
                 </div>
 
                 {/* Graphiti Memory */}
@@ -1148,11 +1185,30 @@ export function AgentTools() {
                       </p>
                     </div>
                   </div>
-                  <Switch
-                    checked={mcpServers.linearMcpEnabled !== false && envConfig.linearEnabled}
-                    onCheckedChange={(checked) => updateMcpServer('linearMcpEnabled', checked)}
-                    disabled={!envConfig.linearEnabled}
-                  />
+                  <div className="flex items-center gap-2">
+                    {envConfig.mcpServersOverridden?.linearMcpEnabled ? (
+                      <span className="inline-flex items-center text-xs px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                        {t('settings:mcp.projectOverride')}
+                        <button
+                          type="button"
+                          onClick={() => resetMcpOverride('linearMcpEnabled')}
+                          className="ml-1 hover:opacity-70"
+                          title={t('settings:mcp.resetToGlobal')}
+                        >
+                          <RotateCcw className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                        {t('settings:mcp.globalDefault')}
+                      </span>
+                    )}
+                    <Switch
+                      checked={mcpServers.linearMcpEnabled !== false && envConfig.linearEnabled}
+                      onCheckedChange={(checked) => updateMcpServer('linearMcpEnabled', checked)}
+                      disabled={!envConfig.linearEnabled}
+                    />
+                  </div>
                 </div>
 
                 {/* Browser Automation Section */}
@@ -1173,10 +1229,29 @@ export function AgentTools() {
                         <p className="text-xs text-muted-foreground">{t('settings:mcp.servers.electron.description')}</p>
                       </div>
                     </div>
-                    <Switch
-                      checked={mcpServers.electronEnabled === true}
-                      onCheckedChange={(checked) => updateMcpServer('electronEnabled', checked)}
-                    />
+                    <div className="flex items-center gap-2">
+                      {envConfig.mcpServersOverridden?.electronEnabled ? (
+                        <span className="inline-flex items-center text-xs px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                          {t('settings:mcp.projectOverride')}
+                          <button
+                            type="button"
+                            onClick={() => resetMcpOverride('electronEnabled')}
+                            className="ml-1 hover:opacity-70"
+                            title={t('settings:mcp.resetToGlobal')}
+                          >
+                            <RotateCcw className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                          {t('settings:mcp.globalDefault')}
+                        </span>
+                      )}
+                      <Switch
+                        checked={mcpServers.electronEnabled === true}
+                        onCheckedChange={(checked) => updateMcpServer('electronEnabled', checked)}
+                      />
+                    </div>
                   </div>
 
                   {/* Puppeteer */}
@@ -1188,10 +1263,29 @@ export function AgentTools() {
                         <p className="text-xs text-muted-foreground">{t('settings:mcp.servers.puppeteer.description')}</p>
                       </div>
                     </div>
-                    <Switch
-                      checked={mcpServers.puppeteerEnabled === true}
-                      onCheckedChange={(checked) => updateMcpServer('puppeteerEnabled', checked)}
-                    />
+                    <div className="flex items-center gap-2">
+                      {envConfig.mcpServersOverridden?.puppeteerEnabled ? (
+                        <span className="inline-flex items-center text-xs px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                          {t('settings:mcp.projectOverride')}
+                          <button
+                            type="button"
+                            onClick={() => resetMcpOverride('puppeteerEnabled')}
+                            className="ml-1 hover:opacity-70"
+                            title={t('settings:mcp.resetToGlobal')}
+                          >
+                            <RotateCcw className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                          {t('settings:mcp.globalDefault')}
+                        </span>
+                      )}
+                      <Switch
+                        checked={mcpServers.puppeteerEnabled === true}
+                        onCheckedChange={(checked) => updateMcpServer('puppeteerEnabled', checked)}
+                      />
+                    </div>
                   </div>
                 </div>
 
