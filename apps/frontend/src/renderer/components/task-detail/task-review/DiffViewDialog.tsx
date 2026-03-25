@@ -12,6 +12,7 @@ import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
 import { DiffFileTree } from './DiffFileTree';
 import { DiffCodeViewer } from './DiffCodeViewer';
+import { ResizablePanels } from '../../ui/resizable-panels';
 import type { WorktreeDiff, ReviewComment } from '../../../../shared/types';
 import '../../../styles/diff-viewer.css';
 
@@ -231,45 +232,51 @@ export function DiffViewDialog({
         </DialogHeader>
 
         {/* Two-panel layout */}
-        <div className="diff-viewer-container flex-1 min-h-0">
-          {/* Left panel: file tree */}
-          <DiffFileTree
-            files={files}
-            selectedIndex={selectedFileIndex}
-            comments={comments}
-            onSelectFile={setSelectedFileIndex}
-          />
-
-          {/* Right panel: code diff viewer */}
-          <div className="diff-viewer-main">
-            {/* File header bar */}
-            {selectedFile && (
-              <div className="diff-viewer-header">
-                <div className="diff-viewer-header-info">
-                  <span className="diff-viewer-header-filename">
-                    {selectedFile.path}
-                  </span>
-                </div>
-                <div className="diff-viewer-header-actions">
-                  <span className="text-xs text-success">
-                    +{selectedFile.additions}
-                  </span>
-                  <span className="text-xs text-destructive">
-                    -{selectedFile.deletions}
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* Diff code viewer */}
-            <DiffCodeViewer
-              file={selectedFile}
+        <ResizablePanels
+          defaultLeftWidth={20}
+          minLeftWidth={10}
+          maxLeftWidth={40}
+          storageKey="diff-viewer-sidebar-width"
+          className="flex-1 min-h-0"
+          leftPanel={
+            <DiffFileTree
+              files={files}
+              selectedIndex={selectedFileIndex}
               comments={comments}
-              onAddComment={handleAddComment}
-              onDeleteComment={handleDeleteComment}
+              onSelectFile={setSelectedFileIndex}
             />
-          </div>
-        </div>
+          }
+          rightPanel={
+            <div className="diff-viewer-main">
+              {/* File header bar */}
+              {selectedFile && (
+                <div className="diff-viewer-header">
+                  <div className="diff-viewer-header-info">
+                    <span className="diff-viewer-header-filename">
+                      {selectedFile.path}
+                    </span>
+                  </div>
+                  <div className="diff-viewer-header-actions">
+                    <span className="text-xs text-success">
+                      +{selectedFile.additions}
+                    </span>
+                    <span className="text-xs text-destructive">
+                      -{selectedFile.deletions}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Diff code viewer */}
+              <DiffCodeViewer
+                file={selectedFile}
+                comments={comments}
+                onAddComment={handleAddComment}
+                onDeleteComment={handleDeleteComment}
+              />
+            </div>
+          }
+        />
       </DialogContent>
     </Dialog>
   );
