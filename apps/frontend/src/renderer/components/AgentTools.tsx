@@ -1019,6 +1019,25 @@ export function AgentTools() {
     true, // auto-claude always enabled
   ].filter(Boolean).length;
 
+  // Separate custom MCP servers into project-level and global groups
+  const { projectCustomServers, globalCustomServers, overridesGlobalIds } = useMemo(() => {
+    const allServers = envConfig?.customMcpServers || [];
+    const globalIds = new Set(envConfig?.globalCustomMcpServerIds || []);
+    const allGlobalSettingsIds = new Set(
+      (settings?.globalCustomMcpServers || []).map(s => s.id)
+    );
+
+    return {
+      projectCustomServers: allServers.filter(s => !globalIds.has(s.id)),
+      globalCustomServers: allServers.filter(s => globalIds.has(s.id)),
+      overridesGlobalIds: new Set(
+        allServers
+          .filter(s => !globalIds.has(s.id) && allGlobalSettingsIds.has(s.id))
+          .map(s => s.id)
+      ),
+    };
+  }, [envConfig?.customMcpServers, envConfig?.globalCustomMcpServerIds, settings?.globalCustomMcpServers]);
+
   // Resolve model and thinking for an agent based on its settings source
   const getAgentModelConfig = useMemo(() => {
     return (config: AgentConfig): { model: ModelTypeShort; thinking: ThinkingLevel } => {
@@ -1320,12 +1339,14 @@ export function AgentTools() {
                     </button>
                   </div>
 
-                  {(envConfig.customMcpServers?.length ?? 0) > 0 ? (
+                  {(projectCustomServers.length > 0 || globalCustomServers.length > 0) ? (
                     <div className="space-y-2">
-                      {envConfig.customMcpServers?.map((server) => {
+                      {/* Project-level custom servers */}
+                      {projectCustomServers.map((server) => {
                         const health = serverHealthStatus[server.id];
                         const isTesting = testingServers.has(server.id);
                         const isChecking = health?.status === 'checking';
+                        const isOverridingGlobal = overridesGlobalIds.has(server.id);
 
                         // Status indicator component
                         const StatusIndicator = () => {
@@ -1360,6 +1381,11 @@ export function AgentTools() {
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2">
                                   <span className="text-sm font-medium">{server.name}</span>
+                                  {isOverridingGlobal && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                                      {t('settings:mcp.overridesGlobal')}
+                                    </span>
+                                  )}
                                   {health?.responseTime && (
                                     <span className="text-[10px] text-muted-foreground">
                                       {health.responseTime}ms
@@ -1409,6 +1435,84 @@ export function AgentTools() {
                                   <Trash2 className="h-3.5 w-3.5" />
                                 </button>
                               </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* Global custom servers (read-only) */}
+                      {globalCustomServers.map((server) => {
+                        const health = serverHealthStatus[server.id];
+                        const isTesting = testingServers.has(server.id);
+                        const isChecking = health?.status === 'checking';
+
+                        // Status indicator component
+                        const StatusIndicator = () => {
+                          if (isTesting || isChecking) {
+                            return <Loader2 className="h-3.5 w-3.5 text-muted-foreground animate-spin" />;
+                          }
+                          switch (health?.status) {
+                            case 'healthy':
+                              return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />;
+                            case 'needs_auth':
+                              return <Lock className="h-3.5 w-3.5 text-amber-500" />;
+                            case 'unhealthy':
+                              return <AlertCircle className="h-3.5 w-3.5 text-destructive" />;
+                            default:
+                              return <Circle className="h-3.5 w-3.5 text-muted-foreground" />;
+                          }
+                        };
+
+                        return (
+                          <div
+                            key={server.id}
+                            className="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg"
+                          >
+                            <div className="flex items-center gap-3">
+                              {/* Status indicator */}
+                              <StatusIndicator />
+                              {server.type === 'command' ? (
+                                <Terminal className="h-4 w-4 text-muted-foreground" />
+                              ) : (
+                                <Globe className="h-4 w-4 text-muted-foreground" />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium">{server.name}</span>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400">
+                                    {t('settings:mcp.globalBadge')}
+                                  </span>
+                                  {health?.responseTime && (
+                                    <span className="text-[10px] text-muted-foreground">
+                                      {health.responseTime}ms
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {health?.message || (server.type === 'command'
+                                    ? `${server.command} ${server.args?.join(' ') || ''}`
+                                    : server.url)}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              {/* Test button - functional on global servers */}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleTestConnection(server)}
+                                disabled={isTesting}
+                                className="h-7 px-2 text-xs"
+                                title="Test Connection"
+                              >
+                                {isTesting ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <RefreshCw className="h-3 w-3" />
+                                )}
+                                <span className="ml-1">Test</span>
+                              </Button>
+                              {/* No edit/delete buttons for global servers */}
                             </div>
                           </div>
                         );
