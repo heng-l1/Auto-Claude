@@ -26,8 +26,8 @@ export class TerminalManager {
   private saveTimer: NodeJS.Timeout | null = null;
   private lastNotifiedRateLimitReset: Map<string, string> = new Map();
   private eventCallbacks: TerminalEventHandler.EventHandlerCallbacks;
-  /** Server-side storage for YOLO mode flags during profile migration (sessionId → flag) */
-  private migratedSessionFlags: Map<string, boolean> = new Map();
+  /** Server-side storage for YOLO mode flags during profile migration (sessionId → flags) */
+  private migratedSessionFlags: Map<string, { dangerouslySkipPermissions: boolean; effortMax?: boolean }> = new Map();
 
   constructor(getWindow: WindowGetter) {
     this.getWindow = getWindow;
@@ -153,7 +153,7 @@ export class TerminalManager {
   /**
    * Invoke Claude in a terminal with optional profile override (async - non-blocking)
    */
-  async invokeClaudeAsync(id: string, cwd?: string, profileId?: string, dangerouslySkipPermissions?: boolean): Promise<void> {
+  async invokeClaudeAsync(id: string, cwd?: string, profileId?: string, dangerouslySkipPermissions?: boolean, effortMax?: boolean): Promise<void> {
     const terminal = this.terminals.get(id);
     if (!terminal) {
       return;
@@ -173,7 +173,8 @@ export class TerminalManager {
           this.getWindow
         );
       },
-      dangerouslySkipPermissions
+      dangerouslySkipPermissions,
+      effortMax
     );
   }
 
@@ -181,7 +182,7 @@ export class TerminalManager {
    * Invoke Claude in a terminal with optional profile override
    * @deprecated Use invokeClaudeAsync for non-blocking behavior
    */
-  invokeClaude(id: string, cwd?: string, profileId?: string, dangerouslySkipPermissions?: boolean): void {
+  invokeClaude(id: string, cwd?: string, profileId?: string, dangerouslySkipPermissions?: boolean, effortMax?: boolean): void {
     const terminal = this.terminals.get(id);
     if (!terminal) {
       return;
@@ -201,7 +202,8 @@ export class TerminalManager {
           this.getWindow
         );
       },
-      dangerouslySkipPermissions
+      dangerouslySkipPermissions,
+      effortMax
     );
   }
 
@@ -218,7 +220,7 @@ export class TerminalManager {
       terminal,
       profileId,
       this.getWindow,
-      async (terminalId, cwd, profileId, dangerouslySkipPermissions) => this.invokeClaudeAsync(terminalId, cwd, profileId, dangerouslySkipPermissions),
+      async (terminalId, cwd, profileId, dangerouslySkipPermissions, effortMax) => this.invokeClaudeAsync(terminalId, cwd, profileId, dangerouslySkipPermissions, effortMax),
       (terminalId) => this.lastNotifiedRateLimitReset.delete(terminalId)
     );
   }
@@ -236,12 +238,13 @@ export class TerminalManager {
       return;
     }
 
-    // For migrated sessions, restore YOLO mode from server-side storage
+    // For migrated sessions, restore YOLO mode and effort max from server-side storage
     // (set during profile change in storeMigratedSessionFlag)
     if (options?.migratedSession && sessionId) {
-      const storedFlag = this.migratedSessionFlags.get(sessionId);
-      if (storedFlag !== undefined) {
-        terminal.dangerouslySkipPermissions = storedFlag;
+      const storedFlags = this.migratedSessionFlags.get(sessionId);
+      if (storedFlags !== undefined) {
+        terminal.dangerouslySkipPermissions = storedFlags.dangerouslySkipPermissions;
+        terminal.effortMax = storedFlags.effortMax;
         this.migratedSessionFlags.delete(sessionId);
       }
     }
@@ -250,12 +253,12 @@ export class TerminalManager {
   }
 
   /**
-   * Store YOLO mode flag for a session being migrated during profile swap.
+   * Store YOLO mode and effort max flags for a session being migrated during profile swap.
    * Called from the profile change handler before the renderer recreates terminals.
-   * The flag is consumed by resumeClaudeAsync when the new terminal resumes.
+   * The flags are consumed by resumeClaudeAsync when the new terminal resumes.
    */
-  storeMigratedSessionFlag(sessionId: string, dangerouslySkipPermissions: boolean): void {
-    this.migratedSessionFlags.set(sessionId, dangerouslySkipPermissions);
+  storeMigratedSessionFlag(sessionId: string, flags: { dangerouslySkipPermissions: boolean; effortMax?: boolean }): void {
+    this.migratedSessionFlags.set(sessionId, flags);
   }
 
   /**
@@ -414,7 +417,8 @@ export class TerminalManager {
         claudeSessionId: terminal.claudeSessionId,
         claudeProfileId: terminal.claudeProfileId,
         isClaudeMode: terminal.isClaudeMode,
-        dangerouslySkipPermissions: terminal.dangerouslySkipPermissions
+        dangerouslySkipPermissions: terminal.dangerouslySkipPermissions,
+        effortMax: terminal.effortMax
       });
     }
 

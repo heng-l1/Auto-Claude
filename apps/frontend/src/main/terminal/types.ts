@@ -24,6 +24,8 @@ export interface TerminalProcess {
   pendingClaudeResume?: boolean;
   /** Whether Claude was invoked with --dangerously-skip-permissions (YOLO mode) */
   dangerouslySkipPermissions?: boolean;
+  /** Whether Claude was invoked with CLAUDE_CODE_EFFORT_LEVEL=max (YOLO Max mode) */
+  effortMax?: boolean;
   /** Shell type for Windows (affects command chaining syntax) */
   shellType?: WindowsShellType;
   /** Whether this terminal is waiting for Claude onboarding to complete (login flow) */
@@ -104,4 +106,6 @@ export interface TerminalProfileChangeInfo {
   claudeProfileId?: string;
   isClaudeMode: boolean;
   dangerouslySkipPermissions?: boolean;
+  /** Whether Claude was invoked with CLAUDE_CODE_EFFORT_LEVEL=max (YOLO Max mode) */
+  effortMax?: boolean;
 }

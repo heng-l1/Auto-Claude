@@ -300,6 +300,8 @@ export interface TerminalProfileChangedEvent {
     isClaudeMode?: boolean;
     /** Whether Claude was invoked with --dangerously-skip-permissions (YOLO mode) */
     dangerouslySkipPermissions?: boolean;
+    /** Whether Claude was invoked with CLAUDE_CODE_EFFORT_LEVEL=max (YOLO Max mode) */
+    effortMax?: boolean;
   }>;
 }
 
