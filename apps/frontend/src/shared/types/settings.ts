@@ -2,7 +2,7 @@
  * Application settings types
  */
 
-import type { NotificationSettings, GraphitiEmbeddingProvider, CustomMcpServer } from './project';
+import type { NotificationSettings, GraphitiEmbeddingProvider, CustomMcpServer, AgentMcpOverrides } from './project';
 import type { ChangelogFormat, ChangelogAudience, ChangelogEmojiLevel } from './changelog';
 import type { SupportedLanguage } from '../constants/i18n';
 
@@ -233,6 +233,15 @@ export interface GlobalMcpServers {
   puppeteerEnabled?: boolean;
 }
 
+/**
+ * Agent settings source configuration
+ * Determines where an agent's model and thinking settings come from
+ */
+export type AgentSettingsSource =
+  | { type: 'phase'; phase: 'spec' | 'planning' | 'coding' | 'qa' }
+  | { type: 'feature'; feature: 'insights' | 'ideation' | 'roadmap' | 'githubIssues' | 'githubPrs' | 'utility' }
+  | { type: 'fixed'; model: ModelTypeShort; thinking: ThinkingLevel };
+
 export interface AppSettings {
   theme: 'light' | 'dark' | 'system';
   colorTheme?: ColorTheme;
@@ -322,6 +331,8 @@ export interface AppSettings {
   globalMcpServers?: GlobalMcpServers;
   // Global custom MCP servers (applied to all projects)
   globalCustomMcpServers?: CustomMcpServer[];
+  // Global per-agent MCP overrides (add/remove MCPs from specific agents across all projects)
+  globalAgentMcpOverrides?: AgentMcpOverrides;
 }
 
 // GPU acceleration mode for terminal WebGL rendering

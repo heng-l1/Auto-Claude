@@ -38,3 +38,6 @@ export * from './config';
 
 // Spell check configuration
 export * from './spellcheck';
+
+// Agent MCP server and tool configuration
+export * from './agent-mcp';

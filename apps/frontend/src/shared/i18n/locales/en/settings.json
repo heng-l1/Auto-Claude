@@ -954,7 +954,10 @@
     "customServersSection": "Custom Servers",
     "noCustomServers": "No custom servers configured globally. Add one to make it available across all projects.",
     "addCustomServer": "Add Custom Server",
-    "graphitiNote": "Graphiti Memory requires memory configuration in project settings"
+    "graphitiNote": "Graphiti Memory requires memory configuration in project settings",
+    "agentDefaults": "Per-Agent MCP Defaults",
+    "agentDefaultsDescription": "Configure which MCP servers each agent phase gets by default across all projects",
+    "agentDefaultsNote": "Individual projects can further customize agent MCPs in their Agent Tools view"
   },
   "agents": {
     "pr_template_filler": {
