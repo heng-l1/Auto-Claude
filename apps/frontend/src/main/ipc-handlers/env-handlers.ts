@@ -184,6 +184,22 @@ export function registerEnvHandlers(
       existingVars['ENABLE_FANCY_UI'] = config.enableFancyUi ? 'true' : 'false';
     }
 
+    // Clear MCP server overrides (removes keys from .env so ENV_GET falls back to global defaults)
+    if (config.clearMcpServerOverrides && config.clearMcpServerOverrides.length > 0) {
+      const mcpKeyMap: Record<string, string> = {
+        context7Enabled: 'CONTEXT7_ENABLED',
+        linearMcpEnabled: 'LINEAR_MCP_ENABLED',
+        electronEnabled: 'ELECTRON_MCP_ENABLED',
+        puppeteerEnabled: 'PUPPETEER_MCP_ENABLED',
+      };
+      for (const key of config.clearMcpServerOverrides) {
+        const envKey = mcpKeyMap[key];
+        if (envKey) {
+          delete existingVars[envKey];
+        }
+      }
+    }
+
     // MCP Server Configuration
     if (config.mcpServers) {
       if (config.mcpServers.context7Enabled !== undefined) {
