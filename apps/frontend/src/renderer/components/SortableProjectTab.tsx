@@ -15,6 +15,7 @@ import {
 } from './ui/context-menu';
 import { TAB_COLORS } from '../../shared/constants/config';
 import type { Project } from '../../shared/types';
+import { useTerminalStore } from '../stores/terminal-store';
 
 interface SortableProjectTabProps {
   project: Project;
@@ -64,6 +65,14 @@ export function SortableProjectTab({
 
   // Resolve color tint config from project settings
   const tabColorConfig = TAB_COLORS.find(c => c.id === project.settings?.tabColor);
+
+  // Direct store subscription for project-scoped terminal activity alerts.
+  // Returns primitive boolean — no useShallow needed, re-renders only when value changes.
+  const hasTerminalActivity = useTerminalStore(
+    (state) => state.terminals.some(
+      t => t.hasActivityAlert === true && t.projectPath === project.path
+    )
+  );
 
   // Inline rename state
   const [isEditing, setIsEditing] = useState(false);
@@ -218,6 +227,12 @@ export function SortableProjectTab({
                     onDoubleClick={handleDoubleClick}
                   >
                     {displayName}
+                  </span>
+                )}
+                {hasTerminalActivity && !isActive && (
+                  <span className="relative flex h-2 w-2 flex-shrink-0">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
                   </span>
                 )}
               </div>
