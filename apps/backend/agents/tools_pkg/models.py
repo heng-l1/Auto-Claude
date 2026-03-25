@@ -212,6 +212,15 @@ AGENT_CONFIGS = {
         ],
         "thinking_default": "low",  # Coding uses minimal thinking (effort: low for Opus, 1024 tokens for Sonnet/Haiku)
     },
+    "coding_critic": {
+        "tools": BASE_READ_TOOLS + ["Bash"],  # Read-only review — no Write or Edit
+        "mcp_servers": ["auto-claude"],
+        "auto_claude_tools": [
+            TOOL_GET_BUILD_PROGRESS,
+            TOOL_GET_SESSION_CONTEXT,
+        ],
+        "thinking_default": "medium",
+    },
     # ═══════════════════════════════════════════════════════════════════════
     # QA PHASES (Read + test + browser + Graphiti memory)
     # ═══════════════════════════════════════════════════════════════════════
