@@ -19,6 +19,7 @@ from pathlib import Path
 from core.client import create_client
 from core.error_utils import safe_receive_messages
 from core.git_executable import run_git
+from phase_config import get_phase_client_thinking_kwargs
 
 logger = logging.getLogger(__name__)
 
@@ -292,27 +293,30 @@ async def run_coding_critic(
 
         # Create a read-only SDK client for the critic
         logger.info("[Coding Critic] Creating SDK client (agent_type=coding_critic)")
+        thinking_kwargs = get_phase_client_thinking_kwargs(spec_dir, "coding", model)
         client = create_client(
             project_dir=project_dir,
             spec_dir=spec_dir,
             model=model,
             agent_type="coding_critic",
+            **thinking_kwargs,
         )
 
-        # Run one conversation turn
-        logger.info("[Coding Critic] Sending prompt to SDK...")
-        await client.query(prompt)
+        async with client:
+            # Run one conversation turn
+            logger.info("[Coding Critic] Sending prompt to SDK...")
+            await client.query(prompt)
 
-        # Collect the response text
-        response_text = ""
-        async for msg in safe_receive_messages(client, caller="coding_critic"):
-            msg_type = type(msg).__name__
+            # Collect the response text
+            response_text = ""
+            async for msg in safe_receive_messages(client, caller="coding_critic"):
+                msg_type = type(msg).__name__
 
-            if msg_type == "AssistantMessage" and hasattr(msg, "content"):
-                for block in msg.content:
-                    block_type = type(block).__name__
-                    if block_type == "TextBlock" and hasattr(block, "text"):
-                        response_text += block.text
+                if msg_type == "AssistantMessage" and hasattr(msg, "content"):
+                    for block in msg.content:
+                        block_type = type(block).__name__
+                        if block_type == "TextBlock" and hasattr(block, "text"):
+                            response_text += block.text
 
         logger.info(
             "[Coding Critic] Received response (%d chars)", len(response_text)
