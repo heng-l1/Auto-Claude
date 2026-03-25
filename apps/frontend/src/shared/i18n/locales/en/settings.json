@@ -700,6 +700,7 @@
     "removed": "removed",
     "remove": "Remove",
     "restore": "Restore",
+    "globalDefault": "Global Default",
     "noMcpServers": "No MCP servers",
     "globalDefault": "Global default",
     "projectOverride": "Project override",
