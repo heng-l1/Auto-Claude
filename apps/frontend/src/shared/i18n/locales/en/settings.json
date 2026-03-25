@@ -700,7 +700,6 @@
     "removed": "removed",
     "remove": "Remove",
     "restore": "Restore",
-    "globalDefault": "Global Default",
     "noMcpServers": "No MCP servers",
     "globalDefault": "Global default",
     "projectOverride": "Project override",
@@ -785,11 +784,6 @@
       "openai": "This looks like an OpenAI API. You'll need an API key.",
       "createOpenaiKey": "Create OpenAI API Key"
     }
-  },
-  "globalMcp": {
-    "agentDefaults": "Per-Agent MCP Defaults",
-    "agentDefaultsDescription": "Configure which MCP servers each agent phase gets by default across all projects",
-    "agentDefaultsNote": "Individual projects can further customize agent MCPs in their Agent Tools view"
   },
   "terminalFonts": {
     "title": "Terminal Fonts",
@@ -960,7 +954,10 @@
     "customServersSection": "Custom Servers",
     "noCustomServers": "No custom servers configured globally. Add one to make it available across all projects.",
     "addCustomServer": "Add Custom Server",
-    "graphitiNote": "Graphiti Memory requires memory configuration in project settings"
+    "graphitiNote": "Graphiti Memory requires memory configuration in project settings",
+    "agentDefaults": "Per-Agent MCP Defaults",
+    "agentDefaultsDescription": "Configure which MCP servers each agent phase gets by default across all projects",
+    "agentDefaultsNote": "Individual projects can further customize agent MCPs in their Agent Tools view"
   },
   "agents": {
     "pr_template_filler": {
