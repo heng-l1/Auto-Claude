@@ -156,7 +156,8 @@ export function SortableProjectTab({
               : 'max-w-[120px] sm:max-w-[160px] md:max-w-[200px]',
             'border-r border-border last:border-r-0',
             'touch-none transition-all duration-200',
-            isDragging && 'opacity-60 scale-[0.98] shadow-lg'
+            isDragging && 'opacity-60 scale-[0.98] shadow-lg',
+            tabColorConfig?.bg
           )}
           {...attributes}
         >
@@ -177,8 +178,7 @@ export function SortableProjectTab({
                   !isActive && [
                     'text-muted-foreground',
                     'hover:text-foreground'
-                  ],
-                  tabColorConfig?.bg
+                  ]
                 )}
                 onClick={onSelect}
               >
