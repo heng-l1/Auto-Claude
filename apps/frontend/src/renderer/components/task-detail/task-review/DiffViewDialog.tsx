@@ -77,6 +77,13 @@ export function DiffViewDialog({
       ) {
         return;
       }
+      // Skip when file tree listbox has focus — DiffFileTree handles its own keyboard nav
+      if (
+        activeEl?.getAttribute('role') === 'listbox' ||
+        activeEl?.closest('[role="listbox"]')
+      ) {
+        return;
+      }
 
       if (e.key === 'ArrowDown') {
         e.preventDefault();
