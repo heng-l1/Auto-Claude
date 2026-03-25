@@ -89,8 +89,8 @@ function getPhaseConfig(
 
   const configPhase = LOG_PHASE_TO_CONFIG_PHASE[logPhase];
 
-  // Auto profile with per-phase config
-  if (metadata.isAutoProfile && metadata.phaseModels && metadata.phaseThinking) {
+  // Per-phase config (available for all profiles with phase configuration)
+  if (metadata.phaseModels && metadata.phaseThinking) {
     const model = metadata.phaseModels[configPhase];
     const thinking = metadata.phaseThinking[configPhase];
     // Check if ultrathink is enabled for this phase (overrides thinking level)
@@ -101,7 +101,7 @@ function getPhaseConfig(
     };
   }
 
-  // Non-auto profile with single model/thinking
+  // Fallback: single model/thinking (legacy tasks without per-phase config)
   if (metadata.model && metadata.thinkingLevel) {
     return {
       model: MODEL_SHORT_LABELS[metadata.model] || metadata.model,

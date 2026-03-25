@@ -286,13 +286,13 @@ def get_phase_model(
     metadata = load_task_metadata(spec_dir)
 
     if metadata:
-        # Check for auto profile with phase-specific config
-        if metadata.get("isAutoProfile") and metadata.get("phaseModels"):
+        # Per-phase config (available for all profiles with phase configuration)
+        if metadata.get("phaseModels"):
             phase_models = metadata["phaseModels"]
             model = phase_models.get(phase, DEFAULT_PHASE_MODELS[phase])
             return resolve_model_id(model)
 
-        # Non-auto profile: use single model
+        # Legacy tasks without per-phase config: use single model
         if metadata.get("model"):
             return resolve_model_id(metadata["model"])
 
@@ -326,7 +326,7 @@ def get_phase_model_betas(
     metadata = load_task_metadata(spec_dir)
 
     if metadata:
-        if metadata.get("isAutoProfile") and metadata.get("phaseModels"):
+        if metadata.get("phaseModels"):
             phase_models = metadata["phaseModels"]
             model_short = phase_models.get(phase, DEFAULT_PHASE_MODELS[phase])
             return get_model_betas(model_short)
@@ -348,8 +348,8 @@ def get_phase_thinking(
     Priority:
     1. CLI argument (if provided)
     2. Per-phase ultrathink flag from task_metadata.json (returns 'ultrathink')
-    3. Phase-specific config from task_metadata.json (if auto profile)
-    4. Single thinking level from task_metadata.json (if not auto profile)
+    3. Phase-specific config from task_metadata.json (phaseThinking)
+    4. Single thinking level from task_metadata.json (legacy tasks)
     5. Default phase configuration
 
     Args:
@@ -377,12 +377,12 @@ def get_phase_thinking(
             )
             return "ultrathink"
 
-        # Check for auto profile with phase-specific config
-        if metadata.get("isAutoProfile") and metadata.get("phaseThinking"):
+        # Per-phase config (available for all profiles with phase configuration)
+        if metadata.get("phaseThinking"):
             phase_thinking = metadata["phaseThinking"]
             return phase_thinking.get(phase, DEFAULT_PHASE_THINKING[phase])
 
-        # Non-auto profile: use single thinking level
+        # Legacy tasks without per-phase config: use single thinking level
         if metadata.get("thinkingLevel"):
             return metadata["thinkingLevel"]
 

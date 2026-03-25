@@ -449,7 +449,7 @@ export function TaskCreationWizard({
       if (model) metadata.model = model;
       if (thinkingLevel) metadata.thinkingLevel = thinkingLevel;
       if (phaseModels && phaseThinking) {
-        metadata.isAutoProfile = profileId === 'auto';
+        metadata.isAutoProfile = true;
         metadata.phaseModels = phaseModels;
         metadata.phaseThinking = phaseThinking;
       }

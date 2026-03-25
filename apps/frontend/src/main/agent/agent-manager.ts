@@ -304,9 +304,9 @@ export class AgentManager extends EventEmitter {
     }
 
     // Pass model and thinking level configuration
-    // For auto profile, use phase-specific config; otherwise use single model/thinking
+    // Use per-phase config when available; fall back to single model/thinking for legacy tasks
     // Validate thinking levels to prevent legacy values from reaching the backend
-    if (metadata?.isAutoProfile && metadata.phaseModels && metadata.phaseThinking) {
+    if (metadata?.phaseModels && metadata.phaseThinking) {
       // Pass the spec phase model and thinking level to spec_runner
       // Ultrathink override: if spec phase has ultrathink enabled, use 'ultrathink' instead of dropdown value
       const specThinking = metadata.phaseUltrathink?.spec
@@ -315,7 +315,7 @@ export class AgentManager extends EventEmitter {
       args.push('--model', metadata.phaseModels.spec);
       args.push('--thinking-level', specThinking);
     } else if (metadata?.model) {
-      // Non-auto profile: use single model and thinking level
+      // Legacy tasks without per-phase config: use single model and thinking level
       args.push('--model', metadata.model);
       if (metadata.thinkingLevel) {
         args.push('--thinking-level', sanitizeThinkingLevel(metadata.thinkingLevel));

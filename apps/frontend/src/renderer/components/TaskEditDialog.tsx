@@ -248,7 +248,7 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
     if (model) metadataUpdates.model = model as ModelType;
     if (thinkingLevel) metadataUpdates.thinkingLevel = thinkingLevel as ThinkingLevel;
     if (phaseModels && phaseThinking) {
-      metadataUpdates.isAutoProfile = profileId === 'auto';
+      metadataUpdates.isAutoProfile = true;
       metadataUpdates.phaseModels = phaseModels;
       metadataUpdates.phaseThinking = phaseThinking;
     }
