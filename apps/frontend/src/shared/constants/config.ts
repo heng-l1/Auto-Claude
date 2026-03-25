@@ -105,13 +105,13 @@ export const DEFAULT_PROJECT_SETTINGS = {
 
 /** Available color tints for project tabs. All class strings are literal for Tailwind JIT safety. */
 export const TAB_COLORS = [
-  { id: 'red', bg: 'bg-red-500/10', swatch: 'bg-red-500', labelKey: 'projectTab.colorRed' },
-  { id: 'orange', bg: 'bg-orange-500/10', swatch: 'bg-orange-500', labelKey: 'projectTab.colorOrange' },
-  { id: 'yellow', bg: 'bg-yellow-500/10', swatch: 'bg-yellow-500', labelKey: 'projectTab.colorYellow' },
-  { id: 'green', bg: 'bg-green-500/10', swatch: 'bg-green-500', labelKey: 'projectTab.colorGreen' },
-  { id: 'blue', bg: 'bg-blue-500/10', swatch: 'bg-blue-500', labelKey: 'projectTab.colorBlue' },
-  { id: 'purple', bg: 'bg-purple-500/10', swatch: 'bg-purple-500', labelKey: 'projectTab.colorPurple' },
-  { id: 'pink', bg: 'bg-pink-500/10', swatch: 'bg-pink-500', labelKey: 'projectTab.colorPink' },
+  { id: 'red', bg: 'bg-red-500/10 dark:bg-red-500/20', swatch: 'bg-red-500', labelKey: 'projectTab.colorRed' },
+  { id: 'orange', bg: 'bg-orange-500/10 dark:bg-orange-500/20', swatch: 'bg-orange-500', labelKey: 'projectTab.colorOrange' },
+  { id: 'yellow', bg: 'bg-yellow-500/10 dark:bg-yellow-500/20', swatch: 'bg-yellow-500', labelKey: 'projectTab.colorYellow' },
+  { id: 'green', bg: 'bg-green-500/10 dark:bg-green-500/20', swatch: 'bg-green-500', labelKey: 'projectTab.colorGreen' },
+  { id: 'blue', bg: 'bg-blue-500/10 dark:bg-blue-500/20', swatch: 'bg-blue-500', labelKey: 'projectTab.colorBlue' },
+  { id: 'purple', bg: 'bg-purple-500/10 dark:bg-purple-500/20', swatch: 'bg-purple-500', labelKey: 'projectTab.colorPurple' },
+  { id: 'pink', bg: 'bg-pink-500/10 dark:bg-pink-500/20', swatch: 'bg-pink-500', labelKey: 'projectTab.colorPink' },
 ] as const;
 
 // ============================================
