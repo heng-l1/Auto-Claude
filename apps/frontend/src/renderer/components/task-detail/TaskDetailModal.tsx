@@ -178,6 +178,7 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
   const handleMerge = async () => {
     state.setIsMerging(true);
     state.setWorkspaceError(null);
+    state.setMergePreview(null);
     try {
       const result = await window.electronAPI.mergeWorktree(task.id, { noCommit: state.stageOnly });
       if (result.success && result.data?.success) {
