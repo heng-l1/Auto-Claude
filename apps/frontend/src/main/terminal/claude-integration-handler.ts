@@ -581,12 +581,17 @@ type ClaudeCommandConfig =
  * @param escapedClaudeCmd - Shell-escaped Claude CLI command
  * @param config - Configuration object with method and required options (discriminated union)
  * @param extraFlags - Optional extra flags to append to the command (e.g., '--dangerously-skip-permissions')
+ * @param envVars - Optional environment variables to inject as platform-aware prefixes (e.g., { CLAUDE_CODE_EFFORT_LEVEL: 'max' })
  * @returns Complete shell command string ready for terminal.pty.write()
  *
  * @example
  * // Default method (Unix/macOS)
  * buildClaudeShellCommand('cd /path && ', 'PATH=/bin ', 'claude', { method: 'default' });
  * // Returns: 'cd /path && PATH=/bin claude\r'
+ *
+ * // Default method with envVars (Unix/macOS)
+ * buildClaudeShellCommand('', '', 'claude', { method: 'default' }, undefined, { CLAUDE_CODE_EFFORT_LEVEL: 'max' });
+ * // Returns: "CLAUDE_CODE_EFFORT_LEVEL='max' claude\r"
  *
  * // Temp file method (Unix/macOS)
  * buildClaudeShellCommand('', '', 'claude', { method: 'temp-file', tempFile: '/tmp/token' });
@@ -601,10 +606,16 @@ export function buildClaudeShellCommand(
   pathPrefix: string,
   escapedClaudeCmd: string,
   config: ClaudeCommandConfig,
-  extraFlags?: string
+  extraFlags?: string,
+  envVars?: Record<string, string>
 ): string {
   const fullCmd = extraFlags ? `${escapedClaudeCmd}${extraFlags}` : escapedClaudeCmd;
   const isWin = isWindows();
+
+  // Build env var prefix from envVars record (e.g., for CLAUDE_CODE_EFFORT_LEVEL=max)
+  const envVarsPrefix = envVars
+    ? Object.entries(envVars).map(([name, value]) => buildEnvPrefix(name, value)).join('')
+    : '';
 
   switch (config.method) {
     case 'temp-file':
@@ -621,11 +632,11 @@ export function buildClaudeShellCommand(
         // escapeForWindowsDoubleQuote() instead of escapeShellArgWindows()
         // because caret is literal inside double quotes in cmd.exe.
         const escapedTempFile = escapeForWindowsDoubleQuote(config.tempFile);
-        return `cls && ${cwdCommand}${pathPrefix}call "${escapedTempFile}" && del "${escapedTempFile}" && ${fullCmd}\r`;
+        return `cls && ${cwdCommand}${pathPrefix}call "${escapedTempFile}" && del "${escapedTempFile}" && ${envVarsPrefix}${fullCmd}\r`;
       } else {
         // Unix/macOS: Use bash with source command and history-safe prefixes
         const escapedTempFile = escapeShellArg(config.tempFile);
-        return `clear && ${cwdCommand}HISTFILE= HISTCONTROL=ignorespace ${pathPrefix}bash -c "source ${escapedTempFile} && rm -f ${escapedTempFile} && exec ${fullCmd}"\r`;
+        return `clear && ${cwdCommand}HISTFILE= HISTCONTROL=ignorespace ${envVarsPrefix}${pathPrefix}bash -c "source ${escapedTempFile} && rm -f ${escapedTempFile} && exec ${fullCmd}"\r`;
       }
 
     case 'config-dir':
@@ -635,15 +646,15 @@ export function buildClaudeShellCommand(
         // escapeForWindowsDoubleQuote() because caret is literal inside
         // double quotes in cmd.exe (only double quotes need escaping).
         const escapedConfigDir = escapeForWindowsDoubleQuote(config.configDir);
-        return `cls && ${cwdCommand}set "CLAUDE_CONFIG_DIR=${escapedConfigDir}" && ${pathPrefix}${fullCmd}\r`;
+        return `cls && ${cwdCommand}set "CLAUDE_CONFIG_DIR=${escapedConfigDir}" && ${envVarsPrefix}${pathPrefix}${fullCmd}\r`;
       } else {
         // Unix/macOS: Use bash with config dir and history-safe prefixes
         const escapedConfigDir = escapeShellArg(config.configDir);
-        return `clear && ${cwdCommand}HISTFILE= HISTCONTROL=ignorespace CLAUDE_CONFIG_DIR=${escapedConfigDir} ${pathPrefix}bash -c "exec ${fullCmd}"\r`;
+        return `clear && ${cwdCommand}HISTFILE= HISTCONTROL=ignorespace CLAUDE_CONFIG_DIR=${escapedConfigDir} ${envVarsPrefix}${pathPrefix}bash -c "exec ${fullCmd}"\r`;
       }
 
     default:
-      return `${cwdCommand}${pathPrefix}${fullCmd}\r`;
+      return `${cwdCommand}${envVarsPrefix}${pathPrefix}${fullCmd}\r`;
   }
 }
 
@@ -1209,6 +1220,7 @@ interface ExecuteProfileCommandOptions {
   pathPrefix: string;
   escapedClaudeCmd: string;
   extraFlags: string | undefined;
+  envVars?: Record<string, string>;
   terminal: TerminalProcess;
   profileManager: any;
   projectPath: string | undefined;
@@ -1226,6 +1238,7 @@ function executeProfileCommand(options: ExecuteProfileCommandOptions): boolean {
     pathPrefix,
     escapedClaudeCmd,
     extraFlags,
+    envVars,
     terminal,
     profileManager,
     projectPath,
@@ -1248,7 +1261,8 @@ function executeProfileCommand(options: ExecuteProfileCommandOptions): boolean {
       pathPrefix,
       escapedClaudeCmd,
       { method: 'config-dir', configDir: activeProfile.configDir },
-      extraFlags
+      extraFlags,
+      envVars
     );
     debugLog(`${logPrefix} Executing command (configDir method, history-safe)`);
     PtyManager.writeToPty(terminal, command);
@@ -1278,7 +1292,8 @@ function executeProfileCommand(options: ExecuteProfileCommandOptions): boolean {
       pathPrefix,
       escapedClaudeCmd,
       { method: 'temp-file', tempFile },
-      extraFlags
+      extraFlags,
+      envVars
     );
     debugLog(`${logPrefix} Executing command (temp file method, history-safe)`);
     PtyManager.writeToPty(terminal, command);
@@ -1304,6 +1319,7 @@ async function executeProfileCommandAsync(options: ExecuteProfileCommandOptions)
     pathPrefix,
     escapedClaudeCmd,
     extraFlags,
+    envVars,
     terminal,
     profileManager,
     projectPath,
@@ -1326,7 +1342,8 @@ async function executeProfileCommandAsync(options: ExecuteProfileCommandOptions)
       pathPrefix,
       escapedClaudeCmd,
       { method: 'config-dir', configDir: activeProfile.configDir },
-      extraFlags
+      extraFlags,
+      envVars
     );
     debugLog(`${logPrefix} Executing command (configDir method, history-safe)`);
     PtyManager.writeToPty(terminal, command);
@@ -1356,7 +1373,8 @@ async function executeProfileCommandAsync(options: ExecuteProfileCommandOptions)
       pathPrefix,
       escapedClaudeCmd,
       { method: 'temp-file', tempFile },
-      extraFlags
+      extraFlags,
+      envVars
     );
     debugLog(`${logPrefix} Executing command (temp file method, history-safe)`);
     PtyManager.writeToPty(terminal, command);
