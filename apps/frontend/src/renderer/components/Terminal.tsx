@@ -1076,6 +1076,7 @@ Please confirm you're ready by saying: I'm ready to work on ${selectedTask.title
         onToggleExpand={onToggleExpand}
         pendingClaudeResume={terminal?.pendingClaudeResume}
         isClaudeIdle={showClaudeBusyIndicator && !isClaudeBusy}
+        hasActivityAlert={terminal?.hasActivityAlert}
       />
 
       <div

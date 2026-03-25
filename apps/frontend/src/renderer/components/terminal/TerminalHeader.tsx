@@ -45,6 +45,8 @@ interface TerminalHeaderProps {
   pendingClaudeResume?: boolean;
   /** Whether Claude is idle (waiting for user input) */
   isClaudeIdle?: boolean;
+  /** Whether this terminal has a pending activity alert (Claude went busy->idle while not active) */
+  hasActivityAlert?: boolean;
 }
 
 export function TerminalHeader({
@@ -71,6 +73,7 @@ export function TerminalHeader({
   onToggleExpand,
   pendingClaudeResume,
   isClaudeIdle,
+  hasActivityAlert,
 }: TerminalHeaderProps) {
   const { t } = useTranslation(['terminal', 'common']);
   const backlogTasks = tasks.filter((t) => t.status === 'backlog');
@@ -139,6 +142,18 @@ export function TerminalHeader({
               <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
             </span>
             {terminalCount < 4 && <span>{t('terminal:claude.waitingForInput')}</span>}
+          </span>
+        )}
+        {hasActivityAlert && (
+          <span
+            className="flex items-center gap-1 text-[10px] font-medium text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded"
+            title={t('terminal:activity.completed')}
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
+            </span>
+            {terminalCount < 4 && <span>{t('terminal:activity.completed')}</span>}
           </span>
         )}
         <TaskSelector
