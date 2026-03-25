@@ -3,6 +3,8 @@
  * Default settings, file paths, and project structure
  */
 
+import type { CustomMcpServer } from '../types/project';
+
 // ============================================
 // Terminal Timing Constants
 // ============================================
@@ -71,7 +73,17 @@ export const DEFAULT_APP_SETTINGS = {
   // GPU acceleration for terminal rendering
   // Default to 'off' until WebGL stability is proven across all GPU drivers.
   // Users can opt-in via Settings > Display > GPU Acceleration.
-  gpuAcceleration: 'off' as const
+  gpuAcceleration: 'off' as const,
+  // Global MCP server defaults (applied to all projects unless overridden)
+  // Graphiti excluded - it depends on per-project provider config
+  globalMcpServers: {
+    context7Enabled: true,
+    linearMcpEnabled: true,
+    electronEnabled: false,
+    puppeteerEnabled: false
+  },
+  // Global custom MCP servers (applied to all projects)
+  globalCustomMcpServers: [] as CustomMcpServer[]
 };
 
 // ============================================
