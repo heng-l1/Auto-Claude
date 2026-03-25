@@ -27,7 +27,8 @@ import {
   Terminal,
   Loader2,
   RefreshCw,
-  Lock
+  Lock,
+  RotateCcw
 } from 'lucide-react';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { ScrollArea } from './ui/scroll-area';
