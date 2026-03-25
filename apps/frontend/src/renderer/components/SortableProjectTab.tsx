@@ -171,8 +171,8 @@ export function SortableProjectTab({
                   'min-w-0 truncate hover:bg-muted/50 transition-colors',
                   'border-b-2 border-transparent cursor-pointer',
                   isActive && [
-                    'bg-background border-b-primary text-foreground',
-                    'hover:bg-background'
+                    'bg-muted/60 border-b-primary text-foreground',
+                    'hover:bg-muted/70'
                   ],
                   !isActive && [
                     'text-muted-foreground',
