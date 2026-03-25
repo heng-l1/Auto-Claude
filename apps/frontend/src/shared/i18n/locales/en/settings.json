@@ -785,6 +785,11 @@
       "createOpenaiKey": "Create OpenAI API Key"
     }
   },
+  "globalMcp": {
+    "agentDefaults": "Per-Agent MCP Defaults",
+    "agentDefaultsDescription": "Configure which MCP servers each agent phase gets by default across all projects",
+    "agentDefaultsNote": "Individual projects can further customize agent MCPs in their Agent Tools view"
+  },
   "terminalFonts": {
     "title": "Terminal Fonts",
     "description": "Customize terminal font appearance and behavior",
