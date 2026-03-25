@@ -298,6 +298,8 @@ export interface AppSettings {
   customTerminalPath?: string; // For 'custom' terminal
   // YOLO mode: invoke Claude with --dangerously-skip-permissions flag
   dangerouslySkipPermissions?: boolean;
+  // YOLO Max mode: combines YOLO mode with maximum effort level
+  yoloMaxMode?: boolean;
   // Anonymous error reporting (Sentry) - enabled by default to help improve the app
   sentryEnabled?: boolean;
   // Auto-name Claude terminals based on initial message (only triggers once per session)
