@@ -413,12 +413,19 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
       }
     }
 
+    // Auto-rename default-titled terminals when entering Claude mode.
+    // Only rename titles matching "Terminal N" pattern — preserves user-customized,
+    // worktree, and task-linked titles. Same regex as shouldAutoRenameTerminal().
+    const currentTitle = get().terminals.find(t => t.id === id)?.title ?? '';
+    const willRename = isClaudeMode && /^Terminal \d+$/.test(currentTitle);
+
     set((state) => ({
       terminals: state.terminals.map((t) =>
         t.id === id
           ? {
               ...t,
               isClaudeMode,
+              title: willRename ? 'Claude' : t.title,
               status: isClaudeMode ? 'claude-active' : (t.status === 'exited' ? 'exited' : 'running'),
               // Reset busy state and naming flag when leaving Claude mode
               isClaudeBusy: isClaudeMode ? t.isClaudeBusy : undefined,
@@ -427,6 +434,15 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
           : t
       ),
     }));
+
+    // Best-effort sync title to main process for session persistence
+    if (willRename) {
+      try {
+        window.electronAPI.setTerminalTitle(id, 'Claude');
+      } catch {
+        // Non-critical — renderer state is already updated
+      }
+    }
   },
 
   setClaudeSessionId: (id: string, sessionId: string) => {
