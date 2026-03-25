@@ -1069,7 +1069,6 @@ def _check_git_conflicts(project_dir: Path, spec_name: str) -> dict:
             [
                 "merge-tree",
                 "--write-tree",
-                "--no-messages",
                 result["base_branch"],  # Use branch names, not commit hashes
                 spec_branch,
             ],
@@ -1097,9 +1096,42 @@ def _check_git_conflicts(project_dir: Path, spec_name: str) -> dict:
                         ):
                             result["conflicting_files"].append(file_path)
 
-            # Only set has_conflicts if we found ACTUAL CONFLICT markers
-            # A non-zero exit code without CONFLICT markers just means branches diverged
-            # but git can auto-merge them - we handle this with direct file copy
+            # Fallback: if we didn't parse CONFLICT markers despite non-zero exit,
+            # use diff to find files changed in both branches as a safety net
+            if not result["conflicting_files"]:
+                main_files_result = run_git(
+                    ["diff", "--name-only", _merge_base, result["base_branch"]],
+                    cwd=project_dir,
+                )
+                main_files = (
+                    set(main_files_result.stdout.strip().split("\n"))
+                    if main_files_result.stdout.strip()
+                    else set()
+                )
+
+                spec_files_result = run_git(
+                    ["diff", "--name-only", _merge_base, spec_branch],
+                    cwd=project_dir,
+                )
+                spec_files = (
+                    set(spec_files_result.stdout.strip().split("\n"))
+                    if spec_files_result.stdout.strip()
+                    else set()
+                )
+
+                # Files modified in both = potential conflicts
+                # Filter out .auto-claude files - they should never be merged
+                conflicting = main_files & spec_files
+                result["conflicting_files"] = [
+                    f for f in conflicting if not _is_auto_claude_file(f)
+                ]
+                debug(
+                    MODULE,
+                    f"Fallback: found {len(result['conflicting_files'])} files modified in both branches",
+                )
+
+            # Only set has_conflicts if we found ACTUAL conflicting files
+            # (from CONFLICT markers or diff-overlap fallback)
             if result["conflicting_files"]:
                 result["has_conflicts"] = True
                 debug(
@@ -1108,12 +1140,12 @@ def _check_git_conflicts(project_dir: Path, spec_name: str) -> dict:
                     files=result["conflicting_files"],
                 )
             else:
-                # No CONFLICT markers = no actual conflicts
+                # No conflicts found by either method
                 # Branches diverged but changes don't overlap - git can auto-merge
                 # We'll handle this by copying files directly from spec branch
                 debug(
                     MODULE,
-                    "No CONFLICT markers - branches diverged but can be auto-merged",
+                    "No conflicts detected - branches diverged but can be auto-merged",
                     merge_tree_returncode=merge_tree_result.returncode,
                 )
                 result["has_conflicts"] = False
