@@ -720,13 +720,143 @@ def _try_smart_merge_inner(
                     },
                 }
             else:
-                # Merge failed unexpectedly - abort and fall back to semantic analysis
+                # Merge failed unexpectedly despite no conflicts detected
+                # This can happen when lock files (package-lock.json, etc.) conflict
                 debug_warning(
                     MODULE,
                     "Git merge failed unexpectedly despite no conflicts detected",
                     stderr=merge_result.stderr[:500] if merge_result.stderr else "",
                 )
-                # Abort the merge to restore clean state
+
+                # Check if the failures are lock-file-only conflicts
+                # Lock files often cause merge conflicts but can be auto-resolved
+                # by taking the main branch version (user regenerates via package manager)
+                unmerged_result = run_git(
+                    ["diff", "--name-only", "--diff-filter=U"],
+                    cwd=project_dir,
+                )
+                unmerged_files = [
+                    f.strip()
+                    for f in unmerged_result.stdout.splitlines()
+                    if f.strip()
+                ]
+
+                if unmerged_files and all(
+                    _is_lock_file(f) for f in unmerged_files
+                ):
+                    # All conflicts are lock files - auto-resolve them
+                    debug(
+                        MODULE,
+                        f"All {len(unmerged_files)} conflicting file(s) are lock files - auto-resolving",
+                        lock_files=unmerged_files,
+                    )
+                    print(
+                        muted(
+                            f"  Auto-resolving {len(unmerged_files)} lock file conflict(s)..."
+                        )
+                    )
+
+                    # Resolve each lock file by taking the main branch version
+                    # --ours = main because we're on main during 'git merge spec_branch'
+                    lock_resolve_ok = True
+                    for lock_file in unmerged_files:
+                        checkout_result = run_git(
+                            ["checkout", "--ours", lock_file],
+                            cwd=project_dir,
+                        )
+                        if checkout_result.returncode != 0:
+                            debug_error(
+                                MODULE,
+                                f"Failed to resolve lock file: {lock_file}",
+                                stderr=checkout_result.stderr,
+                            )
+                            lock_resolve_ok = False
+                            break
+                        add_lock_result = run_git(
+                            ["add", lock_file],
+                            cwd=project_dir,
+                        )
+                        if add_lock_result.returncode != 0:
+                            debug_error(
+                                MODULE,
+                                f"Failed to stage resolved lock file: {lock_file}",
+                                stderr=add_lock_result.stderr,
+                            )
+                            lock_resolve_ok = False
+                            break
+
+                    if lock_resolve_ok:
+                        # Lock files resolved - get merged file list and return success
+                        diff_result = run_git(
+                            ["diff", "--cached", "--name-only"],
+                            cwd=project_dir,
+                        )
+                        merged_files = [
+                            f.strip()
+                            for f in diff_result.stdout.splitlines()
+                            if f.strip() and not _is_auto_claude_file(f.strip())
+                        ]
+
+                        debug_success(
+                            MODULE,
+                            "Lock file conflicts auto-resolved, git merge succeeded",
+                            merged_files_count=len(merged_files),
+                            lock_files_resolved=unmerged_files,
+                        )
+
+                        for file_path in merged_files:
+                            if _is_lock_file(file_path):
+                                print(
+                                    success(
+                                        f"    ✓ {file_path} (lock file - kept main version)"
+                                    )
+                                )
+                            else:
+                                print(success(f"    ✓ {file_path}"))
+
+                        if progress_callback is not None:
+                            progress_callback(
+                                MergeProgressStage.COMPLETE,
+                                100,
+                                f"Git merge complete ({len(merged_files)} files, {len(unmerged_files)} lock file(s) auto-resolved)",
+                            )
+
+                        # Notify about lock files needing regeneration
+                        print()
+                        print(
+                            muted(
+                                f"  ℹ {len(unmerged_files)} lock file(s) auto-resolved (kept main version):"
+                            )
+                        )
+                        for lock_file in unmerged_files:
+                            print(muted(f"    - {lock_file}"))
+                        print()
+                        print(
+                            warning(
+                                "  Run your package manager to regenerate lock files:"
+                            )
+                        )
+                        print(
+                            muted(
+                                "    npm install / pnpm install / yarn / uv sync / cargo update"
+                            )
+                        )
+
+                        return {
+                            "success": True,
+                            "resolved_files": merged_files,
+                            "stats": {
+                                "files_merged": len(merged_files),
+                                "conflicts_resolved": 0,
+                                "ai_assisted": 0,
+                                "auto_merged": len(merged_files),
+                                "git_merge": True,
+                                "lock_files_auto_resolved": len(unmerged_files),
+                            },
+                            "lock_files_excluded": unmerged_files,
+                        }
+
+                # Not all lock files, or lock resolution failed - abort and fall back
                 abort_result = run_git(["merge", "--abort"], cwd=project_dir)
                 if abort_result.returncode != 0:
                     debug_error(
