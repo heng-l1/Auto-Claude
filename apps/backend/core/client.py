@@ -498,14 +498,22 @@ def _load_global_mcp_config() -> dict:
     """
     Load global MCP configuration from the Electron app's settings.json.
 
-    Reads 'globalMcpServers' (built-in toggle states) and 'globalCustomMcpServers'
-    (user-defined custom MCP servers) from the global settings file.
+    Reads 'globalMcpServers' (built-in toggle states), 'globalCustomMcpServers'
+    (user-defined custom MCP servers), and 'globalAgentMcpOverrides' (per-agent
+    MCP add/remove overrides) from the global settings file.
+
+    Each agent override entry is validated:
+    - Must be a dict
+    - 'add' must be a list of strings (if present)
+    - 'remove' must be a list of strings (if present)
+    Invalid entries are skipped with a warning.
 
     Returns:
         Dict with:
         - 'toggles': dict of toggle key -> bool (defaults: context7=True, linear=True,
           electron=False, puppeteer=False)
         - 'custom_servers': list of validated custom MCP server configurations
+        - 'agent_overrides': dict of agent_id -> {'add': [...], 'remove': [...]}
     """
     default_toggles = {
         "context7Enabled": True,
@@ -517,17 +525,17 @@ def _load_global_mcp_config() -> dict:
     settings_path = _get_electron_settings_path()
     if not settings_path.exists():
         logger.debug("Global settings file not found: %s", settings_path)
-        return {"toggles": default_toggles, "custom_servers": []}
+        return {"toggles": default_toggles, "custom_servers": [], "agent_overrides": {}}
 
     try:
         with open(settings_path, encoding="utf-8") as f:
             data = json.load(f)
     except (json.JSONDecodeError, OSError) as e:
         logger.debug("Failed to read global settings file: %s", e)
-        return {"toggles": default_toggles, "custom_servers": []}
+        return {"toggles": default_toggles, "custom_servers": [], "agent_overrides": {}}
 
     if not isinstance(data, dict):
-        return {"toggles": default_toggles, "custom_servers": []}
+        return {"toggles": default_toggles, "custom_servers": [], "agent_overrides": {}}
 
     # Extract built-in server toggles
     toggles = dict(default_toggles)
@@ -549,7 +557,66 @@ def _load_global_mcp_config() -> dict:
                     "Skipping invalid global custom MCP server at index %d", i
                 )
 
-    return {"toggles": toggles, "custom_servers": custom_servers}
+    # Extract and validate global agent MCP overrides
+    agent_overrides: dict[str, dict[str, list[str]]] = {}
+    raw_overrides = data.get("globalAgentMcpOverrides")
+    if isinstance(raw_overrides, dict):
+        for agent_id, override in raw_overrides.items():
+            if not isinstance(agent_id, str):
+                logger.warning(
+                    "Skipping globalAgentMcpOverrides entry with non-string key: %s",
+                    agent_id,
+                )
+                continue
+            if not isinstance(override, dict):
+                logger.warning(
+                    "Skipping invalid globalAgentMcpOverrides entry for '%s': expected dict, got %s",
+                    agent_id,
+                    type(override).__name__,
+                )
+                continue
+
+            validated: dict[str, list[str]] = {}
+
+            # Validate 'add' list
+            add_list = override.get("add")
+            if add_list is not None:
+                if isinstance(add_list, list) and all(
+                    isinstance(item, str) for item in add_list
+                ):
+                    validated["add"] = add_list
+                else:
+                    logger.warning(
+                        "Skipping invalid 'add' for agent '%s': expected list of strings",
+                        agent_id,
+                    )
+                    continue
+
+            # Validate 'remove' list
+            remove_list = override.get("remove")
+            if remove_list is not None:
+                if isinstance(remove_list, list) and all(
+                    isinstance(item, str) for item in remove_list
+                ):
+                    validated["remove"] = remove_list
+                else:
+                    logger.warning(
+                        "Skipping invalid 'remove' for agent '%s': expected list of strings",
+                        agent_id,
+                    )
+                    continue
+
+            if validated:
+                agent_overrides[agent_id] = validated
+
+    if agent_overrides:
+        logger.info(
+            "Loaded global agent MCP overrides for %d agent(s): %s",
+            len(agent_overrides),
+            list(agent_overrides.keys()),
+        )
+
+    return {"toggles": toggles, "custom_servers": custom_servers, "agent_overrides": agent_overrides}
 
 
 def load_project_mcp_config(project_dir: Path) -> dict:
@@ -560,15 +627,16 @@ def load_project_mcp_config(project_dir: Path) -> dict:
     Project-level settings (from .env) take precedence over global defaults.
     When a project hasn't explicitly set a toggle, the global default applies.
     Global custom servers are included if their IDs don't collide with
-    project-level custom server IDs.
+    project-level custom server IDs. Global agent MCP overrides are additively
+    merged with project overrides (deduplicated, preserving order).
 
     Returns a dict of MCP-related env vars:
     - CONTEXT7_ENABLED (default: true)
     - LINEAR_MCP_ENABLED (default: true)
     - ELECTRON_MCP_ENABLED (default: false)
     - PUPPETEER_MCP_ENABLED (default: false)
-    - AGENT_MCP_<agent>_ADD (per-agent MCP additions)
-    - AGENT_MCP_<agent>_REMOVE (per-agent MCP removals)
+    - AGENT_MCP_<agent>_ADD (per-agent MCP additions, merged from global + project)
+    - AGENT_MCP_<agent>_REMOVE (per-agent MCP removals, merged from global + project)
     - CUSTOM_MCP_SERVERS (JSON array of custom server configs)
 
     Args:
@@ -661,6 +729,33 @@ def load_project_mcp_config(project_dir: Path) -> dict:
 
     if project_custom_servers:
         config["CUSTOM_MCP_SERVERS"] = project_custom_servers
+
+    # Additive merge of global agent MCP overrides
+    # Global adds/removes are combined with project adds/removes via union.
+    # Project-level entries take precedence in ordering (appear first after global).
+    for agent_id, override in global_config.get("agent_overrides", {}).items():
+        global_adds = override.get("add", [])
+        global_removes = override.get("remove", [])
+
+        # Merge ADD lists: global adds + project adds, deduped preserving order
+        add_key = f"AGENT_MCP_{agent_id}_ADD"
+        project_adds_str = config.get(add_key, "")
+        project_adds = [
+            s.strip() for s in project_adds_str.split(",") if s.strip()
+        ]
+        combined_adds = list(dict.fromkeys(global_adds + project_adds))
+        if combined_adds:
+            config[add_key] = ",".join(combined_adds)
+
+        # Merge REMOVE lists: global removes + project removes, deduped preserving order
+        remove_key = f"AGENT_MCP_{agent_id}_REMOVE"
+        project_removes_str = config.get(remove_key, "")
+        project_removes = [
+            s.strip() for s in project_removes_str.split(",") if s.strip()
+        ]
+        combined_removes = list(dict.fromkeys(global_removes + project_removes))
+        if combined_removes:
+            config[remove_key] = ",".join(combined_removes)
 
     return config
 
