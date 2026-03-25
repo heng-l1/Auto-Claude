@@ -48,6 +48,10 @@
     "global-memory": {
       "title": "Global Memory",
       "description": "Cross-project working patterns"
+    },
+    "global-mcp": {
+      "title": "MCP Servers",
+      "description": "Global MCP server defaults"
     }
   },
   "apiProfiles": {
@@ -697,6 +701,11 @@
     "remove": "Remove",
     "restore": "Restore",
     "noMcpServers": "No MCP servers",
+    "globalDefault": "Global default",
+    "projectOverride": "Project override",
+    "resetToGlobal": "Reset to global defaults",
+    "globalBadge": "Global",
+    "overridesGlobal": "Overrides global",
     "cannotRemove": "Cannot remove (required)",
     "servers": {
       "context7": {
@@ -936,6 +945,16 @@
     "backendDisabled": "Disabled",
     "backendEntryCount": "{{count}} entries stored",
     "backendNoEntries": "No entries stored yet"
+  },
+  "globalMcp": {
+    "title": "Global MCP Servers",
+    "description": "Configure default MCP servers that apply to all projects",
+    "infoNote": "These are the default MCP server settings for all projects. Individual projects can override these in their project settings.",
+    "builtInServers": "Built-in Servers",
+    "customServersSection": "Custom Servers",
+    "noCustomServers": "No custom servers configured globally. Add one to make it available across all projects.",
+    "addCustomServer": "Add Custom Server",
+    "graphitiNote": "Graphiti Memory requires memory configuration in project settings"
   },
   "agents": {
     "pr_template_filler": {

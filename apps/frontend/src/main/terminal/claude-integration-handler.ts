@@ -192,6 +192,45 @@ function buildPathPrefix(pathEnv: string): string {
 }
 
 /**
+ * Build environment variable prefix for Claude CLI invocation.
+ *
+ * Generates a platform-aware prefix that sets an environment variable
+ * before the command execution. Follows the same pattern as buildPathPrefix().
+ *
+ * On Windows, uses `set "VAR=value" && ` syntax with cmd.exe escaping.
+ * On Unix/macOS, uses `VAR='value' ` prefix syntax with bash escaping.
+ *
+ * @param envName - Environment variable name (e.g., 'CLAUDE_CODE_EFFORT_LEVEL')
+ * @param envValue - Environment variable value (e.g., 'max')
+ * @returns Empty string if envName is empty, otherwise platform-specific env var prefix
+ *
+ * @example
+ * // Unix/macOS
+ * buildEnvPrefix('CLAUDE_CODE_EFFORT_LEVEL', 'max');
+ * // Returns: "CLAUDE_CODE_EFFORT_LEVEL='max' "
+ *
+ * // Windows
+ * buildEnvPrefix('CLAUDE_CODE_EFFORT_LEVEL', 'max');
+ * // Returns: 'set "CLAUDE_CODE_EFFORT_LEVEL=max" && '
+ */
+function buildEnvPrefix(envName: string, envValue: string): string {
+  if (!envName) {
+    return '';
+  }
+
+  if (isWindows()) {
+    // Windows: Use set "VAR=value" && syntax with double-quote escaping
+    // For values inside double quotes, use escapeForWindowsDoubleQuote() because
+    // caret is literal inside double quotes in cmd.exe (only " needs escaping).
+    const escapedValue = escapeForWindowsDoubleQuote(envValue);
+    return `set "${envName}=${escapedValue}" && `;
+  }
+
+  // Unix/macOS: Use VAR='value' prefix syntax with bash escaping
+  return `${envName}=${escapeShellArg(envValue)} `;
+}
+
+/**
  * Escape a command for safe use in shell commands.
  *
  * On Windows, wraps in double quotes for cmd.exe. Since the value is inside
@@ -218,6 +257,19 @@ function escapeShellCommand(cmd: string): string {
  * Extracted as constant to ensure consistency across invokeClaude and invokeClaudeAsync
  */
 const YOLO_MODE_FLAG = ' --dangerously-skip-permissions';
+
+/**
+ * Environment variable name for setting Claude Code effort level.
+ * When set to EFFORT_MAX_VALUE, enables deepest reasoning in Claude CLI.
+ * Injected as a platform-aware shell prefix via buildEnvPrefix().
+ */
+const EFFORT_MAX_ENV_VAR = 'CLAUDE_CODE_EFFORT_LEVEL';
+
+/**
+ * Value for maximum effort level.
+ * Combined with EFFORT_MAX_ENV_VAR to form the env var prefix.
+ */
+const EFFORT_MAX_VALUE = 'max';
 
 // ============================================================================
 // TOKEN USAGE PARSING FOR API KEY PROFILES
@@ -529,12 +581,17 @@ type ClaudeCommandConfig =
  * @param escapedClaudeCmd - Shell-escaped Claude CLI command
  * @param config - Configuration object with method and required options (discriminated union)
  * @param extraFlags - Optional extra flags to append to the command (e.g., '--dangerously-skip-permissions')
+ * @param envVars - Optional environment variables to inject as platform-aware prefixes (e.g., { CLAUDE_CODE_EFFORT_LEVEL: 'max' })
  * @returns Complete shell command string ready for terminal.pty.write()
  *
  * @example
  * // Default method (Unix/macOS)
  * buildClaudeShellCommand('cd /path && ', 'PATH=/bin ', 'claude', { method: 'default' });
  * // Returns: 'cd /path && PATH=/bin claude\r'
+ *
+ * // Default method with envVars (Unix/macOS)
+ * buildClaudeShellCommand('', '', 'claude', { method: 'default' }, undefined, { CLAUDE_CODE_EFFORT_LEVEL: 'max' });
+ * // Returns: "CLAUDE_CODE_EFFORT_LEVEL='max' claude\r"
  *
  * // Temp file method (Unix/macOS)
  * buildClaudeShellCommand('', '', 'claude', { method: 'temp-file', tempFile: '/tmp/token' });
@@ -549,10 +606,16 @@ export function buildClaudeShellCommand(
   pathPrefix: string,
   escapedClaudeCmd: string,
   config: ClaudeCommandConfig,
-  extraFlags?: string
+  extraFlags?: string,
+  envVars?: Record<string, string>
 ): string {
   const fullCmd = extraFlags ? `${escapedClaudeCmd}${extraFlags}` : escapedClaudeCmd;
   const isWin = isWindows();
+
+  // Build env var prefix from envVars record (e.g., for CLAUDE_CODE_EFFORT_LEVEL=max)
+  const envVarsPrefix = envVars
+    ? Object.entries(envVars).map(([name, value]) => buildEnvPrefix(name, value)).join('')
+    : '';
 
   switch (config.method) {
     case 'temp-file':
@@ -569,11 +632,11 @@ export function buildClaudeShellCommand(
         // escapeForWindowsDoubleQuote() instead of escapeShellArgWindows()
         // because caret is literal inside double quotes in cmd.exe.
         const escapedTempFile = escapeForWindowsDoubleQuote(config.tempFile);
-        return `cls && ${cwdCommand}${pathPrefix}call "${escapedTempFile}" && del "${escapedTempFile}" && ${fullCmd}\r`;
+        return `cls && ${cwdCommand}${pathPrefix}call "${escapedTempFile}" && del "${escapedTempFile}" && ${envVarsPrefix}${fullCmd}\r`;
       } else {
         // Unix/macOS: Use bash with source command and history-safe prefixes
         const escapedTempFile = escapeShellArg(config.tempFile);
-        return `clear && ${cwdCommand}HISTFILE= HISTCONTROL=ignorespace ${pathPrefix}bash -c "source ${escapedTempFile} && rm -f ${escapedTempFile} && exec ${fullCmd}"\r`;
+        return `clear && ${cwdCommand}HISTFILE= HISTCONTROL=ignorespace ${envVarsPrefix}${pathPrefix}bash -c "source ${escapedTempFile} && rm -f ${escapedTempFile} && exec ${fullCmd}"\r`;
       }
 
     case 'config-dir':
@@ -583,15 +646,15 @@ export function buildClaudeShellCommand(
         // escapeForWindowsDoubleQuote() because caret is literal inside
         // double quotes in cmd.exe (only double quotes need escaping).
         const escapedConfigDir = escapeForWindowsDoubleQuote(config.configDir);
-        return `cls && ${cwdCommand}set "CLAUDE_CONFIG_DIR=${escapedConfigDir}" && ${pathPrefix}${fullCmd}\r`;
+        return `cls && ${cwdCommand}set "CLAUDE_CONFIG_DIR=${escapedConfigDir}" && ${envVarsPrefix}${pathPrefix}${fullCmd}\r`;
       } else {
         // Unix/macOS: Use bash with config dir and history-safe prefixes
         const escapedConfigDir = escapeShellArg(config.configDir);
-        return `clear && ${cwdCommand}HISTFILE= HISTCONTROL=ignorespace CLAUDE_CONFIG_DIR=${escapedConfigDir} ${pathPrefix}bash -c "exec ${fullCmd}"\r`;
+        return `clear && ${cwdCommand}HISTFILE= HISTCONTROL=ignorespace CLAUDE_CONFIG_DIR=${escapedConfigDir} ${envVarsPrefix}${pathPrefix}bash -c "exec ${fullCmd}"\r`;
       }
 
     default:
-      return `${cwdCommand}${pathPrefix}${fullCmd}\r`;
+      return `${cwdCommand}${envVarsPrefix}${pathPrefix}${fullCmd}\r`;
   }
 }
 
@@ -1157,6 +1220,7 @@ interface ExecuteProfileCommandOptions {
   pathPrefix: string;
   escapedClaudeCmd: string;
   extraFlags: string | undefined;
+  envVars?: Record<string, string>;
   terminal: TerminalProcess;
   profileManager: any;
   projectPath: string | undefined;
@@ -1174,6 +1238,7 @@ function executeProfileCommand(options: ExecuteProfileCommandOptions): boolean {
     pathPrefix,
     escapedClaudeCmd,
     extraFlags,
+    envVars,
     terminal,
     profileManager,
     projectPath,
@@ -1196,7 +1261,8 @@ function executeProfileCommand(options: ExecuteProfileCommandOptions): boolean {
       pathPrefix,
       escapedClaudeCmd,
       { method: 'config-dir', configDir: activeProfile.configDir },
-      extraFlags
+      extraFlags,
+      envVars
     );
     debugLog(`${logPrefix} Executing command (configDir method, history-safe)`);
     PtyManager.writeToPty(terminal, command);
@@ -1226,7 +1292,8 @@ function executeProfileCommand(options: ExecuteProfileCommandOptions): boolean {
       pathPrefix,
       escapedClaudeCmd,
       { method: 'temp-file', tempFile },
-      extraFlags
+      extraFlags,
+      envVars
     );
     debugLog(`${logPrefix} Executing command (temp file method, history-safe)`);
     PtyManager.writeToPty(terminal, command);
@@ -1252,6 +1319,7 @@ async function executeProfileCommandAsync(options: ExecuteProfileCommandOptions)
     pathPrefix,
     escapedClaudeCmd,
     extraFlags,
+    envVars,
     terminal,
     profileManager,
     projectPath,
@@ -1274,7 +1342,8 @@ async function executeProfileCommandAsync(options: ExecuteProfileCommandOptions)
       pathPrefix,
       escapedClaudeCmd,
       { method: 'config-dir', configDir: activeProfile.configDir },
-      extraFlags
+      extraFlags,
+      envVars
     );
     debugLog(`${logPrefix} Executing command (configDir method, history-safe)`);
     PtyManager.writeToPty(terminal, command);
@@ -1304,7 +1373,8 @@ async function executeProfileCommandAsync(options: ExecuteProfileCommandOptions)
       pathPrefix,
       escapedClaudeCmd,
       { method: 'temp-file', tempFile },
-      extraFlags
+      extraFlags,
+      envVars
     );
     debugLog(`${logPrefix} Executing command (temp file method, history-safe)`);
     PtyManager.writeToPty(terminal, command);
@@ -1327,16 +1397,21 @@ export function invokeClaude(
   profileId: string | undefined,
   getWindow: WindowGetter,
   onSessionCapture: (terminalId: string, projectPath: string, startTime: number) => void,
-  dangerouslySkipPermissions?: boolean
+  dangerouslySkipPermissions?: boolean,
+  effortMax?: boolean
 ): void {
   debugLog('[ClaudeIntegration:invokeClaude] ========== INVOKE CLAUDE START ==========');
   debugLog('[ClaudeIntegration:invokeClaude] Terminal ID:', terminal.id);
   debugLog('[ClaudeIntegration:invokeClaude] Requested profile ID:', profileId);
   debugLog('[ClaudeIntegration:invokeClaude] CWD:', cwd);
   debugLog('[ClaudeIntegration:invokeClaude] Dangerously skip permissions:', dangerouslySkipPermissions);
+  debugLog('[ClaudeIntegration:invokeClaude] Effort max:', effortMax);
 
   // Compute extra flags for YOLO mode
   const extraFlags = dangerouslySkipPermissions ? YOLO_MODE_FLAG : undefined;
+
+  // Compute env vars for effort max mode
+  const envVars = effortMax ? { [EFFORT_MAX_ENV_VAR]: EFFORT_MAX_VALUE } : undefined;
 
   // Track terminal state for cleanup on error
   const wasClaudeMode = terminal.isClaudeMode;
@@ -1346,6 +1421,8 @@ export function invokeClaude(
     terminal.isClaudeMode = true;
     // Store YOLO mode setting so it persists across profile switches
     terminal.dangerouslySkipPermissions = dangerouslySkipPermissions;
+    // Store effort max setting so it persists across profile switches
+    terminal.effortMax = effortMax;
     SessionHandler.releaseSessionId(terminal.id);
     terminal.claudeSessionId = undefined;
 
@@ -1389,6 +1466,7 @@ export function invokeClaude(
       pathPrefix,
       escapedClaudeCmd,
       extraFlags,
+      envVars,
       terminal,
       profileManager,
       projectPath,
@@ -1407,7 +1485,7 @@ export function invokeClaude(
       debugLog('[ClaudeIntegration:invokeClaude] Using terminal environment for non-default profile:', activeProfile.name);
     }
 
-    const command = buildClaudeShellCommand(cwdCommand, pathPrefix, escapedClaudeCmd, { method: 'default' }, extraFlags);
+    const command = buildClaudeShellCommand(cwdCommand, pathPrefix, escapedClaudeCmd, { method: 'default' }, extraFlags, envVars);
     debugLog('[ClaudeIntegration:invokeClaude] Executing command (default method):', command);
     PtyManager.writeToPty(terminal, command);
 
@@ -1479,7 +1557,12 @@ export function resumeClaude(
     // Preserve YOLO mode flag from terminal's stored state
     const extraFlags = terminal.dangerouslySkipPermissions ? YOLO_MODE_FLAG : '';
 
-    const command = `${pathPrefix}${escapedClaudeCmd} --continue${extraFlags}`;
+    // Preserve effort max env var from terminal's stored state
+    const envVarsPrefix = terminal.effortMax
+      ? buildEnvPrefix(EFFORT_MAX_ENV_VAR, EFFORT_MAX_VALUE)
+      : '';
+
+    const command = `${envVarsPrefix}${pathPrefix}${escapedClaudeCmd} --continue${extraFlags}`;
 
     // Use PtyManager.writeToPty for safer write with error handling
     PtyManager.writeToPty(terminal, `${command}\r`);
@@ -1521,7 +1604,8 @@ export async function invokeClaudeAsync(
   profileId: string | undefined,
   getWindow: WindowGetter,
   onSessionCapture: (terminalId: string, projectPath: string, startTime: number) => void,
-  dangerouslySkipPermissions?: boolean
+  dangerouslySkipPermissions?: boolean,
+  effortMax?: boolean
 ): Promise<void> {
   // Track terminal state for cleanup on error
   const wasClaudeMode = terminal.isClaudeMode;
@@ -1535,13 +1619,19 @@ export async function invokeClaudeAsync(
     debugLog('[ClaudeIntegration:invokeClaudeAsync] Requested profile ID:', profileId);
     debugLog('[ClaudeIntegration:invokeClaudeAsync] CWD:', cwd);
     debugLog('[ClaudeIntegration:invokeClaudeAsync] Dangerously skip permissions:', dangerouslySkipPermissions);
+    debugLog('[ClaudeIntegration:invokeClaudeAsync] Effort max:', effortMax);
 
     // Compute extra flags for YOLO mode
     const extraFlags = dangerouslySkipPermissions ? YOLO_MODE_FLAG : undefined;
 
+    // Compute env vars for effort max mode
+    const envVars = effortMax ? { [EFFORT_MAX_ENV_VAR]: EFFORT_MAX_VALUE } : undefined;
+
     terminal.isClaudeMode = true;
     // Store YOLO mode setting so it persists across profile switches
     terminal.dangerouslySkipPermissions = dangerouslySkipPermissions;
+    // Store effort max setting so it persists across profile switches
+    terminal.effortMax = effortMax;
     SessionHandler.releaseSessionId(terminal.id);
     terminal.claudeSessionId = undefined;
 
@@ -1597,6 +1687,7 @@ export async function invokeClaudeAsync(
       pathPrefix,
       escapedClaudeCmd,
       extraFlags,
+      envVars,
       terminal,
       profileManager,
       projectPath,
@@ -1615,7 +1706,7 @@ export async function invokeClaudeAsync(
       debugLog('[ClaudeIntegration:invokeClaudeAsync] Using terminal environment for non-default profile:', activeProfile.name);
     }
 
-    const command = buildClaudeShellCommand(cwdCommand, pathPrefix, escapedClaudeCmd, { method: 'default' }, extraFlags);
+    const command = buildClaudeShellCommand(cwdCommand, pathPrefix, escapedClaudeCmd, { method: 'default' }, extraFlags, envVars);
     debugLog('[ClaudeIntegration:invokeClaudeAsync] Executing command (default method):', command);
     PtyManager.writeToPty(terminal, command);
 
@@ -1701,7 +1792,12 @@ export async function resumeClaudeAsync(
     // Preserve YOLO mode flag from terminal's stored state
     const extraFlags = terminal.dangerouslySkipPermissions ? YOLO_MODE_FLAG : '';
 
-    const command = `${pathPrefix}${escapedClaudeCmd} --continue${extraFlags}`;
+    // Preserve effort max env var from terminal's stored state
+    const envVarsPrefix = terminal.effortMax
+      ? buildEnvPrefix(EFFORT_MAX_ENV_VAR, EFFORT_MAX_VALUE)
+      : '';
+
+    const command = `${envVarsPrefix}${pathPrefix}${escapedClaudeCmd} --continue${extraFlags}`;
 
     // Use PtyManager.writeToPty for safer write with error handling
     PtyManager.writeToPty(terminal, `${command}\r`);
@@ -1830,7 +1926,7 @@ export async function switchClaudeProfile(
   terminal: TerminalProcess,
   profileId: string,
   _getWindow: WindowGetter,
-  invokeClaudeCallback: (terminalId: string, cwd: string | undefined, profileId: string, dangerouslySkipPermissions?: boolean) => Promise<void>,
+  invokeClaudeCallback: (terminalId: string, cwd: string | undefined, profileId: string, dangerouslySkipPermissions?: boolean, effortMax?: boolean) => Promise<void>,
   clearRateLimitCallback: (terminalId: string) => void
 ): Promise<{ success: boolean; error?: string }> {
   // Always-on tracing
@@ -1913,15 +2009,16 @@ export async function switchClaudeProfile(
   clearRateLimitCallback(terminal.id);
 
   const projectPath = terminal.projectPath || terminal.cwd;
-  console.warn('[ClaudeIntegration:switchClaudeProfile] Invoking Claude with profile:', profileId, '| cwd:', projectPath, '| YOLO:', terminal.dangerouslySkipPermissions);
+  console.warn('[ClaudeIntegration:switchClaudeProfile] Invoking Claude with profile:', profileId, '| cwd:', projectPath, '| YOLO:', terminal.dangerouslySkipPermissions, '| effortMax:', terminal.effortMax);
   debugLog('[ClaudeIntegration:switchClaudeProfile] Invoking Claude with new profile:', {
     terminalId: terminal.id,
     projectPath,
     profileId,
-    dangerouslySkipPermissions: terminal.dangerouslySkipPermissions
+    dangerouslySkipPermissions: terminal.dangerouslySkipPermissions,
+    effortMax: terminal.effortMax
   });
-  // Pass the stored dangerouslySkipPermissions value to preserve YOLO mode across profile switches
-  await invokeClaudeCallback(terminal.id, projectPath, profileId, terminal.dangerouslySkipPermissions);
+  // Pass the stored dangerouslySkipPermissions and effortMax values to preserve flags across profile switches
+  await invokeClaudeCallback(terminal.id, projectPath, profileId, terminal.dangerouslySkipPermissions, terminal.effortMax);
 
   debugLog('[ClaudeIntegration:switchClaudeProfile] Setting active profile in profile manager');
   profileManager.setActiveProfile(profileId);

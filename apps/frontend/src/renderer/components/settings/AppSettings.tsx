@@ -19,7 +19,8 @@ import {
   Bug,
   Terminal,
   Users,
-  Brain
+  Brain,
+  Server
 } from 'lucide-react';
 
 // GitLab icon component (lucide-react doesn't have one)
@@ -51,6 +52,7 @@ import { AdvancedSettings } from './AdvancedSettings';
 import { DevToolsSettings } from './DevToolsSettings';
 import { DebugSettings } from './DebugSettings';
 import { GlobalMemorySettings } from './GlobalMemorySettings';
+import { GlobalMcpSettings } from './GlobalMcpSettings';
 import { TerminalFontSettings } from './terminal-font-settings/TerminalFontSettings';
 import { AccountSettings } from './AccountSettings';
 import { ProjectSelector } from './ProjectSelector';
@@ -67,7 +69,7 @@ interface AppSettingsDialogProps {
 }
 
 // App-level settings sections
-export type AppSection = 'appearance' | 'display' | 'devtools' | 'terminal-fonts' | 'agent' | 'global-memory' | 'paths' | 'integrations' | 'accounts' | 'api-profiles' | 'updates' | 'notifications' | 'debug';
+export type AppSection = 'appearance' | 'display' | 'devtools' | 'terminal-fonts' | 'agent' | 'global-memory' | 'global-mcp' | 'paths' | 'integrations' | 'accounts' | 'api-profiles' | 'updates' | 'notifications' | 'debug';
 
 interface NavItemConfig<T extends string> {
   id: T;
@@ -81,6 +83,7 @@ const appNavItemsConfig: NavItemConfig<AppSection>[] = [
   { id: 'terminal-fonts', icon: Terminal },
   { id: 'agent', icon: Bot },
   { id: 'global-memory', icon: Brain },
+  { id: 'global-mcp', icon: Server },
   { id: 'paths', icon: FolderOpen },
   { id: 'accounts', icon: Users },
   { id: 'updates', icon: Package },
@@ -192,6 +195,8 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
         return <GeneralSettings settings={settings} onSettingsChange={setSettings} section="agent" />;
       case 'global-memory':
         return <GlobalMemorySettings settings={settings} onSettingsChange={setSettings} />;
+      case 'global-mcp':
+        return <GlobalMcpSettings settings={settings} onSettingsChange={setSettings} />;
       case 'paths':
         return <GeneralSettings settings={settings} onSettingsChange={setSettings} section="paths" />;
       case 'accounts':

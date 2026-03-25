@@ -363,6 +363,20 @@ export interface ProjectEnvConfig {
 
   // Custom MCP servers defined by the user
   customMcpServers?: CustomMcpServer[];
+
+  /** Tracks which MCP toggle keys have explicit project-level overrides in .env (computed by ENV_GET, read-only) */
+  mcpServersOverridden?: {
+    context7Enabled?: boolean;
+    linearMcpEnabled?: boolean;
+    electronEnabled?: boolean;
+    puppeteerEnabled?: boolean;
+  };
+
+  /** IDs of custom MCP servers originating from global settings (computed by ENV_GET, read-only) */
+  globalCustomMcpServerIds?: string[];
+
+  /** Keys to clear from project .env so they revert to global defaults (ENV_UPDATE write-only) */
+  clearMcpServerOverrides?: string[];
 }
 
 /**

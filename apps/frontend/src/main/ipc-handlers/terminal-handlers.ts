@@ -68,12 +68,14 @@ export function registerTerminalHandlers(
     (_, id: string, cwd?: string) => {
       // Wrap in async IIFE to allow async settings read without blocking
       (async () => {
-        // Read settings asynchronously to check for YOLO mode (dangerously skip permissions)
+        // Read settings asynchronously to check for YOLO mode and YOLO Max mode
         const settings = await readSettingsFileAsync();
-        const dangerouslySkipPermissions = settings?.dangerouslySkipPermissions === true;
+        const yoloMax = settings?.yoloMaxMode === true;
+        const dangerouslySkipPermissions = yoloMax || settings?.dangerouslySkipPermissions === true;
+        const effortMax = yoloMax;
 
         // Use async version to avoid blocking main process during CLI detection
-        await terminalManager.invokeClaudeAsync(id, cwd, undefined, dangerouslySkipPermissions);
+        await terminalManager.invokeClaudeAsync(id, cwd, undefined, dangerouslySkipPermissions, effortMax);
       })().catch((error) => {
         console.warn('[terminal-handlers] Failed to invoke Claude:', error);
       });
@@ -262,6 +264,7 @@ export function registerTerminalHandlers(
             sessionMigrated?: boolean;
             isClaudeMode?: boolean;
             dangerouslySkipPermissions?: boolean;
+            effortMax?: boolean;
           }> = [];
 
           // Process each terminal
@@ -294,10 +297,13 @@ export function registerTerminalHandlers(
               debugLog('[terminal-handlers:CLAUDE_PROFILE_SET_ACTIVE] Session migration result:', migrationResult);
             }
 
-            // Store YOLO mode flag server-side for migrated sessions
+            // Store YOLO mode and effort max flags server-side for migrated sessions
             // (consumed by resumeClaudeAsync when the new terminal resumes)
-            if (sessionMigrated && terminal.claudeSessionId && terminal.dangerouslySkipPermissions) {
-              terminalManager.storeMigratedSessionFlag(terminal.claudeSessionId, terminal.dangerouslySkipPermissions);
+            if (sessionMigrated && terminal.claudeSessionId && (terminal.dangerouslySkipPermissions || terminal.effortMax)) {
+              terminalManager.storeMigratedSessionFlag(terminal.claudeSessionId, {
+                dangerouslySkipPermissions: terminal.dangerouslySkipPermissions ?? false,
+                effortMax: terminal.effortMax
+              });
             }
 
             // All terminals need refresh (PTY env vars can't be updated)
@@ -306,7 +312,8 @@ export function registerTerminalHandlers(
               sessionId: terminal.claudeSessionId,
               sessionMigrated,
               isClaudeMode: terminal.isClaudeMode,
-              dangerouslySkipPermissions: terminal.dangerouslySkipPermissions
+              dangerouslySkipPermissions: terminal.dangerouslySkipPermissions,
+              effortMax: terminal.effortMax
             });
           }
 
