@@ -155,6 +155,13 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
     state.setFeedbackImages([]);
   };
 
+  const handleRequestChangesFromDiff = async (feedback: string) => {
+    state.setIsSubmitting(true);
+    await submitReview(task.id, false, feedback);
+    state.setIsSubmitting(false);
+    state.setShowDiffDialog(false);
+  };
+
   const handleDelete = async () => {
     state.setIsDeleting(true);
     state.setDeleteError(null);
@@ -574,6 +581,7 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
                             onOpenInbuiltTerminal={onOpenInbuiltTerminal}
                             onLaunchClaudeCode={handleLaunchClaudeCode}
                             onReviewAgain={state.handleReviewAgain}
+                            onRequestChanges={handleRequestChangesFromDiff}
                             showPRDialog={state.showPRDialog}
                             isCreatingPR={state.isCreatingPR}
                             onShowPRDialog={state.setShowPRDialog}

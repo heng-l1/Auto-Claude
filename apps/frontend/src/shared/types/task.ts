@@ -331,6 +331,7 @@ export interface WorktreeStatus {
 export interface WorktreeDiff {
   files: WorktreeDiffFile[];
   summary: string;
+  patch?: string;  // Full unified diff output from git diff
 }
 
 export interface WorktreeDiffFile {
@@ -338,6 +339,19 @@ export interface WorktreeDiffFile {
   status: 'added' | 'modified' | 'deleted' | 'renamed';
   additions: number;
   deletions: number;
+  patch?: string;  // Per-file unified diff patch content
+  truncated?: boolean;  // True if file patch exceeds size limit (500KB)
+  oldPath?: string;  // Original path for renamed files
+}
+
+// Inline review comment for PR-style code diff review
+export interface ReviewComment {
+  id: string;           // Unique identifier (UUID)
+  filePath: string;     // File path the comment is on
+  lineNumber: number;   // Line number in the diff
+  side: 'old' | 'new'; // Which side of the diff (old = deletion side, new = addition side)
+  content: string;      // Comment text
+  createdAt: Date;      // When the comment was created
 }
 
 // Conflict severity levels from merge system
