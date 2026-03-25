@@ -23,6 +23,7 @@ from typing import Any
 
 from core.fast_mode import ensure_fast_mode_in_user_settings
 from core.platform import (
+    is_macos,
     is_windows,
     validate_cli_path,
 )
@@ -475,9 +476,91 @@ def _load_claude_code_mcp_servers() -> dict[str, dict]:
         return {}
 
 
+def _get_electron_settings_path() -> Path:
+    """
+    Get the path to the Electron app's settings.json file.
+
+    Returns the platform-specific path to the Auto-Claude settings file
+    stored in the Electron app's userData directory.
+
+    Returns:
+        Path to the settings.json file
+    """
+    if is_macos():
+        return Path.home() / "Library" / "Application Support" / "Auto-Claude" / "settings.json"
+    elif is_windows():
+        return Path(os.environ.get("APPDATA", "")) / "Auto-Claude" / "settings.json"
+    else:  # Linux
+        return Path.home() / ".config" / "Auto-Claude" / "settings.json"
+
+
+def _load_global_mcp_config() -> dict:
+    """
+    Load global MCP configuration from the Electron app's settings.json.
+
+    Reads 'globalMcpServers' (built-in toggle states) and 'globalCustomMcpServers'
+    (user-defined custom MCP servers) from the global settings file.
+
+    Returns:
+        Dict with:
+        - 'toggles': dict of toggle key -> bool (defaults: context7=True, linear=True,
+          electron=False, puppeteer=False)
+        - 'custom_servers': list of validated custom MCP server configurations
+    """
+    default_toggles = {
+        "context7Enabled": True,
+        "linearMcpEnabled": True,
+        "electronEnabled": False,
+        "puppeteerEnabled": False,
+    }
+
+    settings_path = _get_electron_settings_path()
+    if not settings_path.exists():
+        logger.debug("Global settings file not found: %s", settings_path)
+        return {"toggles": default_toggles, "custom_servers": []}
+
+    try:
+        with open(settings_path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        logger.debug("Failed to read global settings file: %s", e)
+        return {"toggles": default_toggles, "custom_servers": []}
+
+    if not isinstance(data, dict):
+        return {"toggles": default_toggles, "custom_servers": []}
+
+    # Extract built-in server toggles
+    toggles = dict(default_toggles)
+    global_mcp_servers = data.get("globalMcpServers")
+    if isinstance(global_mcp_servers, dict):
+        for key in default_toggles:
+            if key in global_mcp_servers and isinstance(global_mcp_servers[key], bool):
+                toggles[key] = global_mcp_servers[key]
+
+    # Extract and validate custom servers
+    custom_servers: list[dict] = []
+    global_custom_servers = data.get("globalCustomMcpServers")
+    if isinstance(global_custom_servers, list):
+        for i, server in enumerate(global_custom_servers):
+            if _validate_custom_mcp_server(server):
+                custom_servers.append(server)
+            else:
+                logger.warning(
+                    "Skipping invalid global custom MCP server at index %d", i
+                )
+
+    return {"toggles": toggles, "custom_servers": custom_servers}
+
+
 def load_project_mcp_config(project_dir: Path) -> dict:
     """
-    Load MCP configuration from project's .auto-claude/.env file.
+    Load MCP configuration from project's .auto-claude/.env file,
+    merged with global defaults from the Electron app's settings.json.
+
+    Project-level settings (from .env) take precedence over global defaults.
+    When a project hasn't explicitly set a toggle, the global default applies.
+    Global custom servers are included if their IDs don't collide with
+    project-level custom server IDs.
 
     Returns a dict of MCP-related env vars:
     - CONTEXT7_ENABLED (default: true)
@@ -494,11 +577,8 @@ def load_project_mcp_config(project_dir: Path) -> dict:
     Returns:
         Dict of MCP configuration values (string values, except CUSTOM_MCP_SERVERS which is parsed JSON)
     """
+    config: dict = {}
     env_path = project_dir / ".auto-claude" / ".env"
-    if not env_path.exists():
-        return {}
-
-    config = {}
     mcp_keys = {
         "CONTEXT7_ENABLED",
         "LINEAR_MCP_ENABLED",
@@ -506,49 +586,81 @@ def load_project_mcp_config(project_dir: Path) -> dict:
         "PUPPETEER_MCP_ENABLED",
     }
 
-    try:
-        with open(env_path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if "=" in line:
-                    key, value = line.split("=", 1)
-                    key = key.strip()
-                    value = value.strip().strip("\"'")
-                    # Include global MCP toggles
-                    if key in mcp_keys:
-                        config[key] = value
-                    # Include per-agent MCP overrides (AGENT_MCP_<agent>_ADD/REMOVE)
-                    elif key.startswith("AGENT_MCP_"):
-                        config[key] = value
-                    # Include custom MCP servers (parse JSON with schema validation)
-                    elif key == "CUSTOM_MCP_SERVERS":
-                        try:
-                            parsed = json.loads(value)
-                            if not isinstance(parsed, list):
+    # Load project-level config from .env file
+    if env_path.exists():
+        try:
+            with open(env_path, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" in line:
+                        key, value = line.split("=", 1)
+                        key = key.strip()
+                        value = value.strip().strip("\"'")
+                        # Include MCP toggles from project .env
+                        if key in mcp_keys:
+                            config[key] = value
+                        # Include per-agent MCP overrides (AGENT_MCP_<agent>_ADD/REMOVE)
+                        elif key.startswith("AGENT_MCP_"):
+                            config[key] = value
+                        # Include custom MCP servers (parse JSON with schema validation)
+                        elif key == "CUSTOM_MCP_SERVERS":
+                            try:
+                                parsed = json.loads(value)
+                                if not isinstance(parsed, list):
+                                    logger.warning(
+                                        "CUSTOM_MCP_SERVERS must be a JSON array"
+                                    )
+                                    config["CUSTOM_MCP_SERVERS"] = []
+                                else:
+                                    # Validate each server and filter out invalid ones
+                                    valid_servers = []
+                                    for i, server in enumerate(parsed):
+                                        if _validate_custom_mcp_server(server):
+                                            valid_servers.append(server)
+                                        else:
+                                            logger.warning(
+                                                f"Skipping invalid custom MCP server at index {i}"
+                                            )
+                                    config["CUSTOM_MCP_SERVERS"] = valid_servers
+                            except json.JSONDecodeError:
                                 logger.warning(
-                                    "CUSTOM_MCP_SERVERS must be a JSON array"
+                                    f"Failed to parse CUSTOM_MCP_SERVERS JSON: {value}"
                                 )
                                 config["CUSTOM_MCP_SERVERS"] = []
-                            else:
-                                # Validate each server and filter out invalid ones
-                                valid_servers = []
-                                for i, server in enumerate(parsed):
-                                    if _validate_custom_mcp_server(server):
-                                        valid_servers.append(server)
-                                    else:
-                                        logger.warning(
-                                            f"Skipping invalid custom MCP server at index {i}"
-                                        )
-                                config["CUSTOM_MCP_SERVERS"] = valid_servers
-                        except json.JSONDecodeError:
-                            logger.warning(
-                                f"Failed to parse CUSTOM_MCP_SERVERS JSON: {value}"
-                            )
-                            config["CUSTOM_MCP_SERVERS"] = []
-    except Exception as e:
-        logger.debug(f"Failed to load project MCP config from {env_path}: {e}")
+        except Exception as e:
+            logger.debug(f"Failed to load project MCP config from {env_path}: {e}")
+
+    # Merge global defaults from Electron settings
+    # Project-level settings take precedence over global defaults
+    global_config = _load_global_mcp_config()
+
+    # Map global toggle keys to env var names
+    toggle_key_map = {
+        "context7Enabled": "CONTEXT7_ENABLED",
+        "linearMcpEnabled": "LINEAR_MCP_ENABLED",
+        "electronEnabled": "ELECTRON_MCP_ENABLED",
+        "puppeteerEnabled": "PUPPETEER_MCP_ENABLED",
+    }
+
+    # Apply global toggle defaults where project didn't set them
+    for toggle_key, env_var in toggle_key_map.items():
+        if env_var not in config:
+            global_value = global_config["toggles"].get(toggle_key, False)
+            config[env_var] = "true" if global_value else "false"
+
+    # Merge global custom servers that don't collide with project servers
+    project_custom_servers = list(config.get("CUSTOM_MCP_SERVERS", []))
+    project_server_ids = {s.get("id") for s in project_custom_servers if s.get("id")}
+    global_custom_servers = global_config.get("custom_servers", [])
+
+    for server in global_custom_servers:
+        if server.get("id") not in project_server_ids:
+            project_custom_servers.append(server)
+
+    if project_custom_servers:
+        config["CUSTOM_MCP_SERVERS"] = project_custom_servers
 
     return config
 
