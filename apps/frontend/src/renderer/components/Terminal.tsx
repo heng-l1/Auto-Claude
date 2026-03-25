@@ -485,11 +485,13 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         const { contextMessage } = currentTerminal.pendingClaudeInvocation;
         useTerminalStore.getState().updateTerminal(id, { pendingClaudeInvocation: undefined });
         window.electronAPI.invokeClaudeInTerminal(id, effectiveCwd);
-        setTimeout(() => {
-          if (isMountedRef.current) {
-            window.electronAPI.sendTerminalInput(id, contextMessage + '\r');
-          }
-        }, 3000);
+        if (contextMessage) {
+          setTimeout(() => {
+            if (isMountedRef.current) {
+              window.electronAPI.sendTerminalInput(id, contextMessage + '\r');
+            }
+          }, 3000);
+        }
       }
     },
     onError: (error) => {
