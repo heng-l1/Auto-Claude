@@ -138,10 +138,10 @@
 
 .yolo-max-rainbow.active::before {
   opacity: 0.8;
+  animation: rainbow-pulse 2s ease-in-out infinite;
 }
 
 .yolo-max-rainbow.active {
-  animation: rainbow-pulse 2s ease-in-out infinite;
   box-shadow:
     0 0 15px rgba(255, 0, 136, 0.3),
     0 0 30px rgba(136, 0, 255, 0.2),
