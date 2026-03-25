@@ -190,7 +190,7 @@
    ------------------------------------------ */
 .diff-add-comment-btn {
   position: absolute;
-  left: -0.25rem;
+  left: 0.25rem;
   top: 50%;
   transform: translateY(-50%);
   width: 1.25rem;
