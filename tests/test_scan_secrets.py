@@ -94,7 +94,7 @@ MIIEpAIBAAKCAQEA...
 
     def test_detects_mongodb_url(self):
         """Detects MongoDB URLs with credentials."""
-        content = 'MONGO_URI = "mongodb+srv://testuser:xxxxx@cluster.example.net/testdb"'
+        content = 'MONGO_URI = "mongodb+srv://admin:s3cretP4ss@cluster0.abc123.mongodb.net/proddb"'
         matches = scan_content(content, "test.py")
         assert len(matches) >= 1
 

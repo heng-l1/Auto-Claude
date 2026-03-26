@@ -229,6 +229,11 @@ def temp_git_repo(temp_dir: Path) -> Generator[Path, None, None]:
     orig_env["GIT_CEILING_DIRECTORIES"] = os.environ.get("GIT_CEILING_DIRECTORIES")
     os.environ["GIT_CEILING_DIRECTORIES"] = str(temp_dir.parent)
 
+    # Fix branch prefix to 'auto-claude' so get_branch_prefix() doesn't
+    # extract the local part of user.email (which would give 'test/')
+    orig_env["BRANCH_PREFIX"] = os.environ.get("BRANCH_PREFIX")
+    os.environ["BRANCH_PREFIX"] = "auto-claude"
+
     try:
         # Initialize git repo
         subprocess.run(["git", "init"], cwd=temp_dir, capture_output=True, check=True)

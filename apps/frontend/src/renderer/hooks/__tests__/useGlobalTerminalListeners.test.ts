@@ -12,6 +12,11 @@ import { renderHook } from '@testing-library/react';
 // Mock terminal-store module
 vi.mock('../../stores/terminal-store', () => ({
   writeToTerminal: vi.fn(),
+  useTerminalStore: {
+    getState: vi.fn(() => ({
+      setClaudeBusy: vi.fn(),
+    })),
+  },
 }));
 
 // Mock terminal-buffer-manager module
@@ -29,7 +34,9 @@ vi.mock('../../../shared/utils/debug-logger', () => ({
 
 describe('useGlobalTerminalListeners', () => {
   let mockOnTerminalOutput: ReturnType<typeof vi.fn>;
+  let mockOnTerminalClaudeBusy: ReturnType<typeof vi.fn>;
   let mockCleanupFn: ReturnType<typeof vi.fn>;
+  let mockClaudeBusyCleanupFn: ReturnType<typeof vi.fn>;
   let terminalOutputCallback: ((terminalId: string, data: string) => void) | null = null;
 
   beforeEach(() => {
@@ -39,6 +46,7 @@ describe('useGlobalTerminalListeners', () => {
     // This ensures tests don't interfere with each other
     terminalOutputCallback = null;
     mockCleanupFn = vi.fn();
+    mockClaudeBusyCleanupFn = vi.fn();
 
     // Mock window.electronAPI.onTerminalOutput
     mockOnTerminalOutput = vi.fn((callback: (terminalId: string, data: string) => void) => {
@@ -46,13 +54,17 @@ describe('useGlobalTerminalListeners', () => {
       return mockCleanupFn;
     });
 
+    // Mock window.electronAPI.onTerminalClaudeBusy
+    mockOnTerminalClaudeBusy = vi.fn(() => mockClaudeBusyCleanupFn);
+
     // Ensure window and electronAPI exist
     if (typeof window === 'undefined') {
       (global as { window: unknown }).window = {};
     }
 
-    (window as unknown as { electronAPI: { onTerminalOutput: typeof mockOnTerminalOutput } }).electronAPI = {
+    (window as unknown as { electronAPI: { onTerminalOutput: typeof mockOnTerminalOutput; onTerminalClaudeBusy: typeof mockOnTerminalClaudeBusy } }).electronAPI = {
       onTerminalOutput: mockOnTerminalOutput,
+      onTerminalClaudeBusy: mockOnTerminalClaudeBusy,
     };
   });
 
@@ -74,6 +86,7 @@ describe('useGlobalTerminalListeners', () => {
 
       vi.doMock('../../stores/terminal-store', () => ({
         writeToTerminal: mockWriteToTerminal,
+        useTerminalStore: { getState: vi.fn(() => ({ setClaudeBusy: vi.fn() })) },
       }));
       vi.doMock('../../lib/terminal-buffer-manager', () => ({
         terminalBufferManager: { getSize: mockGetSize },
@@ -91,7 +104,7 @@ describe('useGlobalTerminalListeners', () => {
       expect(mockOnTerminalOutput).toHaveBeenCalledTimes(1);
       expect(mockOnTerminalOutput).toHaveBeenCalledWith(expect.any(Function));
       expect(mockDebugLog).toHaveBeenCalledWith(
-        '[GlobalTerminalListeners] Registering global terminal output listener'
+        '[GlobalTerminalListeners] Registering global terminal listeners'
       );
     });
 
@@ -103,6 +116,7 @@ describe('useGlobalTerminalListeners', () => {
 
       vi.doMock('../../stores/terminal-store', () => ({
         writeToTerminal: vi.fn(),
+        useTerminalStore: { getState: vi.fn(() => ({ setClaudeBusy: vi.fn() })) },
       }));
       vi.doMock('../../lib/terminal-buffer-manager', () => ({
         terminalBufferManager: { getSize: vi.fn(() => 100) },
@@ -139,6 +153,7 @@ describe('useGlobalTerminalListeners', () => {
 
       vi.doMock('../../stores/terminal-store', () => ({
         writeToTerminal: mockWriteToTerminal,
+        useTerminalStore: { getState: vi.fn(() => ({ setClaudeBusy: vi.fn() })) },
       }));
       vi.doMock('../../lib/terminal-buffer-manager', () => ({
         terminalBufferManager: { getSize: vi.fn(() => 100) },
@@ -166,6 +181,7 @@ describe('useGlobalTerminalListeners', () => {
 
       vi.doMock('../../stores/terminal-store', () => ({
         writeToTerminal: vi.fn(),
+        useTerminalStore: { getState: vi.fn(() => ({ setClaudeBusy: vi.fn() })) },
       }));
       vi.doMock('../../lib/terminal-buffer-manager', () => ({
         terminalBufferManager: { getSize: vi.fn(() => 100) },
@@ -194,6 +210,7 @@ describe('useGlobalTerminalListeners', () => {
 
       vi.doMock('../../stores/terminal-store', () => ({
         writeToTerminal: mockWriteToTerminal,
+        useTerminalStore: { getState: vi.fn(() => ({ setClaudeBusy: vi.fn() })) },
       }));
       vi.doMock('../../lib/terminal-buffer-manager', () => ({
         terminalBufferManager: { getSize: vi.fn(() => 100) },
@@ -227,6 +244,7 @@ describe('useGlobalTerminalListeners', () => {
 
       vi.doMock('../../stores/terminal-store', () => ({
         writeToTerminal: vi.fn(),
+        useTerminalStore: { getState: vi.fn(() => ({ setClaudeBusy: vi.fn() })) },
       }));
       vi.doMock('../../lib/terminal-buffer-manager', () => ({
         terminalBufferManager: { getSize: vi.fn(() => 100) },
@@ -245,7 +263,7 @@ describe('useGlobalTerminalListeners', () => {
 
       expect(mockCleanupFn).toHaveBeenCalledTimes(1);
       expect(mockDebugLog).toHaveBeenCalledWith(
-        '[GlobalTerminalListeners] Cleaning up global terminal output listener'
+        '[GlobalTerminalListeners] Cleaning up global terminal listeners'
       );
     });
 
@@ -256,6 +274,7 @@ describe('useGlobalTerminalListeners', () => {
 
       vi.doMock('../../stores/terminal-store', () => ({
         writeToTerminal: vi.fn(),
+        useTerminalStore: { getState: vi.fn(() => ({ setClaudeBusy: vi.fn() })) },
       }));
       vi.doMock('../../lib/terminal-buffer-manager', () => ({
         terminalBufferManager: { getSize: vi.fn(() => 100) },
@@ -281,6 +300,7 @@ describe('useGlobalTerminalListeners', () => {
 
       vi.doMock('../../stores/terminal-store', () => ({
         writeToTerminal: vi.fn(),
+        useTerminalStore: { getState: vi.fn(() => ({ setClaudeBusy: vi.fn() })) },
       }));
       vi.doMock('../../lib/terminal-buffer-manager', () => ({
         terminalBufferManager: { getSize: vi.fn(() => 100) },
@@ -297,7 +317,7 @@ describe('useGlobalTerminalListeners', () => {
 
       expect(mockOnTerminalOutput).toHaveBeenCalledTimes(1);
       expect(mockDebugLog2).toHaveBeenCalledWith(
-        '[GlobalTerminalListeners] Registering global terminal output listener'
+        '[GlobalTerminalListeners] Registering global terminal listeners'
       );
     });
   });
@@ -310,6 +330,7 @@ describe('useGlobalTerminalListeners', () => {
 
       vi.doMock('../../stores/terminal-store', () => ({
         writeToTerminal: mockWriteToTerminal,
+        useTerminalStore: { getState: vi.fn(() => ({ setClaudeBusy: vi.fn() })) },
       }));
       vi.doMock('../../lib/terminal-buffer-manager', () => ({
         terminalBufferManager: { getSize: vi.fn(() => 100) },
@@ -336,6 +357,7 @@ describe('useGlobalTerminalListeners', () => {
 
       vi.doMock('../../stores/terminal-store', () => ({
         writeToTerminal: mockWriteToTerminal,
+        useTerminalStore: { getState: vi.fn(() => ({ setClaudeBusy: vi.fn() })) },
       }));
       vi.doMock('../../lib/terminal-buffer-manager', () => ({
         terminalBufferManager: { getSize: vi.fn(() => 100) },
@@ -363,6 +385,7 @@ describe('useGlobalTerminalListeners', () => {
 
       vi.doMock('../../stores/terminal-store', () => ({
         writeToTerminal: mockWriteToTerminal,
+        useTerminalStore: { getState: vi.fn(() => ({ setClaudeBusy: vi.fn() })) },
       }));
       vi.doMock('../../lib/terminal-buffer-manager', () => ({
         terminalBufferManager: { getSize: vi.fn(() => 100) },
