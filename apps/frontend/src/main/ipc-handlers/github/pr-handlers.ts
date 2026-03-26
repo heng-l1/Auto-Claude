@@ -224,6 +224,60 @@ function sanitizeNetworkData(data: string, maxLength = 1000000): string {
 const { debug: debugLog } = createContextLogger("GitHub PR");
 
 /**
+ * Parse a GitHub API patch string into a set of valid new-file line numbers.
+ *
+ * Walks @@ hunk headers and counts + (additions) and space-prefixed (context)
+ * lines to determine which new-file line numbers are commentable via the
+ * GitHub review API. Deletion lines (- prefix) are excluded.
+ *
+ * @param patch - Raw patch string from GitHub API file object
+ * @returns Set of valid new-file line numbers
+ */
+export function parsePatchForNewFileLines(patch: string | null | undefined): Set<number> {
+  const validLines = new Set<number>();
+
+  if (!patch) {
+    return validLines;
+  }
+
+  const lines = patch.split("\n");
+  let newLineNumber = 0;
+
+  for (const line of lines) {
+    // Parse @@ hunk header to get new-file start line
+    const hunkMatch = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (hunkMatch) {
+      newLineNumber = Number.parseInt(hunkMatch[1], 10);
+      continue;
+    }
+
+    if (newLineNumber === 0) {
+      // Haven't seen a hunk header yet, skip
+      continue;
+    }
+
+    // Skip "\ No newline at end of file" marker
+    if (line.startsWith("\\")) {
+      continue;
+    }
+
+    if (line.startsWith("+")) {
+      // Addition line — valid commentable new-file line
+      validLines.add(newLineNumber);
+      newLineNumber++;
+    } else if (line.startsWith("-")) {
+      // Deletion line — not a new-file line, don't increment new line counter
+    } else {
+      // Context line (space prefix) — valid commentable new-file line
+      validLines.add(newLineNumber);
+      newLineNumber++;
+    }
+  }
+
+  return validLines;
+}
+
+/**
  * Sentinel value indicating a review is waiting for CI checks to complete.
  * Used as a placeholder in runningReviews before the actual process is spawned.
  */
