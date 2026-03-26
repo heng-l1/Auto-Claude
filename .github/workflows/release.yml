@@ -18,7 +18,31 @@ on:
         type: boolean
 
 jobs:
+  validate-lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install pip-tools
+        run: pip install pip-tools
+
+      - name: Validate lock file is in sync
+        run: |
+          cd apps/backend
+          pip-compile --dry-run --quiet requirements.in
+          if [ $? -ne 0 ]; then
+            echo "::error::Lock file is out of sync with requirements.in. Run 'pip-compile requirements.in' to update."
+            exit 1
+          fi
+          echo "Lock file is in sync with requirements.in"
+
   build-macos:
+    needs: [validate-lockfile]
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -78,6 +102,7 @@ jobs:
             apps/frontend/dist/*.blockmap
 
   build-windows:
+    needs: [validate-lockfile]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -139,6 +164,7 @@ jobs:
             apps/frontend/dist/*.blockmap
 
   build-linux:
+    needs: [validate-lockfile]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
