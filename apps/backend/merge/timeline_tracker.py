@@ -505,7 +505,7 @@ class FileTimelineTracker:
 
             for file_path in changed_files:
                 full_path = worktree_path / file_path
-                if full_path.exists():
+                if full_path.is_file():
                     try:
                         content = full_path.read_text(encoding="utf-8")
                     except UnicodeDecodeError:

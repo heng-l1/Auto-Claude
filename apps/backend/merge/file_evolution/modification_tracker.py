@@ -237,7 +237,7 @@ class ModificationTracker:
                         old_content = ""
 
                     current_file = worktree_path / file_path
-                    if current_file.exists():
+                    if current_file.is_file():
                         try:
                             new_content = current_file.read_text(encoding="utf-8")
                         except UnicodeDecodeError:
