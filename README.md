@@ -94,7 +94,7 @@ The `nvm install` command reads the `.nvmrc` file and installs Node.js 24. The `
 `npm run install:all` will:
 - Detect Python 3.12+ on your system
 - Create a virtual environment at `apps/backend/.venv`
-- Install backend runtime and test dependencies
+- Install backend runtime and test dependencies from `requirements.lock` (pinned, secure versions)
 - Copy `.env.example` to `.env` if not already present
 - Install frontend npm dependencies
 
@@ -149,6 +149,7 @@ All scripts can be run from the repository root:
 | Command | Description |
 |---------|-------------|
 | `npm run install:all` | Install backend and frontend dependencies |
+| `npm run lockfile:sync` | Regenerate Python lock file after editing requirements.txt |
 | `npm run dev` | Development mode with hot reload |
 | `npm run dev:debug` | Development mode with debug output |
 | `npm start` | Build and run the desktop app |
@@ -186,13 +187,62 @@ cd apps/backend
 
 # Create a virtual environment (if not done by install:all)
 uv venv
-uv pip install -r requirements.txt
+uv pip install -r requirements.lock
 
 # Or with pip
 python -m venv .venv
 source .venv/bin/activate  # macOS/Linux
 # .venv\Scriptsctivate   # Windows
-pip install -r requirements.txt
+pip install -r requirements.lock
+```
+
+### Managing Python Dependencies
+
+The backend uses a **lock file workflow** for secure, reproducible dependency management:
+
+- **`requirements.txt`** - Human-editable list of direct dependencies
+- **`requirements.lock`** - Auto-generated pinned versions with SHA256 hashes (committed to git)
+
+#### Why Lock Files?
+
+1. **Security** - SHA256 hashes prevent supply-chain attacks and malicious package replacements
+2. **Reproducibility** - Exact versions ensure consistent builds across all environments
+3. **Audit Trail** - Git history shows precisely what changed in dependencies
+
+#### Dependency Workflow
+
+When you need to add, update, or remove a Python dependency:
+
+```bash
+# 1. Edit requirements.txt manually
+# Add, remove, or update dependencies
+
+# 2. Regenerate the lock file
+npm run lockfile:sync
+
+# 3. Commit BOTH files together
+git add apps/backend/requirements.txt apps/backend/requirements.lock
+git commit -m "Update Python dependencies: <description>"
+```
+
+**Important:** Always commit `requirements.txt` and `requirements.lock` together. The lock file is not gitignored—it's a first-class artifact that ensures secure installs.
+
+#### Updating for Security
+
+To pull in the latest security patches for all dependencies:
+
+```bash
+cd apps/backend
+
+# Regenerate lock with latest versions within constraints
+npm run lockfile:sync
+
+# Review changes
+git diff requirements.lock
+
+# Commit if satisfied
+git add requirements.lock
+git commit -m "Update Python dependencies for security patches"
 ```
 
 ---
