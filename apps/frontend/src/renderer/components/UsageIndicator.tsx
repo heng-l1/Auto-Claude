@@ -585,34 +585,36 @@ export function UsageIndicator() {
             </div>
           ) : isApiKeyProfile ? (
             <>
-              {/* Token Limit usage bar */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground font-medium text-[11px] flex items-center gap-1">
-                    <Activity className="h-3 w-3" />
-                    {sessionLabel}
-                  </span>
-                  <span className={`font-semibold tabular-nums text-xs ${getColorClass(usage.sessionPercent).replace('500', '600')}`}>
-                    {Math.round(usage.sessionPercent)}%
-                  </span>
-                </div>
-                <div className="h-2 bg-muted rounded-full overflow-hidden shadow-inner">
-                  <div
-                    className={`h-full rounded-full transition-all duration-500 ease-out relative overflow-hidden ${getGradientClass(usage.sessionPercent)}`}
-                    style={{ width: `${Math.min(usage.sessionPercent, 100)}%` }}
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent motion-safe:animate-pulse" />
-                  </div>
-                </div>
-                {usage.sessionUsageValue != null && usage.sessionUsageLimit != null && (
-                  <div className="flex items-center justify-between text-[10px]">
-                    <span className="text-muted-foreground">{t('common:usage.used')}</span>
-                    <span className="font-medium tabular-nums">
-                      {formatUsageValue(usage.sessionUsageValue)} <span className="text-muted-foreground mx-1">/</span> {formatUsageValue(usage.sessionUsageLimit)}
+              {/* Token Limit usage bar - hidden when no rate limit exists */}
+              {!isApiKeyNoLimit && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground font-medium text-[11px] flex items-center gap-1">
+                      <Activity className="h-3 w-3" />
+                      {sessionLabel}
+                    </span>
+                    <span className={`font-semibold tabular-nums text-xs ${getColorClass(usage.sessionPercent).replace('500', '600')}`}>
+                      {Math.round(usage.sessionPercent)}%
                     </span>
                   </div>
-                )}
-              </div>
+                  <div className="h-2 bg-muted rounded-full overflow-hidden shadow-inner">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ease-out relative overflow-hidden ${getGradientClass(usage.sessionPercent)}`}
+                      style={{ width: `${Math.min(usage.sessionPercent, 100)}%` }}
+                    >
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent motion-safe:animate-pulse" />
+                    </div>
+                  </div>
+                  {usage.sessionUsageValue != null && usage.sessionUsageLimit != null && (
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="text-muted-foreground">{t('common:usage.used')}</span>
+                      <span className="font-medium tabular-nums">
+                        {formatUsageValue(usage.sessionUsageValue)} <span className="text-muted-foreground mx-1">/</span> {formatUsageValue(usage.sessionUsageLimit)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Token Accumulation Details */}
               {usage.tokenUsage && usage.tokenUsage.totalTokens > 0 && (
