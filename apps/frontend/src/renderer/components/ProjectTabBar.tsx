@@ -227,7 +227,7 @@ export function ProjectTabBar({
         })}
       </div>
 
-      <div className="flex items-center gap-2 px-2 py-1">
+      <div className="flex items-center gap-2 px-2 py-1 flex-shrink-0 border-l border-border">
         <AuthStatusIndicator />
         <UsageIndicator />
         <Button

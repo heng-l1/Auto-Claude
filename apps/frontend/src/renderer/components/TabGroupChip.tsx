@@ -116,7 +116,7 @@ export function TabGroupChip({
           role="button"
           tabIndex={0}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
+            if ((e.key === 'Enter' || e.key === ' ') && !isEditing) {
               e.preventDefault();
               onToggleCollapsed(group.id);
             }
