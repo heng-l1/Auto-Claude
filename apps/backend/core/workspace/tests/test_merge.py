@@ -1480,3 +1480,216 @@ class TestAttemptAiMerge:
         # Should pass because it has code patterns (def)
         assert result[0] is True
         assert "def merged():" in result[1]
+
+
+class TestStashChanges:
+    """Tests for stash_changes function."""
+
+    def test_stashes_when_changes_exist(self, temp_git_repo: Path):
+        """Stashes uncommitted changes and returns True."""
+        from core.workspace import stash_changes
+
+        # Modify a tracked file to create uncommitted changes
+        readme = temp_git_repo / "README.md"
+        readme.write_text("# Modified content\n", encoding="utf-8")
+
+        result = stash_changes(temp_git_repo)
+
+        assert result is True
+        # Working tree should be clean after stash
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=temp_git_repo,
+            capture_output=True,
+            text=True,
+        )
+        assert status.stdout.strip() == ""
+
+    def test_returns_false_when_no_changes(self, temp_git_repo: Path):
+        """Returns False when there are no uncommitted changes."""
+        from core.workspace import stash_changes
+
+        result = stash_changes(temp_git_repo)
+
+        assert result is False
+
+    def test_stash_message_is_set(self, temp_git_repo: Path):
+        """Stash entry contains 'auto-claude' in the message."""
+        from core.workspace import stash_changes
+
+        # Modify a tracked file
+        readme = temp_git_repo / "README.md"
+        readme.write_text("# Stash message test\n", encoding="utf-8")
+
+        stash_changes(temp_git_repo)
+
+        # Verify stash list contains our message
+        stash_list = subprocess.run(
+            ["git", "stash", "list"],
+            cwd=temp_git_repo,
+            capture_output=True,
+            text=True,
+        )
+        assert "auto-claude" in stash_list.stdout
+
+
+class TestUnstashChanges:
+    """Tests for unstash_changes function."""
+
+    def test_pops_stash_successfully(self, temp_git_repo: Path):
+        """Pops stash and restores file content."""
+        from core.workspace import stash_changes, unstash_changes
+
+        # Create changes, stash them
+        readme = temp_git_repo / "README.md"
+        original_content = "# Restored content\n"
+        readme.write_text(original_content, encoding="utf-8")
+        stash_changes(temp_git_repo)
+
+        # Verify file was reverted by stash
+        assert readme.read_text(encoding="utf-8") != original_content
+
+        # Pop stash
+        success, error = unstash_changes(temp_git_repo)
+
+        assert success is True
+        assert error == ""
+        # File content should be restored
+        assert readme.read_text(encoding="utf-8") == original_content
+
+    def test_handles_pop_conflict(self, temp_git_repo: Path, make_commit):
+        """Returns (False, message) when stash pop has a conflict."""
+        from core.workspace import stash_changes, unstash_changes
+
+        # Modify README and stash
+        readme = temp_git_repo / "README.md"
+        readme.write_text("# Stashed version\n", encoding="utf-8")
+        stash_changes(temp_git_repo)
+
+        # Now commit different changes to the same file on the same branch
+        make_commit(
+            "conflicting change",
+            files={"README.md": "# Completely different content\n"},
+        )
+
+        # Attempting to pop should fail due to conflict
+        success, error = unstash_changes(temp_git_repo)
+
+        assert success is False
+        assert isinstance(error, str)
+
+    def test_stash_preserved_on_conflict(self, temp_git_repo: Path, make_commit):
+        """Stash entry is preserved when pop fails due to conflict."""
+        from core.workspace import stash_changes, unstash_changes
+
+        # Modify README and stash
+        readme = temp_git_repo / "README.md"
+        readme.write_text("# Stashed version\n", encoding="utf-8")
+        stash_changes(temp_git_repo)
+
+        # Commit conflicting changes
+        make_commit(
+            "conflicting change",
+            files={"README.md": "# Completely different content\n"},
+        )
+
+        # Pop will fail
+        unstash_changes(temp_git_repo)
+
+        # Stash should still exist
+        stash_list = subprocess.run(
+            ["git", "stash", "list"],
+            cwd=temp_git_repo,
+            capture_output=True,
+            text=True,
+        )
+        assert stash_list.stdout.strip() != ""
+
+
+class TestMergeAutoStash:
+    """Tests for auto-stash behavior in merge_existing_build.
+
+    NOTE: merge_existing_build is loaded via importlib in core/workspace/__init__.py,
+    so standard patch("core.workspace.xxx") won't affect its internal lookups.
+    We use patch.dict on the function's __globals__ to mock at the right level.
+    """
+
+    def _build_merge_mocks(self, temp_git_repo, has_changes=True):
+        """Build a dict of mocks for merge_existing_build's globals.
+
+        Returns (mocks_dict, key_mocks) where key_mocks has named references
+        to the mocks we want to assert against.
+        """
+        from unittest.mock import MagicMock
+
+        mock_has_changes = MagicMock(return_value=has_changes)
+        mock_stash = MagicMock(return_value=True)
+        mock_unstash = MagicMock(return_value=(True, ""))
+
+        # run_git mock returns current branch "main"
+        mock_run_git_result = MagicMock()
+        mock_run_git_result.returncode = 0
+        mock_run_git_result.stdout = "main"
+        mock_run_git = MagicMock(return_value=mock_run_git_result)
+
+        # WorktreeManager mock with successful merge
+        mock_manager = MagicMock()
+        mock_manager.merge_worktree.return_value = True
+
+        mocks = {
+            "has_uncommitted_changes": mock_has_changes,
+            "stash_changes": mock_stash,
+            "unstash_changes": mock_unstash,
+            "run_git": mock_run_git,
+            "get_existing_build_worktree": MagicMock(
+                return_value=temp_git_repo / "worktree"
+            ),
+            "_get_spec_branch": MagicMock(return_value="auto-claude/test-spec"),
+            "_try_smart_merge": MagicMock(return_value=None),
+            "WorktreeManager": MagicMock(return_value=mock_manager),
+            "show_build_summary": MagicMock(),
+            "print_status": MagicMock(),
+            "box": MagicMock(return_value=""),
+            "bold": MagicMock(return_value=""),
+            "icon": MagicMock(return_value=""),
+            "muted": MagicMock(return_value=""),
+            "highlight": MagicMock(return_value=""),
+        }
+
+        key_mocks = {
+            "has_uncommitted_changes": mock_has_changes,
+            "stash_changes": mock_stash,
+            "unstash_changes": mock_unstash,
+        }
+
+        return mocks, key_mocks
+
+    def test_merge_stashes_and_restores(self, temp_git_repo: Path):
+        """Verifies stash_changes and unstash_changes are called when uncommitted changes exist."""
+        from unittest.mock import patch
+
+        from core.workspace import merge_existing_build
+
+        mocks, key_mocks = self._build_merge_mocks(temp_git_repo, has_changes=True)
+
+        with patch.dict(merge_existing_build.__globals__, mocks):
+            merge_existing_build(temp_git_repo, "test-spec")
+
+        key_mocks["has_uncommitted_changes"].assert_called_once_with(temp_git_repo)
+        key_mocks["stash_changes"].assert_called_once_with(temp_git_repo)
+        key_mocks["unstash_changes"].assert_called_once_with(temp_git_repo)
+
+    def test_merge_no_stash_when_clean(self, temp_git_repo: Path):
+        """No stash operations occur when working tree is clean."""
+        from unittest.mock import patch
+
+        from core.workspace import merge_existing_build
+
+        mocks, key_mocks = self._build_merge_mocks(temp_git_repo, has_changes=False)
+
+        with patch.dict(merge_existing_build.__globals__, mocks):
+            merge_existing_build(temp_git_repo, "test-spec")
+
+        key_mocks["has_uncommitted_changes"].assert_called_once_with(temp_git_repo)
+        key_mocks["stash_changes"].assert_not_called()
+        key_mocks["unstash_changes"].assert_not_called()
