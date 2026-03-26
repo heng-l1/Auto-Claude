@@ -47,7 +47,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/Library/Caches/pip
-          key: pip-wheel-${{ runner.os }}-arm64-${{ hashFiles('apps/backend/requirements.txt') }}
+          key: pip-wheel-${{ runner.os }}-arm64-${{ hashFiles('apps/backend/requirements.lock') }}
           restore-keys: |
             pip-wheel-${{ runner.os }}-arm64-
 
@@ -55,7 +55,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: apps/frontend/python-runtime
-          key: python-bundle-${{ runner.os }}-arm64-3.12.8-${{ hashFiles('apps/backend/requirements.txt') }}
+          key: python-bundle-${{ runner.os }}-arm64-3.12.8-${{ hashFiles('apps/backend/requirements.lock') }}
           restore-keys: |
             python-bundle-${{ runner.os }}-arm64-3.12.8-
 
@@ -109,7 +109,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~\AppData\Local\pip\Cache
-          key: pip-wheel-${{ runner.os }}-x64-${{ hashFiles('apps/backend/requirements.txt') }}
+          key: pip-wheel-${{ runner.os }}-x64-${{ hashFiles('apps/backend/requirements.lock') }}
           restore-keys: |
             pip-wheel-${{ runner.os }}-x64-
 
@@ -117,7 +117,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: apps/frontend/python-runtime
-          key: python-bundle-${{ runner.os }}-x64-3.12.8-${{ hashFiles('apps/backend/requirements.txt') }}
+          key: python-bundle-${{ runner.os }}-x64-3.12.8-${{ hashFiles('apps/backend/requirements.lock') }}
           restore-keys: |
             python-bundle-${{ runner.os }}-x64-3.12.8-
 
@@ -175,7 +175,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: pip-wheel-${{ runner.os }}-x64-${{ hashFiles('apps/backend/requirements.txt') }}
+          key: pip-wheel-${{ runner.os }}-x64-${{ hashFiles('apps/backend/requirements.lock') }}
           restore-keys: |
             pip-wheel-${{ runner.os }}-x64-
 
@@ -183,7 +183,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: apps/frontend/python-runtime
-          key: python-bundle-${{ runner.os }}-x64-3.12.8-${{ hashFiles('apps/backend/requirements.txt') }}
+          key: python-bundle-${{ runner.os }}-x64-3.12.8-${{ hashFiles('apps/backend/requirements.lock') }}
           restore-keys: |
             python-bundle-${{ runner.os }}-x64-3.12.8-
 
