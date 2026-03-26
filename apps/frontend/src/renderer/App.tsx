@@ -1003,7 +1003,13 @@ export function App() {
             {selectedProject ? (
               <>
                 {/* TerminalGrid is always mounted but hidden when not active to preserve terminal state */}
-                <div className={activeView === 'terminals' ? 'h-full' : 'hidden'}>
+                <motion.div
+                  className="h-full"
+                  style={{ display: activeView === 'terminals' ? 'block' : 'none' }}
+                  initial={false}
+                  animate={{ opacity: activeView === 'terminals' ? 1 : 0 }}
+                  transition={viewTransitionConfig}
+                >
                   <TerminalGrid
                     projectPath={selectedProject?.path}
                     onNewTaskClick={(initialDescription, sourceTerminalId) => {
@@ -1013,10 +1019,16 @@ export function App() {
                     }}
                     isActive={activeView === 'terminals'}
                   />
-                </div>
+                </motion.div>
                 {/* GitHubPRs is always mounted but hidden when not active to preserve review state */}
                 {(activeProjectId || selectedProjectId) && (
-                  <div className={activeView === 'github-prs' ? 'h-full' : 'hidden'}>
+                  <motion.div
+                    className="h-full"
+                    style={{ display: activeView === 'github-prs' ? 'block' : 'none' }}
+                    initial={false}
+                    animate={{ opacity: activeView === 'github-prs' ? 1 : 0 }}
+                    transition={viewTransitionConfig}
+                  >
                     <GitHubPRs
                       onOpenSettings={() => {
                         setSettingsInitialProjectSection('github');
@@ -1025,7 +1037,7 @@ export function App() {
                       isActive={activeView === 'github-prs'}
                       onDiscussInTerminal={handleDiscussInTerminal}
                     />
-                  </div>
+                  </motion.div>
                 )}
                 {/* Animated views with fade transitions */}
                 <AnimatePresence mode="wait">
