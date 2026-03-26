@@ -98,7 +98,7 @@ export function PRDiscussionPanel({
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages.length, streamingContent]);
+  }, []);
 
   const handleSend = useCallback(() => {
     const msg = input.trim();

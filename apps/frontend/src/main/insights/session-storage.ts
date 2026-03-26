@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync } from 'fs';
 import path from 'path';
-import type { InsightsSession, InsightsSessionSummary, ImageAttachment } from '../../shared/types';
+import type { InsightsSession, InsightsSessionSummary, } from '../../shared/types';
 import { InsightsPaths } from './paths';
 
 /**
@@ -248,23 +248,6 @@ export class SessionStorage {
     if (existsSync(currentPath)) {
       unlinkSync(currentPath);
     }
-  }
-
-  /**
-   * Strip full-resolution image data from a session for persistence.
-   * Keeps only thumbnail, id, filename, mimeType, and size to prevent bloated JSON files.
-   */
-  private stripImageDataForPersistence(session: InsightsSession): InsightsSession {
-    return {
-      ...session,
-      messages: session.messages.map(m => {
-        if (!m.images || m.images.length === 0) return m;
-        return {
-          ...m,
-          images: m.images.map(({ data, path: _path, ...rest }: ImageAttachment) => rest)
-        };
-      })
-    };
   }
 
   /**

@@ -112,7 +112,7 @@ describe('DisplaySettings - GPU Acceleration Dropdown', () => {
       <DisplaySettings settings={defaultSettings} onSettingsChange={mockOnSettingsChange} />
     );
 
-    selectCallbacks.get('gpuAcceleration')!('on');
+    selectCallbacks.get('gpuAcceleration')?.('on');
 
     expect(mockOnSettingsChange).toHaveBeenCalledWith(
       expect.objectContaining({ gpuAcceleration: 'on' })
@@ -124,7 +124,7 @@ describe('DisplaySettings - GPU Acceleration Dropdown', () => {
       <DisplaySettings settings={defaultSettings} onSettingsChange={mockOnSettingsChange} />
     );
 
-    selectCallbacks.get('gpuAcceleration')!('off');
+    selectCallbacks.get('gpuAcceleration')?.('off');
 
     expect(mockOnSettingsChange).toHaveBeenCalledWith(
       expect.objectContaining({ gpuAcceleration: 'off' })
@@ -138,7 +138,7 @@ describe('DisplaySettings - GPU Acceleration Dropdown', () => {
       <DisplaySettings settings={settingsWithOff} onSettingsChange={mockOnSettingsChange} />
     );
 
-    selectCallbacks.get('gpuAcceleration')!('auto');
+    selectCallbacks.get('gpuAcceleration')?.('auto');
 
     expect(mockOnSettingsChange).toHaveBeenCalledWith(
       expect.objectContaining({ gpuAcceleration: 'auto' })

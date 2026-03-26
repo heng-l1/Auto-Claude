@@ -21,8 +21,6 @@
     "test": "cd apps/frontend && npm test",
     "test:backend": "node scripts/test-backend.js",
     "test:coverage": "node scripts/test-backend.js --cov --cov-report=term-missing --cov-report=html",
-    "lockfile:sync": "node scripts/sync-lockfile.js",
-    "lockfile:upgrade": "node scripts/sync-lockfile.js --upgrade",
     "package": "cd apps/frontend && npm run package",
     "package:mac": "cd apps/frontend && npm run package:mac",
     "package:win": "cd apps/frontend && npm run package:win",
@@ -51,6 +49,10 @@
     "lucide-react": "^0.562.0"
   },
   "overrides": {
-    "@electron/rebuild": "4.0.2"
+    "@electron/rebuild": "4.0.2",
+    "@electron/asar": "^4.1.1",
+    "global-agent": "^4.1.3",
+    "lodash.isequal": "npm:fast-deep-equal@^3.1.3",
+    "rimraf": "^6.1.3"
   }
 }

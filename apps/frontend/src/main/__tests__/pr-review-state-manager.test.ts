@@ -74,7 +74,7 @@ describe('PRReviewStateManager', () => {
       const snapshot = manager.getState(projectId, prNumber);
       // If actor wasn't started, getSnapshot would fail or return unexpected state
       expect(snapshot).not.toBeNull();
-      expect(String(snapshot!.value)).toBe('reviewing');
+      expect(String(snapshot?.value)).toBe('reviewing');
     });
   });
 
@@ -82,23 +82,23 @@ describe('PRReviewStateManager', () => {
     it('should transition to reviewing on handleStartReview', () => {
       manager.handleStartReview(projectId, prNumber);
       const snapshot = manager.getState(projectId, prNumber);
-      expect(String(snapshot!.value)).toBe('reviewing');
+      expect(String(snapshot?.value)).toBe('reviewing');
     });
 
     it('should send START_FOLLOWUP_REVIEW with previousResult', () => {
       const previousResult = createMockResult();
       manager.handleStartFollowupReview(projectId, prNumber, previousResult);
       const snapshot = manager.getState(projectId, prNumber);
-      expect(String(snapshot!.value)).toBe('reviewing');
-      expect(snapshot!.context.isFollowup).toBe(true);
-      expect(snapshot!.context.previousResult).toBe(previousResult);
+      expect(String(snapshot?.value)).toBe('reviewing');
+      expect(snapshot?.context.isFollowup).toBe(true);
+      expect(snapshot?.context.previousResult).toBe(previousResult);
     });
 
     it('should send START_REVIEW when handleStartFollowupReview has no previousResult', () => {
       manager.handleStartFollowupReview(projectId, prNumber);
       const snapshot = manager.getState(projectId, prNumber);
-      expect(String(snapshot!.value)).toBe('reviewing');
-      expect(snapshot!.context.isFollowup).toBe(false);
+      expect(String(snapshot?.value)).toBe('reviewing');
+      expect(snapshot?.context.isFollowup).toBe(false);
     });
 
     it('should update context on handleProgress', () => {
@@ -106,7 +106,7 @@ describe('PRReviewStateManager', () => {
       const progress = createMockProgress();
       manager.handleProgress(projectId, prNumber, progress);
       const snapshot = manager.getState(projectId, prNumber);
-      expect(snapshot!.context.progress).toEqual(progress);
+      expect(snapshot?.context.progress).toEqual(progress);
     });
 
     it('should ignore handleProgress for unknown PR', () => {
@@ -120,8 +120,8 @@ describe('PRReviewStateManager', () => {
       const result = createMockResult();
       manager.handleComplete(projectId, prNumber, result);
       const snapshot = manager.getState(projectId, prNumber);
-      expect(String(snapshot!.value)).toBe('completed');
-      expect(snapshot!.context.result).toEqual(result);
+      expect(String(snapshot?.value)).toBe('completed');
+      expect(snapshot?.context.result).toEqual(result);
     });
 
     it('should create actor for handleComplete on unknown PR (late-arriving result)', () => {
@@ -130,7 +130,7 @@ describe('PRReviewStateManager', () => {
       manager.handleComplete(projectId, prNumber, result);
       const snapshot = manager.getState(projectId, prNumber);
       expect(snapshot).not.toBeNull();
-      expect(snapshot!.context.result).toEqual(result);
+      expect(snapshot?.context.result).toEqual(result);
     });
 
     it('should send DETECT_EXTERNAL_REVIEW when overallStatus is in_progress', () => {
@@ -138,22 +138,22 @@ describe('PRReviewStateManager', () => {
       const result = createMockResult({ overallStatus: 'in_progress' });
       manager.handleComplete(projectId, prNumber, result);
       const snapshot = manager.getState(projectId, prNumber);
-      expect(String(snapshot!.value)).toBe('externalReview');
+      expect(String(snapshot?.value)).toBe('externalReview');
     });
 
     it('should transition to error on handleError', () => {
       manager.handleStartReview(projectId, prNumber);
       manager.handleError(projectId, prNumber, 'Something went wrong');
       const snapshot = manager.getState(projectId, prNumber);
-      expect(String(snapshot!.value)).toBe('error');
-      expect(snapshot!.context.error).toBe('Something went wrong');
+      expect(String(snapshot?.value)).toBe('error');
+      expect(snapshot?.context.error).toBe('Something went wrong');
     });
 
     it('should transition to error on handleCancel', () => {
       manager.handleStartReview(projectId, prNumber);
       manager.handleCancel(projectId, prNumber);
       const snapshot = manager.getState(projectId, prNumber);
-      expect(String(snapshot!.value)).toBe('error');
+      expect(String(snapshot?.value)).toBe('error');
     });
   });
 
@@ -183,8 +183,8 @@ describe('PRReviewStateManager', () => {
         }
       );
       expect(reviewingCall).toBeDefined();
-      expect(reviewingCall![2]).toBe(`${projectId}:${prNumber}`);
-      const payload = reviewingCall![3] as Record<string, unknown>;
+      expect(reviewingCall?.[2]).toBe(`${projectId}:${prNumber}`);
+      const payload = reviewingCall?.[3] as Record<string, unknown>;
       expect(payload).toEqual(expect.objectContaining({
         state: 'reviewing',
         prNumber,
@@ -304,8 +304,8 @@ describe('PRReviewStateManager', () => {
 
       manager.handleComplete(projectId, 1, createMockResult());
 
-      expect(String(manager.getState(projectId, 1)!.value)).toBe('completed');
-      expect(String(manager.getState(projectId, 2)!.value)).toBe('reviewing');
+      expect(String(manager.getState(projectId, 1)?.value)).toBe('completed');
+      expect(String(manager.getState(projectId, 2)?.value)).toBe('reviewing');
     });
 
     it('should route events to correct actor by key', () => {
@@ -314,9 +314,9 @@ describe('PRReviewStateManager', () => {
 
       manager.handleError(projectId, 2, 'Error on PR 2');
 
-      expect(String(manager.getState(projectId, 1)!.value)).toBe('reviewing');
-      expect(String(manager.getState(projectId, 2)!.value)).toBe('error');
-      expect(manager.getState(projectId, 2)!.context.error).toBe('Error on PR 2');
+      expect(String(manager.getState(projectId, 1)?.value)).toBe('reviewing');
+      expect(String(manager.getState(projectId, 2)?.value)).toBe('error');
+      expect(manager.getState(projectId, 2)?.context.error).toBe('Error on PR 2');
     });
 
     it('should not affect other PRs when clearing one', () => {
@@ -327,7 +327,7 @@ describe('PRReviewStateManager', () => {
 
       expect(manager.getState(projectId, 1)).toBeNull();
       expect(manager.getState(projectId, 2)).not.toBeNull();
-      expect(String(manager.getState(projectId, 2)!.value)).toBe('reviewing');
+      expect(String(manager.getState(projectId, 2)?.value)).toBe('reviewing');
     });
   });
 });

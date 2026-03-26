@@ -780,7 +780,7 @@ describe('Roadmap Store', () => {
       const status = useRoadmapStore.getState().generationStatus;
       expect(status.phase).toBe('generating');
       expect(status.startedAt).toBeDefined();
-      expect(status.startedAt!.getTime()).toBe(persistedStartedAt.getTime());
+      expect(status.startedAt?.getTime()).toBe(persistedStartedAt.getTime());
     });
   });
 

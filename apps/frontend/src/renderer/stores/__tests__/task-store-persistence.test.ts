@@ -340,7 +340,7 @@ describe('task-store-persistence', () => {
       expect(loadingState.isLoading).toBe(true);
 
       // Resolve the IPC call
-      resolveGetTasks!({
+      resolveGetTasks?.({
         success: true,
         data: []
       });

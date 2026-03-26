@@ -42,7 +42,7 @@ import { PRLogs } from './PRLogs';
 import { PRDiscussionPanel } from './PRDiscussionPanel';
 
 import type { PRData, PRReviewResult, PRReviewProgress } from '../hooks/useGitHubPRs';
-import type { NewCommitsCheck, MergeReadiness, PRLogs as PRLogsType, WorkflowsAwaitingApprovalResult, PRConflictResolutionProgress, PRConflictResolutionResult } from '../../../../preload/api/modules/github-api';
+import type { NewCommitsCheck, MergeReadiness, PRLogs as PRLogsType, WorkflowsAwaitingApprovalResult, } from '../../../../preload/api/modules/github-api';
 import { usePRReviewStore, startPRReview } from '../../../stores/github';
 
 const MAX_NOTES_LENGTH = 5000;
@@ -229,7 +229,7 @@ export function PRDetail({
   const [isUpdatingBranch, setIsUpdatingBranch] = useState(false);
   const [branchUpdateError, setBranchUpdateError] = useState<string | null>(null);
   const [branchUpdateSuccess, setBranchUpdateSuccess] = useState(false);
-  const [mergeReadinessRefreshKey, setMergeReadinessRefreshKey] = useState(0);
+  const [_mergeReadinessRefreshKey, setMergeReadinessRefreshKey] = useState(0);
 
   // Conflict resolution state (for AI-powered conflict resolution)
   const [isResolvingConflicts, setIsResolvingConflicts] = useState(false);
@@ -270,7 +270,7 @@ export function PRDetail({
     } else {
       setPostedFindingIds(new Set());
     }
-  }, [reviewResult?.postedFindingIds, pr.number]);
+  }, [reviewResult?.postedFindingIds]);
 
   // Auto-select ALL findings when review completes (excluding already posted)
   // All findings should reach the contributor - even LOW suggestions are valuable feedback
@@ -787,7 +787,7 @@ export function PRDetail({
 
     checkWorkflows();
     // Re-check when a review is completed (CI status might have changed)
-  }, [pr.number, reviewResult]);
+  }, [pr.number]);
 
   // Check merge readiness (real-time validation) when PR is selected
   // This runs on every PR selection to catch stale verdicts
@@ -824,7 +824,7 @@ export function PRDetail({
         mergeReadinessAbortRef.current.abort();
       }
     };
-  }, [pr.number, projectId, mergeReadinessRefreshKey]);
+  }, [pr.number, projectId]);
 
   // Handler to approve a workflow
   const handleApproveWorkflow = useCallback(async (runId: number) => {
@@ -1419,7 +1419,7 @@ ${t('prReview.blockedStatusMessageFooter')}`;
         />
 
         {/* Action Bar (Legacy Actions that fit under the tree context) */}
-        {reviewResult && reviewResult.success && !isReviewing && (
+        {reviewResult?.success && !isReviewing && (
           <div className="flex flex-wrap items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
              {selectedCount > 0 && (
                 <Button onClick={handlePostReview} variant="secondary" disabled={isPostingFindings} className="flex-1 sm:flex-none">
@@ -1640,7 +1640,7 @@ ${t('prReview.blockedStatusMessageFooter')}`;
         )}
 
         {/* Review Summary — AI-generated change summary with verdict */}
-        {reviewResult && reviewResult.success && (
+        {reviewResult?.success && (
           <CollapsibleCard
             title={t('prReview.reviewSummary')}
             icon={<FileText className="h-4 w-4 text-blue-500" />}
@@ -1674,7 +1674,7 @@ ${t('prReview.blockedStatusMessageFooter')}`;
         )}
 
         {/* Review Result / Findings */}
-        {reviewResult && reviewResult.success && (
+        {reviewResult?.success && (
           <CollapsibleCard
             title={reviewResult.isFollowupReview ? t('prReview.followupReviewDetails') : t('prReview.aiAnalysisResults')}
             icon={reviewResult.isFollowupReview ? (
@@ -1886,7 +1886,7 @@ ${t('prReview.blockedStatusMessageFooter')}`;
         )}
 
         {/* PR Discussion — Interactive chat about review findings */}
-        {reviewResult && reviewResult.success && !isReviewing && (
+        {reviewResult?.success && !isReviewing && (
           <PRDiscussionPanel
             projectId={projectId}
             prNumber={pr.number}

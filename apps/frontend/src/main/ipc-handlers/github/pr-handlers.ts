@@ -11,7 +11,6 @@
 import { ipcMain } from "electron";
 import type { BrowserWindow } from "electron";
 import path from "path";
-import os from "os";
 import fs from "fs";
 import {
   IPC_CHANNELS,
@@ -222,125 +221,6 @@ function sanitizeNetworkData(data: string, maxLength = 1000000): string {
 
 // Debug logging
 const { debug: debugLog } = createContextLogger("GitHub PR");
-
-/**
- * Parse a GitHub API patch string into a set of valid new-file line numbers.
- *
- * Walks @@ hunk headers and counts + (additions) and space-prefixed (context)
- * lines to determine which new-file line numbers are commentable via the
- * GitHub review API. Deletion lines (- prefix) are excluded.
- *
- * @param patch - Raw patch string from GitHub API file object
- * @returns Set of valid new-file line numbers
- */
-export function parsePatchForNewFileLines(patch: string | null | undefined): Set<number> {
-  const validLines = new Set<number>();
-
-  if (!patch) {
-    return validLines;
-  }
-
-  const lines = patch.split("\n");
-  let newLineNumber = 0;
-
-  for (const line of lines) {
-    // Parse @@ hunk header to get new-file start line
-    const hunkMatch = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-    if (hunkMatch) {
-      newLineNumber = Number.parseInt(hunkMatch[1], 10);
-      continue;
-    }
-
-    if (newLineNumber === 0) {
-      // Haven't seen a hunk header yet, skip
-      continue;
-    }
-
-    // Skip "\ No newline at end of file" marker
-    if (line.startsWith("\\")) {
-      continue;
-    }
-
-    if (line.startsWith("+")) {
-      // Addition line — valid commentable new-file line
-      validLines.add(newLineNumber);
-      newLineNumber++;
-    } else if (line.startsWith("-")) {
-      // Deletion line — not a new-file line, don't increment new line counter
-    } else {
-      // Context line (space prefix) — valid commentable new-file line
-      validLines.add(newLineNumber);
-      newLineNumber++;
-    }
-  }
-
-  return validLines;
-}
-
-/**
- * Review comment produced by buildReviewComments().
- * Includes optional subject_type for file-level comments.
- */
-export interface ReviewComment {
-  path: string;
-  line?: number;
-  body: string;
-  subject_type?: "line" | "file";
-}
-
-/**
- * Build review comments with diff-aware routing:
- * - Inline (line-level) for findings on lines within the diff
- * - File-level for findings on lines outside the diff but in a PR file
- * - Skipped for findings on files not in the PR
- *
- * @param findings - Array of PR review findings to route
- * @param fileLineMap - Map of filename → valid line numbers in the diff, or null to fall back to all-inline
- * @returns Array of review comments with routing metadata
- */
-export function buildReviewComments(
-  findings: PRReviewFinding[],
-  fileLineMap: Map<string, Set<number>> | null,
-): ReviewComment[] {
-  const comments: ReviewComment[] = [];
-  for (const f of findings) {
-    if (f.file && f.line && f.line > 0) {
-      const emoji =
-        { critical: "🔴", high: "🟠", medium: "🟡", low: "🔵" }[f.severity] || "⚪";
-      let commentBody = `${emoji} **[${f.severity.toUpperCase()}] ${f.title}**\n\n${f.description}`;
-      const suggestedFix = f.suggestedFix?.trim();
-      if (suggestedFix) {
-        commentBody += `\n\n**Suggested fix:**\n\`\`\`\n${suggestedFix}\n\`\`\``;
-      }
-
-      // Normalize path by stripping leading './' to match GitHub's repo-relative paths
-      const normalizedPath = f.file.replace(/^\.\//, "");
-
-      if (fileLineMap) {
-        // Diff-aware routing: validate line against the PR diff
-        const validLines = fileLineMap.get(normalizedPath);
-        if (validLines) {
-          if (validLines.has(f.line)) {
-            // Line is in the diff — post as inline line-level comment
-            comments.push({ path: normalizedPath, line: f.line, body: commentBody });
-          } else {
-            // Line is NOT in the diff — post as file-level comment with line hint
-            comments.push({
-              path: normalizedPath,
-              body: `> Line ${f.line}: ${commentBody}`,
-              subject_type: "file",
-            });
-          }
-        }
-        // If file not in map, skip this finding (file not in PR)
-      } else {
-        // fileLineMap is null (fetch failed) — fall back to original behavior
-        comments.push({ path: normalizedPath, line: f.line, body: commentBody });
-      }
-    }
-  }
-  return comments;
-}
 
 /**
  * Sentinel value indicating a review is waiting for CI checks to complete.
@@ -1017,7 +897,7 @@ async function waitForCIChecks(
  * @param abortSignal Optional abort signal for cancellation support
  * @returns true if the review should proceed, false if cancelled
  */
-async function performCIWaitCheck(
+async function _performCIWaitCheck(
   config: { token: string; repo: string },
   prNumber: number,
   sendProgress: (progress: PRReviewProgress) => void,
@@ -2222,7 +2102,7 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
           // Transition XState → reviewing (emits GITHUB_PR_REVIEW_STATE_CHANGE to renderer)
           prReviewStateManager?.handleStartReview(projectId, prNumber);
 
-          const config = getGitHubConfig(project);
+          const _config = getGitHubConfig(project);
 
           const fetchingProgress: PRReviewProgress = {
             phase: "fetching",
@@ -2323,51 +2203,6 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
           return false;
         }
 
-        // Fetch PR file patches to build a map of valid commentable line numbers per file
-        let fileLineMap: Map<string, Set<number>> | null = null;
-        try {
-          const prFiles = (await githubFetch(
-            config.token,
-            `/repos/${config.repo}/pulls/${prNumber}/files?per_page=100`
-          )) as Array<{ filename: string; patch?: string }>;
-
-          fileLineMap = new Map<string, Set<number>>();
-          for (const file of prFiles) {
-            fileLineMap.set(file.filename, parsePatchForNewFileLines(file.patch));
-          }
-          debugLog("Fetched PR file patches", {
-            prNumber,
-            fileCount: prFiles.length,
-          });
-        } catch (error) {
-          debugLog("Failed to fetch PR file patches, skipping line validation", {
-            prNumber,
-            error: error instanceof Error ? error.message : error,
-          });
-          fileLineMap = null;
-        }
-
-        // Fetch PR HEAD SHA for commit_id in review payload
-        let commitSha: string | null = null;
-        try {
-          const prData = (await githubFetch(
-            config.token,
-            `/repos/${config.repo}/pulls/${prNumber}`
-          )) as { head: { sha: string } };
-
-          commitSha = prData.head.sha;
-          debugLog("Fetched PR HEAD SHA", {
-            prNumber,
-            commitSha,
-          });
-        } catch (error) {
-          debugLog("Failed to fetch PR HEAD SHA, omitting commit_id", {
-            prNumber,
-            error: error instanceof Error ? error.message : error,
-          });
-          commitSha = null;
-        }
-
         try {
           // Filter findings if selection provided
           const selectedSet = selectedFindingIds ? new Set(selectedFindingIds) : null;
@@ -2414,20 +2249,24 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
             findingsCount: findings.length,
           });
 
-          // Build review comments with diff-aware routing
-          const inlineComments = buildReviewComments(findings, fileLineMap);
-
-          const lineLevelCount = inlineComments.filter((c) => c.line !== undefined).length;
-          const fileLevelCount = inlineComments.filter((c) => c.subject_type === "file").length;
-          const eligibleCount = findings.filter((f) => f.file && f.line && f.line > 0).length;
-          const skippedCount = eligibleCount - inlineComments.length;
+          // Build inline review comments for each finding with file+line info
+          const inlineComments: Array<{ path: string; line: number; body: string }> = [];
+          for (const f of findings) {
+            if (f.file && f.line && f.line > 0) {
+              const emoji =
+                { critical: "🔴", high: "🟠", medium: "🟡", low: "🔵" }[f.severity] || "⚪";
+              let commentBody = `${emoji} **[${f.severity.toUpperCase()}] ${f.title}**\n\n${f.description}`;
+              const suggestedFix = f.suggestedFix?.trim();
+              if (suggestedFix) {
+                commentBody += `\n\n**Suggested fix:**\n\`\`\`\n${suggestedFix}\n\`\`\``;
+              }
+              inlineComments.push({ path: f.file, line: f.line, body: commentBody });
+            }
+          }
 
           debugLog("Posting review with inline comments", {
             prNumber,
-            lineLevel: lineLevelCount,
-            fileLevel: fileLevelCount,
-            skipped: skippedCount,
-            commitSha: commitSha ?? "none",
+            inlineCount: inlineComments.length,
             totalFindings: findings.length,
           });
 
@@ -2439,9 +2278,6 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
           };
           if (inlineComments.length > 0) {
             reviewPayload.comments = inlineComments;
-            if (commitSha) {
-              reviewPayload.commit_id = commitSha;
-            }
           }
 
           try {
@@ -2479,7 +2315,7 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
               reviewId = fallbackResponse.id;
             } else {
               // If inline comments fail (e.g., line not in diff), retry without them
-              if (inlineComments.length > 0 && (errorMsg.includes("pull_request_review_thread.line") || errorMsg.includes("Line could not be resolved"))) {
+              if (inlineComments.length > 0 && errorMsg.includes("pull_request_review_thread.line")) {
                 debugLog("Inline comments failed, retrying without them", { prNumber });
                 const retryResponse = (await githubFetch(
                   config.token,

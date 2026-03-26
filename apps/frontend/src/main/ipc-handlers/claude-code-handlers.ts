@@ -1481,7 +1481,7 @@ export function registerClaudeCodeHandlers(): void {
         // Group by message.id, preserving insertion order
         const groupedByMessageId = new Map<string, JsonlEntry[]>();
         for (const entry of assistantEntries) {
-          const msgId = entry.message!.id!;
+          const msgId = entry.message?.id!;
           const group = groupedByMessageId.get(msgId);
           if (group) {
             group.push(entry);

@@ -19,12 +19,12 @@ import { getOperationRegistry, type OperationType } from '../../../claude-profil
 import { isWindows, isMacOS } from '../../../platform';
 import { getEffectiveSourcePath } from '../../../updater/path-resolver';
 import { pythonEnvManager, getConfiguredPythonPath } from '../../../python-env-manager';
-import { getTaskkillExePath, getWhereExePath } from '../../../utils/windows-paths';
+import { getTaskkillExePath, } from '../../../utils/windows-paths';
 import { safeCaptureException, safeBreadcrumb } from '../../../sentry';
 import { getToolInfo } from '../../../cli-tool-manager';
 
 const execAsync = promisify(exec);
-const execFileAsync = promisify(execFile);
+const _execFileAsync = promisify(execFile);
 
 /**
  * Create a fallback environment for Python subprocesses when no env is provided.

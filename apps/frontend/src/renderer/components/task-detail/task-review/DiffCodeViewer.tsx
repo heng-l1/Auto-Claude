@@ -144,10 +144,10 @@ export function DiffCodeViewer({
   }, []);
 
   // Reset adding state when file changes
-  const currentPath = file?.path;
+  const _currentPath = file?.path;
   useEffect(() => {
     setAddingCommentAt(null);
-  }, [currentPath]);
+  }, []);
 
   // --- Empty states ---
 

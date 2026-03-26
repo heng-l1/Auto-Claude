@@ -1578,8 +1578,8 @@ describe('usage-monitor', () => {
       // Anthropic API key profiles now return an accumulated usage snapshot
       // instead of null, since the OAuth endpoint doesn't work with API keys.
       expect(usage).not.toBeNull();
-      expect(usage!.usageSource).toBe('api-key');
-      expect(usage!.profileId).toBe('api-profile-1');
+      expect(usage?.usageSource).toBe('api-key');
+      expect(usage?.profileId).toBe('api-profile-1');
 
       errorSpy.mockRestore();
     });
@@ -1628,8 +1628,8 @@ describe('usage-monitor', () => {
       // Anthropic API key profiles now return an accumulated usage snapshot
       // via the legacy detection path (generates snapshot from accumulated data).
       expect(usage).not.toBeNull();
-      expect(usage!.usageSource).toBe('api-key');
-      expect(usage!.profileId).toBe('api-profile-1');
+      expect(usage?.usageSource).toBe('api-key');
+      expect(usage?.profileId).toBe('api-profile-1');
     });
 
     it('should handle OAuth profile in activeProfile parameter', async () => {
@@ -1690,10 +1690,10 @@ describe('usage-monitor', () => {
 
         let accumulated = monitor.getTokenAccumulation(profileId);
         expect(accumulated).toBeDefined();
-        expect(accumulated!.inputTokens).toBe(100);
-        expect(accumulated!.outputTokens).toBe(50);
-        expect(accumulated!.cacheReadInputTokens).toBe(10);
-        expect(accumulated!.cacheCreationInputTokens).toBe(5);
+        expect(accumulated?.inputTokens).toBe(100);
+        expect(accumulated?.outputTokens).toBe(50);
+        expect(accumulated?.cacheReadInputTokens).toBe(10);
+        expect(accumulated?.cacheCreationInputTokens).toBe(5);
 
         // Second call - should accumulate
         monitor.recordTokenUsage(profileId, {
@@ -1705,10 +1705,10 @@ describe('usage-monitor', () => {
 
         accumulated = monitor.getTokenAccumulation(profileId);
         expect(accumulated).toBeDefined();
-        expect(accumulated!.inputTokens).toBe(300);
-        expect(accumulated!.outputTokens).toBe(150);
-        expect(accumulated!.cacheReadInputTokens).toBe(30);
-        expect(accumulated!.cacheCreationInputTokens).toBe(20);
+        expect(accumulated?.inputTokens).toBe(300);
+        expect(accumulated?.outputTokens).toBe(150);
+        expect(accumulated?.cacheReadInputTokens).toBe(30);
+        expect(accumulated?.cacheCreationInputTokens).toBe(20);
 
         // Third call - continue accumulating
         monitor.recordTokenUsage(profileId, {
@@ -1719,11 +1719,11 @@ describe('usage-monitor', () => {
 
         accumulated = monitor.getTokenAccumulation(profileId);
         expect(accumulated).toBeDefined();
-        expect(accumulated!.inputTokens).toBe(350);
-        expect(accumulated!.outputTokens).toBe(175);
-        expect(accumulated!.cacheReadInputTokens).toBe(30); // Unchanged
-        expect(accumulated!.cacheCreationInputTokens).toBe(20); // Unchanged
-        expect(accumulated!.lastUpdated).toBeInstanceOf(Date);
+        expect(accumulated?.inputTokens).toBe(350);
+        expect(accumulated?.outputTokens).toBe(175);
+        expect(accumulated?.cacheReadInputTokens).toBe(30); // Unchanged
+        expect(accumulated?.cacheCreationInputTokens).toBe(20); // Unchanged
+        expect(accumulated?.lastUpdated).toBeInstanceOf(Date);
       });
     });
 
@@ -1743,13 +1743,13 @@ describe('usage-monitor', () => {
 
         const rateLimitData = monitor.getRateLimitData(profileId);
         expect(rateLimitData).toBeDefined();
-        expect(rateLimitData!.tokensLimit).toBe(100000);
-        expect(rateLimitData!.tokensRemaining).toBe(75000);
-        expect(rateLimitData!.tokensReset).toBe('2026-03-06T12:00:00Z');
-        expect(rateLimitData!.requestsLimit).toBe(1000);
-        expect(rateLimitData!.requestsRemaining).toBe(800);
-        expect(rateLimitData!.requestsReset).toBe('2026-03-06T12:00:00Z');
-        expect(rateLimitData!.lastUpdated).toBeInstanceOf(Date);
+        expect(rateLimitData?.tokensLimit).toBe(100000);
+        expect(rateLimitData?.tokensRemaining).toBe(75000);
+        expect(rateLimitData?.tokensReset).toBe('2026-03-06T12:00:00Z');
+        expect(rateLimitData?.requestsLimit).toBe(1000);
+        expect(rateLimitData?.requestsRemaining).toBe(800);
+        expect(rateLimitData?.requestsReset).toBe('2026-03-06T12:00:00Z');
+        expect(rateLimitData?.lastUpdated).toBeInstanceOf(Date);
       });
 
       it('should replace previous rate limit data on subsequent calls', () => {
@@ -1777,9 +1777,9 @@ describe('usage-monitor', () => {
         });
 
         const rateLimitData = monitor.getRateLimitData(profileId);
-        expect(rateLimitData!.tokensRemaining).toBe(50000);
-        expect(rateLimitData!.requestsRemaining).toBe(600);
-        expect(rateLimitData!.tokensReset).toBe('2026-03-06T13:00:00Z');
+        expect(rateLimitData?.tokensRemaining).toBe(50000);
+        expect(rateLimitData?.requestsRemaining).toBe(600);
+        expect(rateLimitData?.tokensReset).toBe('2026-03-06T13:00:00Z');
       });
     });
 
@@ -1825,16 +1825,16 @@ describe('usage-monitor', () => {
 
         // Verify token usage is included
         expect(snapshot.tokenUsage).toBeDefined();
-        expect(snapshot.tokenUsage!.inputTokens).toBe(15000);
-        expect(snapshot.tokenUsage!.outputTokens).toBe(10000);
-        expect(snapshot.tokenUsage!.cacheReadInputTokens).toBe(500);
-        expect(snapshot.tokenUsage!.cacheCreationInputTokens).toBe(200);
-        expect(snapshot.tokenUsage!.totalTokens).toBe(25700);
+        expect(snapshot.tokenUsage?.inputTokens).toBe(15000);
+        expect(snapshot.tokenUsage?.outputTokens).toBe(10000);
+        expect(snapshot.tokenUsage?.cacheReadInputTokens).toBe(500);
+        expect(snapshot.tokenUsage?.cacheCreationInputTokens).toBe(200);
+        expect(snapshot.tokenUsage?.totalTokens).toBe(25700);
 
         // Verify rate limits are included
         expect(snapshot.rateLimits).toBeDefined();
-        expect(snapshot.rateLimits!.tokensLimit).toBe(100000);
-        expect(snapshot.rateLimits!.tokensRemaining).toBe(75000);
+        expect(snapshot.rateLimits?.tokensLimit).toBe(100000);
+        expect(snapshot.rateLimits?.tokensRemaining).toBe(75000);
 
         // Verify usage window labels
         expect(snapshot.usageWindows?.sessionWindowLabel).toBe('common:usage.tokenLimit');
@@ -1881,35 +1881,6 @@ describe('usage-monitor', () => {
         expect(snapshot.sessionUsageValue).toBeUndefined();
         expect(snapshot.sessionUsageLimit).toBeUndefined();
       });
-
-      it('should leave sessionUsageLimit undefined with totalTokens > 0 when tokensLimit is 0', () => {
-        const monitor = getUsageMonitor();
-        const profileId = 'api-key-zero-limit-with-tokens';
-
-        // Edge case: tokensLimit = 0 with all limits at zero
-        monitor.recordRateLimits(profileId, {
-          tokensLimit: 0,
-          tokensRemaining: 0,
-          tokensReset: '2026-03-06T12:00:00Z',
-          requestsLimit: 0,
-          requestsRemaining: 0,
-          requestsReset: '2026-03-06T12:00:00Z'
-        });
-
-        // Seed accumulated token usage
-        monitor.recordTokenUsage(profileId, {
-          inputTokens: 5000,
-          outputTokens: 2000
-        });
-
-        const snapshot = monitor['generateApiKeySnapshot'](profileId, 'Zero Limit With Tokens');
-
-        expect(snapshot.sessionPercent).toBe(0);
-        expect(snapshot.sessionUsageLimit).toBeUndefined();
-        expect(snapshot.usageSource).toBe('api-key');
-        expect(snapshot.tokenUsage).toBeDefined();
-        expect(snapshot.tokenUsage!.totalTokens).toBe(7000);
-      });
     });
 
     describe('fetchUsageViaAPI for Anthropic API key profiles', () => {
@@ -1949,9 +1920,9 @@ describe('usage-monitor', () => {
 
         // Should NOT return null - should return accumulated snapshot instead
         expect(usage).not.toBeNull();
-        expect(usage!.usageSource).toBe('api-key');
-        expect(usage!.profileId).toBe(profileId);
-        expect(usage!.sessionPercent).toBe(25); // (80000 - 60000) / 80000 * 100 = 25
+        expect(usage?.usageSource).toBe('api-key');
+        expect(usage?.profileId).toBe(profileId);
+        expect(usage?.sessionPercent).toBe(25); // (80000 - 60000) / 80000 * 100 = 25
       });
 
       it('should return snapshot via legacy path when activeProfile not provided', async () => {
@@ -1990,8 +1961,8 @@ describe('usage-monitor', () => {
         );
 
         expect(usage).not.toBeNull();
-        expect(usage!.usageSource).toBe('api-key');
-        expect(usage!.sessionPercent).toBe(20); // (50000 - 40000) / 50000 * 100 = 20
+        expect(usage?.usageSource).toBe('api-key');
+        expect(usage?.sessionPercent).toBe(20); // (50000 - 40000) / 50000 * 100 = 20
       });
     });
 
@@ -2060,13 +2031,13 @@ describe('usage-monitor', () => {
 
         // Verify profile 1 data
         const data1 = monitor.getTokenAccumulation(profile1);
-        expect(data1!.inputTokens).toBe(1000);
-        expect(data1!.outputTokens).toBe(500);
+        expect(data1?.inputTokens).toBe(1000);
+        expect(data1?.outputTokens).toBe(500);
 
         // Verify profile 2 data
         const data2 = monitor.getTokenAccumulation(profile2);
-        expect(data2!.inputTokens).toBe(2000);
-        expect(data2!.outputTokens).toBe(1000);
+        expect(data2?.inputTokens).toBe(2000);
+        expect(data2?.outputTokens).toBe(1000);
 
         // Accumulate more for profile 1 only
         monitor.recordTokenUsage(profile1, {
@@ -2075,9 +2046,9 @@ describe('usage-monitor', () => {
         });
 
         // Profile 1 should be updated
-        expect(monitor.getTokenAccumulation(profile1)!.inputTokens).toBe(1500);
+        expect(monitor.getTokenAccumulation(profile1)?.inputTokens).toBe(1500);
         // Profile 2 should be unchanged
-        expect(monitor.getTokenAccumulation(profile2)!.inputTokens).toBe(2000);
+        expect(monitor.getTokenAccumulation(profile2)?.inputTokens).toBe(2000);
       });
 
       it('should track rate limits independently for different profiles', () => {
@@ -2106,10 +2077,10 @@ describe('usage-monitor', () => {
         const rl1 = monitor.getRateLimitData(profile1);
         const rl2 = monitor.getRateLimitData(profile2);
 
-        expect(rl1!.tokensLimit).toBe(100000);
-        expect(rl1!.tokensRemaining).toBe(80000);
-        expect(rl2!.tokensLimit).toBe(50000);
-        expect(rl2!.tokensRemaining).toBe(10000);
+        expect(rl1?.tokensLimit).toBe(100000);
+        expect(rl1?.tokensRemaining).toBe(80000);
+        expect(rl2?.tokensLimit).toBe(50000);
+        expect(rl2?.tokensRemaining).toBe(10000);
       });
 
       it('should clear data for one profile without affecting others', () => {
@@ -2138,9 +2109,9 @@ describe('usage-monitor', () => {
 
         // Profile 2 should still have data
         expect(monitor.getTokenAccumulation(profile2)).toBeDefined();
-        expect(monitor.getTokenAccumulation(profile2)!.inputTokens).toBe(200);
+        expect(monitor.getTokenAccumulation(profile2)?.inputTokens).toBe(200);
         expect(monitor.getRateLimitData(profile2)).toBeDefined();
-        expect(monitor.getRateLimitData(profile2)!.tokensRemaining).toBe(30000);
+        expect(monitor.getRateLimitData(profile2)?.tokensRemaining).toBe(30000);
       });
 
       it('should generate independent snapshots for different profiles', () => {

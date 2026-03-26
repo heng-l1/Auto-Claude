@@ -291,8 +291,8 @@ export async function destroyTerminal(
         .then(({ savePRDiscussionToMemory }) =>
           savePRDiscussionToMemory(
             terminal.outputBuffer,
-            terminal.prDiscussionContext!.prNumber,
-            terminal.prDiscussionContext!.repo
+            terminal.prDiscussionContext?.prNumber,
+            terminal.prDiscussionContext?.repo
           )
         )
         .catch((err) => {

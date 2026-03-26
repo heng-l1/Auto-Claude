@@ -184,7 +184,7 @@ export function Insights({ projectId }: InsightsProps) {
     const cleanup = setupInsightsListeners();
     return cleanup;
   // biome-ignore lint/correctness/useExhaustiveDependencies: showArchived is handled by the dedicated effect below; including it here would cause duplicate loads
-  }, [projectId]);
+  }, [projectId, showArchived]);
 
   // Reload sessions when showArchived changes (skip first run to avoid duplicate load with mount effect)
   const isFirstRun = useRef(true);
@@ -258,7 +258,7 @@ export function Insights({ projectId }: InsightsProps) {
     };
     setPendingImages([...pendingImages, newImage]);
     setImageError(null);
-  }, [pendingImages, setPendingImages, setImageError, t]);
+  }, [pendingImages, setPendingImages, t]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {

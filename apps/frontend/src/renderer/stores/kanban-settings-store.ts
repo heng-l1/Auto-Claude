@@ -160,7 +160,7 @@ let saveTerminalPanelTimeout: ReturnType<typeof setTimeout> | null = null;
 let currentLoadingProjectId: string | null = null;
 
 // Track the current project for terminal panel loads
-let currentPanelLoadingProjectId: string | null = null;
+let _currentPanelLoadingProjectId: string | null = null;
 
 // ============================================
 // Helper Functions
@@ -607,7 +607,7 @@ export const useKanbanSettingsStore = create<KanbanSettingsState>((set, get) => 
     }
 
     // Track current project to detect stale results
-    currentPanelLoadingProjectId = projectId;
+    _currentPanelLoadingProjectId = projectId;
 
     // Load from localStorage as sync cache
     try {

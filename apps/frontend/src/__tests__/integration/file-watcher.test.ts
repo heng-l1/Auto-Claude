@@ -7,8 +7,8 @@ import { mkdirSync, writeFileSync, rmSync, existsSync } from 'fs';
 import path from 'path';
 import { EventEmitter } from 'events';
 
-// Test directories
-const TEST_DIR = '/tmp/file-watcher-test';
+// Test directories - use sandboxed temp directory
+const TEST_DIR = path.join(process.env.TMPDIR || '/tmp/claude', 'file-watcher-test');
 const TEST_SPEC_DIR = path.join(TEST_DIR, 'test-spec');
 
 // Mock chokidar watcher

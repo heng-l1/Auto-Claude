@@ -604,10 +604,6 @@ export class UsageMonitor extends EventEmitter {
       sessionUsageLimit = rateLimitData.tokensLimit;
     }
 
-    if (rateLimitData && rateLimitData.tokensLimit === 0) {
-      this.debugLog('[UsageMonitor] tokensLimit is 0 for profile ' + profileId + ' (spend-limit-only workspace) - UI will show total tokens instead of percentage');
-    }
-
     // Build token usage object if we have accumulation data
     const tokenUsage = tokenData ? {
       inputTokens: tokenData.inputTokens,
@@ -1650,7 +1646,7 @@ export class UsageMonitor extends EventEmitter {
 
         // The OAuth usage endpoint requires OAuth tokens (sk-ant-oat*), not API keys (sk-ant-api*)
         // Generate a snapshot from accumulated rate limit/token data for API key credentials
-        if (credential && credential.startsWith('sk-ant-api')) {
+        if (credential?.startsWith('sk-ant-api')) {
           this.debugLog('[UsageMonitor] API key credential detected on OAuth profile - returning accumulated usage snapshot instead of calling OAuth endpoint');
           return this.generateApiKeySnapshot(profileId, profileName, profileEmail);
         }
