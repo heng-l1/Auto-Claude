@@ -28,6 +28,7 @@ from phase_config import (
     get_phase_client_thinking_kwargs,
     get_phase_model,
     get_phase_model_betas,
+    is_coding_critic_enabled,
 )
 from phase_event import ExecutionPhase, emit_phase
 from progress import (
@@ -48,7 +49,7 @@ from prompt_generator import (
     load_subtask_context,
 )
 from prompts import is_first_run
-from recovery import RecoveryManager
+from recovery import RecoveryAction, RecoveryManager
 from security.constants import PROJECT_DIR_ENV_VAR
 from task_logger import (
     LogPhase,
@@ -84,7 +85,8 @@ from .base import (
     sanitize_error_message,
 )
 from .memory_manager import debug_memory_system_status, get_graphiti_context
-from .session import post_session_processing, run_agent_session
+from .coding_critic import run_coding_critic
+from .session import _execute_recovery_action, post_session_processing, run_agent_session
 from .utils import (
     find_phase_for_subtask,
     find_subtask_in_plan,
@@ -787,6 +789,9 @@ async def run_autonomous_agent(
     # Debug: Print memory system status at startup
     debug_memory_system_status()
 
+    # Check if coding critic is enabled for this task (complexity-based)
+    coding_critic_enabled = is_coding_critic_enabled(spec_dir)
+
     # Update initial subtask counts
     subtasks = count_subtasks_detailed(spec_dir)
     status_manager.update_subtasks(
@@ -1308,6 +1313,58 @@ async def run_autonomous_agent(
                 source_spec_dir=source_spec_dir,
                 error_info=error_info,
             )
+
+            # === CODING CRITIC CHECK ===
+            # After successful subtask completion, run the coding critic to catch
+            # blocking issues (broken compilation, missing exports) before they
+            # cascade into downstream subtasks.
+            if (
+                success
+                and coding_critic_enabled
+                and not is_build_complete(spec_dir)
+            ):
+                plan = load_implementation_plan(spec_dir)
+                completed_subtask = (
+                    find_subtask_in_plan(plan, subtask_id) if plan else None
+                )
+                if completed_subtask:
+                    commit_after = get_latest_commit(project_dir)
+                    critic_verdict = await run_coding_critic(
+                        project_dir=project_dir,
+                        spec_dir=spec_dir,
+                        model=phase_model,
+                        subtask=completed_subtask,
+                        commit_before=commit_before,
+                        commit_after=commit_after,
+                    )
+                    if not critic_verdict.passed:
+                        logger.warning(
+                            "[Coding Critic] FAIL for subtask %s — triggering retry",
+                            subtask_id,
+                        )
+                        print_status(
+                            f"Coding critic found blocking issues in {subtask_id}",
+                            "warning",
+                        )
+                        recovery_manager.record_attempt(
+                            subtask_id=subtask_id,
+                            session=iteration,
+                            success=False,
+                            approach="Coding critic found blocking issues",
+                            error=critic_verdict.fix_instructions,
+                        )
+                        _execute_recovery_action(
+                            RecoveryAction(
+                                "retry",
+                                subtask_id,
+                                critic_verdict.fix_instructions,
+                            ),
+                            recovery_manager,
+                            spec_dir,
+                            project_dir,
+                            subtask_id,
+                        )
+                        success = False
 
             # Check for stuck subtasks
             attempt_count = recovery_manager.get_attempt_count(subtask_id)
