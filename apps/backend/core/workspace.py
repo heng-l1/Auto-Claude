@@ -88,7 +88,10 @@ from core.workspace.git_utils import (
     MAX_PARALLEL_AI_MERGES,
     _is_auto_claude_file,
     get_existing_build_worktree,
+    has_uncommitted_changes,
     parse_conflict_file_path,
+    stash_changes,
+    unstash_changes,
 )
 from core.workspace.git_utils import (
     apply_path_mapping as _apply_path_mapping,
@@ -255,136 +258,153 @@ def merge_existing_build(
         print(highlight(f"  python auto-claude/run.py --spec {spec_name} --merge"))
         return False
 
-    if no_commit:
-        content = [
-            bold(f"{icon(Icons.SUCCESS)} STAGING BUILD FOR REVIEW"),
-            "",
-            muted("Changes will be staged but NOT committed."),
-            muted("Review in your IDE, then commit when ready."),
-        ]
-    else:
-        content = [
-            bold(f"{icon(Icons.SUCCESS)} ADDING BUILD TO YOUR PROJECT"),
-        ]
-    print()
-    print(box(content, width=60, style="heavy"))
+    # Auto-stash uncommitted changes to prevent merge failures
+    did_stash = False
+    if has_uncommitted_changes(project_dir):
+        print_status("Stashing uncommitted changes before merge...", "progress")
+        did_stash = stash_changes(project_dir)
 
-    # Use current branch as merge target (not auto-detected main/master)
-    manager = WorktreeManager(project_dir, base_branch=current_branch)
-    show_build_summary(manager, spec_name)
-    print()
+    try:
+        if no_commit:
+            content = [
+                bold(f"{icon(Icons.SUCCESS)} STAGING BUILD FOR REVIEW"),
+                "",
+                muted("Changes will be staged but NOT committed."),
+                muted("Review in your IDE, then commit when ready."),
+            ]
+        else:
+            content = [
+                bold(f"{icon(Icons.SUCCESS)} ADDING BUILD TO YOUR PROJECT"),
+            ]
+        print()
+        print(box(content, width=60, style="heavy"))
 
-    # Try smart merge first if enabled
-    if use_smart_merge:
-        smart_result = _try_smart_merge(
-            project_dir,
-            spec_name,
-            worktree_path,
-            manager,
-            no_commit=no_commit,
-            task_source_branch=base_branch,
-        )
+        # Use current branch as merge target (not auto-detected main/master)
+        manager = WorktreeManager(project_dir, base_branch=current_branch)
+        show_build_summary(manager, spec_name)
+        print()
 
-        if smart_result is not None:
-            # Smart merge handled it (success or identified conflicts)
-            if smart_result.get("success"):
-                # Check if smart merge actually DID work (resolved conflicts via AI)
-                # NOTE: "files_merged" in stats is misleading - it's "files TO merge" not "files WERE merged"
-                # The smart merge preview returns this count but doesn't actually perform the merge
-                # in the no-conflict path. We only skip git merge if AI actually did work.
-                stats = smart_result.get("stats", {})
-                had_conflicts = stats.get("conflicts_resolved", 0) > 0
-                ai_assisted = stats.get("ai_assisted", 0) > 0
-                direct_copy = stats.get("direct_copy", False)
-                git_merge_used = stats.get("git_merge", False)
+        # Try smart merge first if enabled
+        if use_smart_merge:
+            smart_result = _try_smart_merge(
+                project_dir,
+                spec_name,
+                worktree_path,
+                manager,
+                no_commit=no_commit,
+                task_source_branch=base_branch,
+            )
 
-                if had_conflicts or ai_assisted or direct_copy or git_merge_used:
-                    # AI resolved conflicts, assisted with merges, git merge was used, or direct copy was used
-                    # Changes are already written and staged - no need for additional git merge
-                    _print_merge_success(
-                        no_commit, stats, spec_name=spec_name, keep_worktree=True
-                    )
+            if smart_result is not None:
+                # Smart merge handled it (success or identified conflicts)
+                if smart_result.get("success"):
+                    # Check if smart merge actually DID work (resolved conflicts via AI)
+                    # NOTE: "files_merged" in stats is misleading - it's "files TO merge" not "files WERE merged"
+                    # The smart merge preview returns this count but doesn't actually perform the merge
+                    # in the no-conflict path. We only skip git merge if AI actually did work.
+                    stats = smart_result.get("stats", {})
+                    had_conflicts = stats.get("conflicts_resolved", 0) > 0
+                    ai_assisted = stats.get("ai_assisted", 0) > 0
+                    direct_copy = stats.get("direct_copy", False)
+                    git_merge_used = stats.get("git_merge", False)
 
-                    # Don't auto-delete worktree - let user test and manually cleanup
-                    # User can delete with: python auto-claude/run.py --spec <name> --discard
-                    # Or via UI "Delete Worktree" button
-
-                    return True
-                else:
-                    # No conflicts needed AI resolution - do standard git merge
-                    # This is the common case: no divergence, just need to merge changes
-                    success_result = manager.merge_worktree(
-                        spec_name, delete_after=False, no_commit=no_commit
-                    )
-                    if success_result:
+                    if had_conflicts or ai_assisted or direct_copy or git_merge_used:
+                        # AI resolved conflicts, assisted with merges, git merge was used, or direct copy was used
+                        # Changes are already written and staged - no need for additional git merge
                         _print_merge_success(
                             no_commit, stats, spec_name=spec_name, keep_worktree=True
                         )
+
+                        # Don't auto-delete worktree - let user test and manually cleanup
+                        # User can delete with: python auto-claude/run.py --spec <name> --discard
+                        # Or via UI "Delete Worktree" button
+
                         return True
                     else:
-                        # Standard git merge failed - report error and don't continue
+                        # No conflicts needed AI resolution - do standard git merge
+                        # This is the common case: no divergence, just need to merge changes
+                        success_result = manager.merge_worktree(
+                            spec_name, delete_after=False, no_commit=no_commit
+                        )
+                        if success_result:
+                            _print_merge_success(
+                                no_commit, stats, spec_name=spec_name, keep_worktree=True
+                            )
+                            return True
+                        else:
+                            # Standard git merge failed - report error and don't continue
+                            print()
+                            print_status(
+                                "Merge failed. Please check the errors above.", "error"
+                            )
+                            return False
+                elif smart_result.get("git_conflicts"):
+                    # Had git conflicts that AI couldn't fully resolve
+                    resolved = smart_result.get("resolved", [])
+                    remaining = smart_result.get("conflicts", [])
+
+                    if resolved:
+                        print()
+                        print_status(f"AI resolved {len(resolved)} file(s)", "success")
+
+                    if remaining:
                         print()
                         print_status(
-                            "Merge failed. Please check the errors above.", "error"
+                            f"{len(remaining)} conflict(s) require manual resolution:",
+                            "warning",
                         )
+                        _print_conflict_info(smart_result)
+
+                        # Changes for resolved files are staged, remaining need manual work
+                        print()
+                        print("The resolved files are staged. For remaining conflicts:")
+                        print(muted("  1. Manually resolve the conflicting files"))
+                        print(muted("  2. git add <resolved-files>"))
+                        print(muted("  3. git commit"))
                         return False
-            elif smart_result.get("git_conflicts"):
-                # Had git conflicts that AI couldn't fully resolve
-                resolved = smart_result.get("resolved", [])
-                remaining = smart_result.get("conflicts", [])
-
-                if resolved:
-                    print()
-                    print_status(f"AI resolved {len(resolved)} file(s)", "success")
-
-                if remaining:
-                    print()
-                    print_status(
-                        f"{len(remaining)} conflict(s) require manual resolution:",
-                        "warning",
-                    )
+                elif smart_result.get("conflicts"):
+                    # Has semantic conflicts that need resolution
                     _print_conflict_info(smart_result)
-
-                    # Changes for resolved files are staged, remaining need manual work
                     print()
-                    print("The resolved files are staged. For remaining conflicts:")
-                    print(muted("  1. Manually resolve the conflicting files"))
-                    print(muted("  2. git add <resolved-files>"))
-                    print(muted("  3. git commit"))
-                    return False
-            elif smart_result.get("conflicts"):
-                # Has semantic conflicts that need resolution
-                _print_conflict_info(smart_result)
-                print()
-                print(muted("Attempting git merge anyway..."))
-                print()
+                    print(muted("Attempting git merge anyway..."))
+                    print()
 
-    # Fall back to standard git merge
-    success_result = manager.merge_worktree(
-        spec_name, delete_after=False, no_commit=no_commit
-    )
+        # Fall back to standard git merge
+        success_result = manager.merge_worktree(
+            spec_name, delete_after=False, no_commit=no_commit
+        )
 
-    if success_result:
-        print()
-        if no_commit:
-            print_status("Changes are staged in your working directory.", "success")
+        if success_result:
             print()
-            print("Review the changes in your IDE, then commit:")
-            print(highlight("  git commit -m 'your commit message'"))
-            print()
-            print("When satisfied, delete the worktree:")
-            print(muted(f"  python auto-claude/run.py --spec {spec_name} --discard"))
+            if no_commit:
+                print_status("Changes are staged in your working directory.", "success")
+                print()
+                print("Review the changes in your IDE, then commit:")
+                print(highlight("  git commit -m 'your commit message'"))
+                print()
+                print("When satisfied, delete the worktree:")
+                print(muted(f"  python auto-claude/run.py --spec {spec_name} --discard"))
+            else:
+                print_status("Your feature has been added to your project.", "success")
+                print()
+                print("When satisfied, delete the worktree:")
+                print(muted(f"  python auto-claude/run.py --spec {spec_name} --discard"))
+            return True
         else:
-            print_status("Your feature has been added to your project.", "success")
             print()
-            print("When satisfied, delete the worktree:")
-            print(muted(f"  python auto-claude/run.py --spec {spec_name} --discard"))
-        return True
-    else:
-        print()
-        print_status("There was a conflict merging the changes.", "error")
-        print(muted("You may need to merge manually."))
-        return False
+            print_status("There was a conflict merging the changes.", "error")
+            print(muted("You may need to merge manually."))
+            return False
+    finally:
+        if did_stash:
+            stash_ok, stash_err = unstash_changes(project_dir)
+            if stash_ok:
+                print_status("Restored your uncommitted changes.", "success")
+            else:
+                print(warning("Could not cleanly restore stashed changes."))
+                print(muted("  Run 'git stash pop' manually to recover them."))
+                if stash_err:
+                    print(muted(f"  Error: {stash_err}"))
 
 
 def _try_smart_merge(
