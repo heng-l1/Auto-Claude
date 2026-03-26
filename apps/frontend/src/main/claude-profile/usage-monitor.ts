@@ -10,7 +10,10 @@
  */
 
 import { EventEmitter } from 'events';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
+import { join } from 'path';
+import { app } from 'electron';
 import { getClaudeProfileManager } from '../claude-profile-manager';
 import { ClaudeUsageSnapshot, ProfileUsageSummary, AllProfilesUsage } from '../../shared/types/agent';
 import { loadProfilesFile } from '../services/profile/profile-manager';
@@ -217,6 +220,38 @@ export interface RateLimitData {
 }
 
 /**
+ * Serialized form of per-profile API key usage data for disk persistence.
+ * Dates are stored as ISO strings for JSON serialization.
+ */
+interface PersistedProfileData {
+  tokenAccumulation?: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadInputTokens: number;
+    cacheCreationInputTokens: number;
+    lastUpdated: string;
+  };
+  rateLimitData?: {
+    tokensLimit: number;
+    tokensRemaining: number;
+    tokensReset: string;
+    requestsLimit: number;
+    requestsRemaining: number;
+    requestsReset: string;
+    lastUpdated: string;
+  };
+}
+
+/**
+ * On-disk format for persisted API key usage data.
+ * Written to `api-key-usage-cache.json` in the app's config directory.
+ */
+interface PersistedApiKeyUsageData {
+  version: 1;
+  profiles: Record<string, PersistedProfileData>;
+}
+
+/**
  * Result of determining the active profile type
  */
 interface ActiveProfileResult {
@@ -268,6 +303,10 @@ export class UsageMonitor extends EventEmitter {
   // Latest rate limit header data from API responses
   private rateLimitDataMap: Map<string, RateLimitData> = new Map();
 
+  // Debounced disk persistence for API key usage data
+  private saveDebounceTimer: NodeJS.Timeout | null = null;
+  private static SAVE_DEBOUNCE_MS = 5000; // 5-second debounce for disk writes
+
   // Debug flag for verbose logging
   private readonly isDebug = process.env.DEBUG === 'true';
 
@@ -297,6 +336,181 @@ export class UsageMonitor extends EventEmitter {
   }
 
   /**
+   * Get the file path for the API key usage cache.
+   * Stored alongside claude-profiles.json in the app's config directory.
+   *
+   * @returns Absolute path to api-key-usage-cache.json
+   */
+  private getUsageCachePath(): string {
+    return join(app.getPath('userData'), 'config', 'api-key-usage-cache.json');
+  }
+
+  /**
+   * Restore API key usage data from disk cache at startup.
+   * Synchronous read is acceptable here since it runs once during start().
+   *
+   * Discards rate limit entries whose tokensReset has already passed,
+   * since those rate limit windows are no longer valid.
+   * Token accumulations are always restored (they represent session totals).
+   */
+  private restoreApiKeyUsageData(): void {
+    const cachePath = this.getUsageCachePath();
+
+    if (!existsSync(cachePath)) {
+      this.debugLog('[UsageMonitor] No usage cache file found, starting fresh');
+      return;
+    }
+
+    try {
+      const raw = readFileSync(cachePath, 'utf-8');
+      const parsed: PersistedApiKeyUsageData = JSON.parse(raw);
+
+      if (parsed.version !== 1 || !parsed.profiles) {
+        this.debugLog('[UsageMonitor] Usage cache has unknown version or format, ignoring');
+        return;
+      }
+
+      const now = new Date();
+      let restoredTokens = 0;
+      let restoredRateLimits = 0;
+      let discardedRateLimits = 0;
+
+      for (const [profileId, data] of Object.entries(parsed.profiles)) {
+        // Restore token accumulations (always valid — they represent cumulative totals)
+        if (data.tokenAccumulation) {
+          this.tokenAccumulations.set(profileId, {
+            inputTokens: data.tokenAccumulation.inputTokens,
+            outputTokens: data.tokenAccumulation.outputTokens,
+            cacheReadInputTokens: data.tokenAccumulation.cacheReadInputTokens,
+            cacheCreationInputTokens: data.tokenAccumulation.cacheCreationInputTokens,
+            lastUpdated: new Date(data.tokenAccumulation.lastUpdated)
+          });
+          restoredTokens++;
+        }
+
+        // Restore rate limit data only if the token reset window hasn't expired
+        if (data.rateLimitData) {
+          const resetTime = new Date(data.rateLimitData.tokensReset);
+          if (resetTime > now) {
+            this.rateLimitDataMap.set(profileId, {
+              tokensLimit: data.rateLimitData.tokensLimit,
+              tokensRemaining: data.rateLimitData.tokensRemaining,
+              tokensReset: data.rateLimitData.tokensReset,
+              requestsLimit: data.rateLimitData.requestsLimit,
+              requestsRemaining: data.rateLimitData.requestsRemaining,
+              requestsReset: data.rateLimitData.requestsReset,
+              lastUpdated: new Date(data.rateLimitData.lastUpdated)
+            });
+            restoredRateLimits++;
+          } else {
+            discardedRateLimits++;
+          }
+        }
+      }
+
+      this.debugLog('[UsageMonitor] Restored usage cache:', {
+        restoredTokens,
+        restoredRateLimits,
+        discardedRateLimits
+      });
+    } catch (error) {
+      // Corrupt or unreadable file — start fresh, don't crash
+      this.debugLog('[UsageMonitor] Failed to restore usage cache (starting fresh):', error);
+    }
+  }
+
+  /**
+   * Persist current API key usage data to disk.
+   * Best-effort write — errors are logged but don't affect runtime.
+   * Uses synchronous writes to ensure data is flushed before app quit.
+   */
+  private persistApiKeyUsageData(): void {
+    // Nothing to persist if both maps are empty
+    if (this.tokenAccumulations.size === 0 && this.rateLimitDataMap.size === 0) {
+      return;
+    }
+
+    const cachePath = this.getUsageCachePath();
+
+    try {
+      // Ensure config directory exists
+      const configDir = join(app.getPath('userData'), 'config');
+      if (!existsSync(configDir)) {
+        mkdirSync(configDir, { recursive: true });
+      }
+
+      // Build the persisted data structure
+      const profiles: Record<string, PersistedProfileData> = {};
+
+      // Collect all profile IDs from both maps
+      const allProfileIds = new Set([
+        ...this.tokenAccumulations.keys(),
+        ...this.rateLimitDataMap.keys()
+      ]);
+
+      for (const profileId of allProfileIds) {
+        const entry: PersistedProfileData = {};
+
+        const tokenData = this.tokenAccumulations.get(profileId);
+        if (tokenData) {
+          entry.tokenAccumulation = {
+            inputTokens: tokenData.inputTokens,
+            outputTokens: tokenData.outputTokens,
+            cacheReadInputTokens: tokenData.cacheReadInputTokens,
+            cacheCreationInputTokens: tokenData.cacheCreationInputTokens,
+            lastUpdated: tokenData.lastUpdated.toISOString()
+          };
+        }
+
+        const rateLimitData = this.rateLimitDataMap.get(profileId);
+        if (rateLimitData) {
+          entry.rateLimitData = {
+            tokensLimit: rateLimitData.tokensLimit,
+            tokensRemaining: rateLimitData.tokensRemaining,
+            tokensReset: rateLimitData.tokensReset,
+            requestsLimit: rateLimitData.requestsLimit,
+            requestsRemaining: rateLimitData.requestsRemaining,
+            requestsReset: rateLimitData.requestsReset,
+            lastUpdated: rateLimitData.lastUpdated.toISOString()
+          };
+        }
+
+        profiles[profileId] = entry;
+      }
+
+      const persistedData: PersistedApiKeyUsageData = {
+        version: 1,
+        profiles
+      };
+
+      writeFileSync(cachePath, JSON.stringify(persistedData, null, 2), 'utf-8');
+
+      this.debugLog('[UsageMonitor] Persisted usage cache:', {
+        profileCount: Object.keys(profiles).length,
+        path: cachePath
+      });
+    } catch (error) {
+      // Best-effort — don't crash if write fails
+      this.debugLog('[UsageMonitor] Failed to persist usage cache:', error);
+    }
+  }
+
+  /**
+   * Schedule a debounced persist of API key usage data.
+   * Coalesces rapid updates (e.g., multiple API responses) into a single disk write.
+   * Uses a 5-second debounce window.
+   */
+  private schedulePersist(): void {
+    if (this.saveDebounceTimer) {
+      clearTimeout(this.saveDebounceTimer);
+    }
+    this.saveDebounceTimer = setTimeout(() => {
+      this.saveDebounceTimer = null;
+      this.persistApiKeyUsageData();
+    }, UsageMonitor.SAVE_DEBOUNCE_MS);
+  }
+
+  /**
    * Start monitoring usage at configured interval
    *
    * Note: Usage monitoring always runs to display the usage badge.
@@ -316,6 +530,9 @@ export class UsageMonitor extends EventEmitter {
 
     this.debugLog('[UsageMonitor] Starting with interval: ' + interval + ' ms (30-second updates for accurate usage stats)');
 
+    // Restore persisted API key usage data before first check
+    this.restoreApiKeyUsageData();
+
     // Check immediately
     this.checkUsageAndSwap();
 
@@ -326,14 +543,23 @@ export class UsageMonitor extends EventEmitter {
   }
 
   /**
-   * Stop monitoring
+   * Stop monitoring.
+   * Flushes any pending usage data to disk synchronously before shutdown.
    */
   stop(): void {
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null;
-      this.debugLog('[UsageMonitor] Stopped');
     }
+
+    // Cancel pending debounced write and flush immediately
+    if (this.saveDebounceTimer) {
+      clearTimeout(this.saveDebounceTimer);
+      this.saveDebounceTimer = null;
+    }
+    this.persistApiKeyUsageData();
+
+    this.debugLog('[UsageMonitor] Stopped (usage data flushed to disk)');
   }
 
   /**
@@ -438,6 +664,9 @@ export class UsageMonitor extends EventEmitter {
 
     // Emit updated snapshot if this is the active Anthropic API key profile
     this.emitApiKeySnapshotIfActive(profileId);
+
+    // Schedule debounced persist to disk
+    this.schedulePersist();
   }
 
   /**
@@ -479,6 +708,9 @@ export class UsageMonitor extends EventEmitter {
 
     // Emit updated snapshot if this is the active Anthropic API key profile
     this.emitApiKeySnapshotIfActive(profileId);
+
+    // Schedule debounced persist to disk
+    this.schedulePersist();
   }
 
   /**
@@ -495,6 +727,11 @@ export class UsageMonitor extends EventEmitter {
       hadTokenAccumulation: hadTokens,
       hadRateLimitData: hadRateLimits
     });
+
+    // Schedule debounced persist to remove cleared data from disk
+    if (hadTokens || hadRateLimits) {
+      this.schedulePersist();
+    }
   }
 
   /**

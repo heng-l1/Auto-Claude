@@ -8,6 +8,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { detectProvider, getUsageEndpoint, UsageMonitor, getUsageMonitor } from './usage-monitor';
 import type { ApiProvider } from './usage-monitor';
 import { hasHardcodedText } from '../../shared/utils/format-time';
+import { mkdirSync, mkdtempSync, writeFileSync as fsWriteFileSync, rmSync, existsSync, readFileSync as fsReadFileSync } from 'fs';
+import { tmpdir } from 'os';
+import path from 'path';
 
 // Mock getClaudeProfileManager
 vi.mock('../claude-profile-manager', () => ({
@@ -2181,6 +2184,411 @@ describe('usage-monitor', () => {
     it('should handle strings with only whitespace', () => {
       // Whitespace-only strings are falsy when trimmed
       expect(hasHardcodedText('   ')).toBe(true);
+    });
+  });
+});
+
+// ─── Persistence layer tests ─────────────────────────────────────────────────
+
+describe('UsageMonitor persistence', () => {
+  let PERSIST_DIR: string;
+  let PERSIST_CONFIG_DIR: string;
+  let PERSIST_CACHE_FILE: string;
+
+  const PERSIST_FUTURE_RESET = new Date(Date.now() + 3_600_000).toISOString(); // +1 hour
+  const PERSIST_PAST_RESET = new Date(Date.now() - 3_600_000).toISOString();   // -1 hour
+  const PERSIST_LAST_UPDATED = new Date(Date.now() - 60_000).toISOString();    // -1 minute
+
+  const PERSIST_SAMPLE_TOKEN = {
+    inputTokens: 1000,
+    outputTokens: 500,
+    cacheReadInputTokens: 200,
+    cacheCreationInputTokens: 100,
+    lastUpdated: PERSIST_LAST_UPDATED,
+  };
+
+  function persistSampleRateLimit(reset: string) {
+    return {
+      tokensLimit: 100_000,
+      tokensRemaining: 80_000,
+      tokensReset: reset,
+      requestsLimit: 1000,
+      requestsRemaining: 950,
+      requestsReset: reset,
+      lastUpdated: PERSIST_LAST_UPDATED,
+    };
+  }
+
+  function setupPersistDirs(): void {
+    PERSIST_DIR = mkdtempSync(path.join(tmpdir(), 'usage-monitor-persist-'));
+    PERSIST_CONFIG_DIR = path.join(PERSIST_DIR, 'config');
+    PERSIST_CACHE_FILE = path.join(PERSIST_CONFIG_DIR, 'api-key-usage-cache.json');
+    mkdirSync(PERSIST_CONFIG_DIR, { recursive: true });
+  }
+
+  function cleanupPersistDirs(): void {
+    if (PERSIST_DIR && existsSync(PERSIST_DIR)) {
+      rmSync(PERSIST_DIR, { recursive: true, force: true });
+    }
+  }
+
+  function writePersistCache(data: unknown): void {
+    fsWriteFileSync(PERSIST_CACHE_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  }
+
+  function readPersistCache(): { version: number; profiles: Record<string, Record<string, unknown>> } {
+    return JSON.parse(fsReadFileSync(PERSIST_CACHE_FILE, 'utf-8'));
+  }
+
+  /** Import a fresh UsageMonitor singleton after vi.resetModules() with temp dir configured. */
+  async function createFreshMonitor() {
+    const { app: freshApp } = await import('electron');
+    vi.mocked(freshApp.getPath).mockImplementation((name: string) => {
+      if (name === 'userData') return PERSIST_DIR;
+      return '/tmp';
+    });
+    const { UsageMonitor: Fresh } = await import('./usage-monitor');
+    return Fresh.getInstance();
+  }
+
+  beforeEach(() => {
+    setupPersistDirs();
+    vi.resetModules();
+    // Ensure fetch mock is ready for checkUsageAndSwap (fire-and-forget in start())
+    vi.mocked(global.fetch).mockImplementation(() =>
+      Promise.resolve({
+        ok: true, status: 200, statusText: 'OK',
+        headers: { get: vi.fn(() => 'application/json') },
+        json: async () => ({ five_hour_utilization: 0, seven_day_utilization: 0 }),
+      } as unknown as Response)
+    );
+  });
+
+  afterEach(() => {
+    cleanupPersistDirs();
+    vi.clearAllMocks();
+    vi.useRealTimers();
+  });
+
+  // ── Restore from valid cache ─────────────────────────────────────────────
+
+  describe('restore from valid cache', () => {
+    it('restores token accumulations from cache on start', async () => {
+      writePersistCache({
+        version: 1,
+        profiles: { 'profile-a': { tokenAccumulation: PERSIST_SAMPLE_TOKEN } },
+      });
+
+      const monitor = await createFreshMonitor();
+      monitor.start();
+      monitor.stop();
+
+      const tokens = monitor.getTokenAccumulation('profile-a');
+      expect(tokens).toBeDefined();
+      expect(tokens!.inputTokens).toBe(1000);
+      expect(tokens!.outputTokens).toBe(500);
+      expect(tokens!.cacheReadInputTokens).toBe(200);
+      expect(tokens!.cacheCreationInputTokens).toBe(100);
+    });
+
+    it('restores rate limit data when tokensReset is in the future', async () => {
+      writePersistCache({
+        version: 1,
+        profiles: { 'profile-a': { rateLimitData: persistSampleRateLimit(PERSIST_FUTURE_RESET) } },
+      });
+
+      const monitor = await createFreshMonitor();
+      monitor.start();
+      monitor.stop();
+
+      const rl = monitor.getRateLimitData('profile-a');
+      expect(rl).toBeDefined();
+      expect(rl!.tokensLimit).toBe(100_000);
+      expect(rl!.tokensRemaining).toBe(80_000);
+      expect(rl!.tokensReset).toBe(PERSIST_FUTURE_RESET);
+      expect(rl!.requestsLimit).toBe(1000);
+      expect(rl!.requestsRemaining).toBe(950);
+    });
+
+    it('restores data for multiple profiles', async () => {
+      writePersistCache({
+        version: 1,
+        profiles: {
+          'profile-a': { tokenAccumulation: PERSIST_SAMPLE_TOKEN },
+          'profile-b': {
+            tokenAccumulation: { ...PERSIST_SAMPLE_TOKEN, inputTokens: 2000 },
+            rateLimitData: persistSampleRateLimit(PERSIST_FUTURE_RESET),
+          },
+        },
+      });
+
+      const monitor = await createFreshMonitor();
+      monitor.start();
+      monitor.stop();
+
+      expect(monitor.getTokenAccumulation('profile-a')!.inputTokens).toBe(1000);
+      expect(monitor.getTokenAccumulation('profile-b')!.inputTokens).toBe(2000);
+      expect(monitor.getRateLimitData('profile-b')).toBeDefined();
+    });
+  });
+
+  // ── Stale data discard ───────────────────────────────────────────────────
+
+  describe('stale data discard', () => {
+    it('discards rate limit data when tokensReset is in the past', async () => {
+      writePersistCache({
+        version: 1,
+        profiles: { 'profile-a': { rateLimitData: persistSampleRateLimit(PERSIST_PAST_RESET) } },
+      });
+
+      const monitor = await createFreshMonitor();
+      monitor.start();
+      monitor.stop();
+
+      expect(monitor.getRateLimitData('profile-a')).toBeUndefined();
+    });
+
+    it('keeps token accumulations even when rate limits are expired', async () => {
+      writePersistCache({
+        version: 1,
+        profiles: {
+          'profile-a': {
+            tokenAccumulation: PERSIST_SAMPLE_TOKEN,
+            rateLimitData: persistSampleRateLimit(PERSIST_PAST_RESET),
+          },
+        },
+      });
+
+      const monitor = await createFreshMonitor();
+      monitor.start();
+      monitor.stop();
+
+      // Token accumulations restored
+      const tokens = monitor.getTokenAccumulation('profile-a');
+      expect(tokens).toBeDefined();
+      expect(tokens!.inputTokens).toBe(1000);
+
+      // Rate limits discarded
+      expect(monitor.getRateLimitData('profile-a')).toBeUndefined();
+    });
+  });
+
+  // ── Missing / corrupt file handling ──────────────────────────────────────
+
+  describe('missing or corrupt file handling', () => {
+    it('handles missing cache file gracefully', async () => {
+      if (existsSync(PERSIST_CACHE_FILE)) rmSync(PERSIST_CACHE_FILE);
+
+      const monitor = await createFreshMonitor();
+
+      expect(() => {
+        monitor.start();
+        monitor.stop();
+      }).not.toThrow();
+
+      expect(monitor.getTokenAccumulation('any-profile')).toBeUndefined();
+    });
+
+    it('handles corrupt JSON file gracefully', async () => {
+      fsWriteFileSync(PERSIST_CACHE_FILE, '{ not valid json !!!', 'utf-8');
+
+      const monitor = await createFreshMonitor();
+
+      expect(() => {
+        monitor.start();
+        monitor.stop();
+      }).not.toThrow();
+
+      expect(monitor.getTokenAccumulation('any-profile')).toBeUndefined();
+    });
+
+    it('handles unknown version gracefully', async () => {
+      writePersistCache({
+        version: 99,
+        profiles: { 'profile-a': { tokenAccumulation: PERSIST_SAMPLE_TOKEN } },
+      });
+
+      const monitor = await createFreshMonitor();
+      monitor.start();
+      monitor.stop();
+
+      // Data not restored due to version mismatch
+      expect(monitor.getTokenAccumulation('profile-a')).toBeUndefined();
+    });
+
+    it('handles cache file with missing profiles field gracefully', async () => {
+      writePersistCache({ version: 1 }); // no profiles field
+
+      const monitor = await createFreshMonitor();
+
+      expect(() => {
+        monitor.start();
+        monitor.stop();
+      }).not.toThrow();
+
+      expect(monitor.getTokenAccumulation('any-profile')).toBeUndefined();
+    });
+  });
+
+  // ── Flush on stop() ──────────────────────────────────────────────────────
+
+  describe('flush on stop()', () => {
+    it('writes token accumulation data to disk on stop', async () => {
+      const monitor = await createFreshMonitor();
+
+      monitor.recordTokenUsage('profile-a', {
+        inputTokens: 500,
+        outputTokens: 200,
+        cacheReadInputTokens: 50,
+        cacheCreationInputTokens: 25,
+      });
+
+      monitor.stop();
+
+      expect(existsSync(PERSIST_CACHE_FILE)).toBe(true);
+
+      const cached = readPersistCache();
+      expect(cached.version).toBe(1);
+
+      const ta = (cached.profiles['profile-a'] as Record<string, unknown>)
+        .tokenAccumulation as Record<string, unknown>;
+      expect(ta.inputTokens).toBe(500);
+      expect(ta.outputTokens).toBe(200);
+      expect(ta.cacheReadInputTokens).toBe(50);
+      expect(ta.cacheCreationInputTokens).toBe(25);
+      expect(ta.lastUpdated).toBeDefined();
+    });
+
+    it('writes rate limit data to disk on stop', async () => {
+      const monitor = await createFreshMonitor();
+
+      monitor.recordRateLimits('profile-a', {
+        tokensLimit: 100_000,
+        tokensRemaining: 80_000,
+        tokensReset: PERSIST_FUTURE_RESET,
+        requestsLimit: 1000,
+        requestsRemaining: 950,
+        requestsReset: PERSIST_FUTURE_RESET,
+      });
+
+      monitor.stop();
+
+      const cached = readPersistCache();
+      const rl = (cached.profiles['profile-a'] as Record<string, unknown>)
+        .rateLimitData as Record<string, unknown>;
+      expect(rl.tokensLimit).toBe(100_000);
+      expect(rl.tokensRemaining).toBe(80_000);
+      expect(rl.tokensReset).toBe(PERSIST_FUTURE_RESET);
+    });
+
+    it('writes data for multiple profiles on stop', async () => {
+      const monitor = await createFreshMonitor();
+
+      monitor.recordTokenUsage('profile-a', { inputTokens: 100, outputTokens: 50 });
+      monitor.recordTokenUsage('profile-b', { inputTokens: 200, outputTokens: 100 });
+
+      monitor.stop();
+
+      const cached = readPersistCache();
+      expect(Object.keys(cached.profiles)).toHaveLength(2);
+
+      const pa = (cached.profiles['profile-a'] as Record<string, unknown>)
+        .tokenAccumulation as Record<string, unknown>;
+      const pb = (cached.profiles['profile-b'] as Record<string, unknown>)
+        .tokenAccumulation as Record<string, unknown>;
+      expect(pa.inputTokens).toBe(100);
+      expect(pb.inputTokens).toBe(200);
+    });
+
+    it('skips write when no data to persist', async () => {
+      const monitor = await createFreshMonitor();
+
+      monitor.stop();
+
+      // File should not be created when there is nothing to persist
+      expect(existsSync(PERSIST_CACHE_FILE)).toBe(false);
+    });
+  });
+
+  // ── Debounce coalescing ──────────────────────────────────────────────────
+
+  describe('debounce coalescing', () => {
+    it('coalesces rapid record calls into a single write after 5s', async () => {
+      vi.useFakeTimers();
+
+      const monitor = await createFreshMonitor();
+
+      // Record three times in rapid succession
+      monitor.recordTokenUsage('profile-a', { inputTokens: 100, outputTokens: 50 });
+      monitor.recordTokenUsage('profile-a', { inputTokens: 200, outputTokens: 100 });
+      monitor.recordTokenUsage('profile-a', { inputTokens: 300, outputTokens: 150 });
+
+      // File should not exist yet (within debounce window)
+      expect(existsSync(PERSIST_CACHE_FILE)).toBe(false);
+
+      // Advance past the 5-second debounce window
+      vi.advanceTimersByTime(5000);
+
+      // Now the file should exist with accumulated totals
+      expect(existsSync(PERSIST_CACHE_FILE)).toBe(true);
+      const cached = readPersistCache();
+      const ta = (cached.profiles['profile-a'] as Record<string, unknown>)
+        .tokenAccumulation as Record<string, unknown>;
+      expect(ta.inputTokens).toBe(600);
+      expect(ta.outputTokens).toBe(300);
+
+      monitor.stop();
+    });
+
+    it('stop() flushes immediately, canceling pending debounce', async () => {
+      vi.useFakeTimers();
+
+      const monitor = await createFreshMonitor();
+
+      monitor.recordTokenUsage('profile-a', { inputTokens: 100, outputTokens: 50 });
+
+      // Debounce is pending — file not written yet
+      expect(existsSync(PERSIST_CACHE_FILE)).toBe(false);
+
+      // stop() cancels debounce and flushes immediately
+      monitor.stop();
+
+      expect(existsSync(PERSIST_CACHE_FILE)).toBe(true);
+      const cached = readPersistCache();
+      const ta = (cached.profiles['profile-a'] as Record<string, unknown>)
+        .tokenAccumulation as Record<string, unknown>;
+      expect(ta.inputTokens).toBe(100);
+    });
+
+    it('resets debounce timer on each new record call', async () => {
+      vi.useFakeTimers();
+
+      const monitor = await createFreshMonitor();
+
+      // First call starts 5s debounce
+      monitor.recordTokenUsage('profile-a', { inputTokens: 100, outputTokens: 50 });
+
+      // Advance 4 seconds (still within window)
+      vi.advanceTimersByTime(4000);
+      expect(existsSync(PERSIST_CACHE_FILE)).toBe(false);
+
+      // Second call resets the 5s debounce
+      monitor.recordTokenUsage('profile-a', { inputTokens: 200, outputTokens: 100 });
+
+      // Advance 4 more seconds (4s since reset — still within new 5s window)
+      vi.advanceTimersByTime(4000);
+      expect(existsSync(PERSIST_CACHE_FILE)).toBe(false);
+
+      // Advance 1 more second (5s since last call — debounce fires)
+      vi.advanceTimersByTime(1000);
+      expect(existsSync(PERSIST_CACHE_FILE)).toBe(true);
+
+      const cached = readPersistCache();
+      const ta = (cached.profiles['profile-a'] as Record<string, unknown>)
+        .tokenAccumulation as Record<string, unknown>;
+      expect(ta.inputTokens).toBe(300);
+
+      monitor.stop();
     });
   });
 });
