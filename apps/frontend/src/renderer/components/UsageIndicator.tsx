@@ -438,6 +438,10 @@ export function UsageIndicator() {
   const isApiKeyAwaiting = isApiKeyProfile &&
     usage.sessionPercent === 0 &&
     (!usage.tokenUsage || usage.tokenUsage.totalTokens === 0);
+  const isApiKeyNoLimit = isApiKeyProfile &&
+    usage.sessionUsageLimit == null &&
+    usage.tokenUsage != null &&
+    usage.tokenUsage.totalTokens > 0;
 
   // Show "awaiting first API call" state for API key profiles with no data yet
   if (isApiKeyAwaiting) {
@@ -475,7 +479,9 @@ export function UsageIndicator() {
   // Override to red/destructive when re-auth is needed
   const badgeColorClasses = usage.needsReauthentication
     ? 'text-red-500 bg-red-500/10 border-red-500/20'
-    : getBadgeColorClasses(limitingPercent);
+    : isApiKeyNoLimit
+      ? 'text-muted-foreground bg-muted/50 border-border'
+      : getBadgeColorClasses(limitingPercent);
 
   // Individual colors for session and weekly in the badge
   const sessionColorClass = getColorClass(sessionPercent);
@@ -516,9 +522,15 @@ export function UsageIndicator() {
               !
             </span>
           ) : isApiKeyProfile ? (
-            <span className={`text-xs font-semibold font-mono ${sessionColorClass}`} title={t('common:usage.tokenLimit')}>
-              {Math.round(sessionPercent)}%
-            </span>
+            isApiKeyNoLimit ? (
+              <span className="text-xs font-semibold font-mono text-muted-foreground" title={t('common:usage.tokensUsed')}>
+                {formatUsageValue(usage.tokenUsage!.totalTokens)}
+              </span>
+            ) : (
+              <span className={`text-xs font-semibold font-mono ${sessionColorClass}`} title={t('common:usage.tokenLimit')}>
+                {Math.round(sessionPercent)}%
+              </span>
+            )
           ) : (
             <div className="flex items-center gap-0.5 text-xs font-semibold font-mono">
               <span className={sessionColorClass} title={t('common:usage.sessionShort')}>
