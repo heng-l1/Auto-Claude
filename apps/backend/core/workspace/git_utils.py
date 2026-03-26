@@ -29,6 +29,8 @@ __all__ = [
     "apply_path_mapping",
     "get_merge_base",
     "has_uncommitted_changes",
+    "stash_changes",
+    "unstash_changes",
     "get_current_branch",
     "get_existing_build_worktree",
     "get_file_content_from_ref",
@@ -260,6 +262,54 @@ def has_uncommitted_changes(project_dir: Path) -> bool:
     """Check if user has unsaved work."""
     result = run_git(["status", "--porcelain"], cwd=project_dir)
     return bool(result.stdout.strip())
+
+
+def stash_changes(project_dir: Path) -> bool:
+    """Stash uncommitted changes before a merge operation.
+
+    Runs 'git stash push' with a descriptive message so the stash entry
+    is identifiable. Only stashes tracked modified/staged files — untracked
+    files are excluded since they don't block merges.
+
+    Args:
+        project_dir: Project directory to stash changes in.
+
+    Returns:
+        True if changes were stashed, False if nothing to stash.
+    """
+    result = run_git(
+        ["stash", "push", "-m", "auto-claude: auto-stash before merge"],
+        cwd=project_dir,
+    )
+    if result.returncode != 0:
+        return False
+    # git stash push prints "No local changes to save" when there's nothing to stash
+    if "No local changes to save" in result.stdout:
+        return False
+    return True
+
+
+def unstash_changes(project_dir: Path) -> tuple[bool, str]:
+    """Restore previously stashed changes after a merge operation.
+
+    Runs 'git stash pop' to restore the most recent stash entry. If the pop
+    fails due to conflicts, the stash is left intact so the user can resolve
+    manually.
+
+    Args:
+        project_dir: Project directory to restore changes in.
+
+    Returns:
+        Tuple of (success, error_message). On success returns (True, '').
+        On conflict returns (False, descriptive_message) with stash preserved.
+    """
+    result = run_git(["stash", "pop"], cwd=project_dir)
+    if result.returncode == 0:
+        return True, ""
+    # On conflict, git stash pop fails but may have partially applied changes.
+    # The stash entry is preserved on the stash stack when pop fails.
+    error_message = result.stderr.strip() or result.stdout.strip()
+    return False, error_message
 
 
 def get_current_branch(project_dir: Path) -> str:

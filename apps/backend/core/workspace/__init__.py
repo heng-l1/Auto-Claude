@@ -89,6 +89,8 @@ from .git_utils import (
     get_existing_build_worktree,
     get_file_content_from_ref,
     has_uncommitted_changes,
+    stash_changes,
+    unstash_changes,
     is_binary_file,
     is_lock_file,
     is_process_running,
@@ -134,6 +136,8 @@ __all__ = [
     "SpecNumberLockError",
     # Git Utils
     "has_uncommitted_changes",
+    "stash_changes",
+    "unstash_changes",
     "get_current_branch",
     "get_existing_build_worktree",
     "get_file_content_from_ref",
