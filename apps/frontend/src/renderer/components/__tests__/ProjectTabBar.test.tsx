@@ -270,7 +270,7 @@ describe('ProjectTabBar', () => {
     it('should apply correct container classes', () => {
       // From component: className={cn(
       //   'flex items-center border-b border-border bg-background',
-      //   'overflow-x-auto scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent',
+      //   'overflow-hidden',
       //   className
       // )}
       const expectedClasses = [
@@ -279,10 +279,7 @@ describe('ProjectTabBar', () => {
         'border-b',
         'border-border',
         'bg-background',
-        'overflow-x-auto',
-        'scrollbar-thin',
-        'scrollbar-thumb-border',
-        'scrollbar-track-transparent'
+        'overflow-hidden'
       ];
 
       expectedClasses.forEach(cls => {
@@ -291,12 +288,16 @@ describe('ProjectTabBar', () => {
     });
 
     it('should apply correct flex container for tabs', () => {
-      // From component: <div className="flex items-center flex-1 min-w-0">
+      // From component: <div className="flex items-center flex-1 min-w-0 overflow-x-auto scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
       const tabContainerClasses = [
         'flex',
         'items-center',
         'flex-1',
-        'min-w-0'
+        'min-w-0',
+        'overflow-x-auto',
+        'scrollbar-thin',
+        'scrollbar-thumb-border',
+        'scrollbar-track-transparent'
       ];
 
       tabContainerClasses.forEach(cls => {
@@ -324,7 +325,7 @@ describe('ProjectTabBar', () => {
       const customClassName = 'custom-test-class';
       const baseClasses = [
         'flex items-center border-b border-border bg-background',
-        'overflow-x-auto scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent'
+        'overflow-hidden'
       ];
 
       // The cn function combines base classes with custom className
