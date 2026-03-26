@@ -7,6 +7,7 @@ Utility functions for git operations used in workspace management.
 """
 
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -36,6 +37,7 @@ __all__ = [
     "is_process_running",
     "is_binary_file",
     "is_lock_file",
+    "parse_conflict_file_path",
     "validate_merged_syntax",
     "create_conflict_file_with_git",
     # Backward compat aliases
@@ -591,6 +593,37 @@ def create_conflict_file_with_git(
 
     except Exception as e:
         return None, False
+
+
+def parse_conflict_file_path(line: str) -> str | None:
+    """
+    Extract the file path from a git merge conflict output line.
+
+    Handles multiple git CONFLICT output formats:
+    - "CONFLICT (content): Merge conflict in path/to/file"
+    - "CONFLICT (modify/delete): path/to/file deleted in HEAD"
+    - "CONFLICT (rename/rename): path/to/file renamed to ..."
+
+    Args:
+        line: A single line from git merge output
+
+    Returns:
+        Extracted file path, or None if the line is not a conflict line
+    """
+    # Primary pattern: most common "Merge conflict in <path>" format
+    match = re.search(r"Merge conflict in\s+(.+?)(?:\s*$)", line)
+    if match:
+        return match.group(1).strip()
+
+    # Fallback pattern: modify/delete and rename formats
+    match = re.search(
+        r"CONFLICT\s*\([^)]+\):\s*(.+?)(?:\s+(?:deleted|renamed|modified)\b|\s*$)",
+        line,
+    )
+    if match:
+        return match.group(1).strip()
+
+    return None
 
 
 # Export the _is_process_running function for backward compatibility
