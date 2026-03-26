@@ -2349,8 +2349,16 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
             findingsCount: findings.length,
           });
 
-          // Build inline review comments for each finding with file+line info
-          const inlineComments: Array<{ path: string; line: number; body: string }> = [];
+          // Build review comments with diff-aware routing:
+          // - Inline (line-level) for findings on lines within the diff
+          // - File-level for findings on lines outside the diff but in a PR file
+          // - Skipped for findings on files not in the PR
+          const inlineComments: Array<{
+            path: string;
+            line?: number;
+            body: string;
+            subject_type?: "line" | "file";
+          }> = [];
           for (const f of findings) {
             if (f.file && f.line && f.line > 0) {
               const emoji =
@@ -2360,7 +2368,31 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
               if (suggestedFix) {
                 commentBody += `\n\n**Suggested fix:**\n\`\`\`\n${suggestedFix}\n\`\`\``;
               }
-              inlineComments.push({ path: f.file, line: f.line, body: commentBody });
+
+              // Normalize path by stripping leading './' to match GitHub's repo-relative paths
+              const normalizedPath = f.file.replace(/^\.\//, "");
+
+              if (fileLineMap) {
+                // Diff-aware routing: validate line against the PR diff
+                const validLines = fileLineMap.get(normalizedPath);
+                if (validLines) {
+                  if (validLines.has(f.line)) {
+                    // Line is in the diff — post as inline line-level comment
+                    inlineComments.push({ path: normalizedPath, line: f.line, body: commentBody });
+                  } else {
+                    // Line is NOT in the diff — post as file-level comment with line hint
+                    inlineComments.push({
+                      path: normalizedPath,
+                      body: `> Line ${f.line}: ${commentBody}`,
+                      subject_type: "file",
+                    });
+                  }
+                }
+                // If file not in map, skip this finding (file not in PR)
+              } else {
+                // fileLineMap is null (fetch failed) — fall back to original behavior
+                inlineComments.push({ path: normalizedPath, line: f.line, body: commentBody });
+              }
             }
           }
 
