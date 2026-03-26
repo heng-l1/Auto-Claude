@@ -1881,6 +1881,35 @@ describe('usage-monitor', () => {
         expect(snapshot.sessionUsageValue).toBeUndefined();
         expect(snapshot.sessionUsageLimit).toBeUndefined();
       });
+
+      it('should leave sessionUsageLimit undefined with totalTokens > 0 when tokensLimit is 0', () => {
+        const monitor = getUsageMonitor();
+        const profileId = 'api-key-zero-limit-with-tokens';
+
+        // Edge case: tokensLimit = 0 with all limits at zero
+        monitor.recordRateLimits(profileId, {
+          tokensLimit: 0,
+          tokensRemaining: 0,
+          tokensReset: '2026-03-06T12:00:00Z',
+          requestsLimit: 0,
+          requestsRemaining: 0,
+          requestsReset: '2026-03-06T12:00:00Z'
+        });
+
+        // Seed accumulated token usage
+        monitor.recordTokenUsage(profileId, {
+          inputTokens: 5000,
+          outputTokens: 2000
+        });
+
+        const snapshot = monitor['generateApiKeySnapshot'](profileId, 'Zero Limit With Tokens');
+
+        expect(snapshot.sessionPercent).toBe(0);
+        expect(snapshot.sessionUsageLimit).toBeUndefined();
+        expect(snapshot.usageSource).toBe('api-key');
+        expect(snapshot.tokenUsage).toBeDefined();
+        expect(snapshot.tokenUsage!.totalTokens).toBe(7000);
+      });
     });
 
     describe('fetchUsageViaAPI for Anthropic API key profiles', () => {
