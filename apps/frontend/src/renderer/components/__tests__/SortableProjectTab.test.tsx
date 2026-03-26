@@ -584,11 +584,11 @@ describe('SortableProjectTab', () => {
     it('should apply active tab styles when isActive is true', () => {
       const props = { isActive: true };
 
-      // From component: when isActive, responsive max-widths and specific styling
+      // From component: when isActive, flex-based sizing with min/max constraints
       const expectedActiveClasses = [
-        'max-w-[180px]',      // mobile
-        'sm:max-w-[220px]',   // 640px+
-        'md:max-w-[280px]',   // 768px+
+        'flex-1',             // fills available space
+        'max-w-[200px]',     // cap width
+        'min-w-[60px]',      // minimum width for active tab
         'bg-muted/60',
         'border-b-primary',
         'text-foreground',
@@ -604,11 +604,11 @@ describe('SortableProjectTab', () => {
     it('should apply inactive tab styles when isActive is false', () => {
       const props = { isActive: false };
 
-      // From component: when !isActive, responsive max-widths and different styling
+      // From component: when !isActive, flex-based sizing with min/max constraints
       const expectedInactiveClasses = [
-        'max-w-[120px]',      // mobile
-        'sm:max-w-[160px]',   // 640px+
-        'md:max-w-[200px]',   // 768px+
+        'flex-1',             // fills available space
+        'max-w-[200px]',     // cap width
+        'min-w-[48px]',      // minimum width for inactive tab
         'text-muted-foreground',
         'hover:text-foreground'
       ];
@@ -645,28 +645,28 @@ describe('SortableProjectTab', () => {
   });
 
   describe('Responsive Behavior', () => {
-    it('should have responsive max-width classes for active tab', () => {
-      // From component: 'max-w-[180px] sm:max-w-[220px] md:max-w-[280px]' for active
-      const expectedResponsiveClasses = [
-        'max-w-[180px]',      // mobile (default)
-        'sm:max-w-[220px]',   // 640px+
-        'md:max-w-[280px]'    // 768px+
+    it('should have flex-based sizing classes for active tab', () => {
+      // From component: 'flex-1 max-w-[200px] min-w-[60px]' for active
+      const expectedSizingClasses = [
+        'flex-1',             // fills available space
+        'max-w-[200px]',     // cap width
+        'min-w-[60px]'       // minimum width for active tab
       ];
 
-      expectedResponsiveClasses.forEach(cls => {
+      expectedSizingClasses.forEach(cls => {
         expect(cls).toBeTruthy();
       });
     });
 
-    it('should have responsive max-width classes for inactive tab', () => {
-      // From component: 'max-w-[120px] sm:max-w-[160px] md:max-w-[200px]' for inactive
-      const expectedResponsiveClasses = [
-        'max-w-[120px]',      // mobile (default)
-        'sm:max-w-[160px]',   // 640px+
-        'md:max-w-[200px]'    // 768px+
+    it('should have flex-based sizing classes for inactive tab', () => {
+      // From component: 'flex-1 max-w-[200px] min-w-[48px]' for inactive
+      const expectedSizingClasses = [
+        'flex-1',             // fills available space
+        'max-w-[200px]',     // cap width
+        'min-w-[48px]'       // minimum width for inactive tab
       ];
 
-      expectedResponsiveClasses.forEach(cls => {
+      expectedSizingClasses.forEach(cls => {
         expect(cls).toBeTruthy();
       });
     });
