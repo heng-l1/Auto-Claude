@@ -34,12 +34,12 @@ jobs:
       - name: Validate lock file is in sync
         run: |
           cd apps/backend
-          pip-compile --dry-run --quiet requirements.in
+          pip-compile --dry-run --quiet requirements.txt -o requirements.lock --generate-hashes
           if [ $? -ne 0 ]; then
-            echo "::error::Lock file is out of sync with requirements.in. Run 'pip-compile requirements.in' to update."
+            echo "::error::Lock file is out of sync with requirements.txt. Run 'npm run lockfile:sync' and commit the changes."
             exit 1
           fi
-          echo "Lock file is in sync with requirements.in"
+          echo "Lock file is in sync with requirements.txt"
 
   build-macos:
     needs: [validate-lockfile]

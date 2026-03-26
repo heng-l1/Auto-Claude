@@ -4,7 +4,7 @@
  * Regenerates requirements.lock from requirements.txt using pip-compile
  */
 
-const { execSync, spawnSync } = require('child_process');
+const { execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -48,38 +48,6 @@ function run(cmd, options = {}) {
   } catch (error) {
     return false;
   }
-}
-
-// Find Python 3.12+
-// Prefer 3.12 first since it has the most stable wheel support for native packages
-function findPython() {
-  const candidates = isWindows
-    ? ['py -3.12', 'py -3.13', 'py -3.14', 'python3.12', 'python3.13', 'python3.14', 'python3', 'python']
-    : ['python3.12', 'python3.13', 'python3.14', 'python3', 'python'];
-
-  for (const cmd of candidates) {
-    try {
-      const result = spawnSync(cmd.split(' ')[0], [...cmd.split(' ').slice(1), '--version'], {
-        encoding: 'utf8',
-        shell: true,
-      });
-      // Accept Python 3.12+ using proper version parsing
-      if (result.status === 0) {
-        const versionMatch = result.stdout.match(/Python (\d+)\.(\d+)/);
-        if (versionMatch) {
-          const major = parseInt(versionMatch[1], 10);
-          const minor = parseInt(versionMatch[2], 10);
-          if (major === 3 && minor >= 12) {
-            console.log(`Found Python 3.12+: ${cmd} -> ${result.stdout.trim()}`);
-            return cmd;
-          }
-        }
-      }
-    } catch (e) {
-      // Continue to next candidate
-    }
-  }
-  return null;
 }
 
 // Get pip-compile path based on platform
