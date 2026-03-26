@@ -51,7 +51,7 @@ export function SortableTabGroupChip({
       ref={setNodeRef}
       style={style}
       className={cn(
-        'touch-none transition-all duration-200',
+        'flex-shrink-0 touch-none transition-all duration-200',
         isDragging && 'opacity-60 scale-[0.98] shadow-lg'
       )}
       {...attributes}
