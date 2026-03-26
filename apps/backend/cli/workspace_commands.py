@@ -23,6 +23,7 @@ from core.workspace.git_utils import (
     get_file_content_from_ref,
     get_merge_base,
     is_lock_file,
+    parse_conflict_file_path,
 )
 from core.git_executable import get_branch_prefix
 from core.worktree import PushAndCreatePRResult as CreatePRResult
@@ -831,22 +832,13 @@ def _check_git_merge_conflicts(
             for line in output.split("\n"):
                 # Look for lines indicating conflicts
                 if "CONFLICT" in line:
-                    # Extract file path from conflict message
-                    import re
-
-                    match = re.search(
-                        r"(?:Merge conflict in|CONFLICT.*?:)\s*(.+?)(?:\s*$|\s+\()",
-                        line,
-                    )
-                    if match:
-                        file_path = match.group(1).strip()
-                        # Skip .auto-claude files - they should never be merged
-                        if (
-                            file_path
-                            and file_path not in result["conflicting_files"]
-                            and not _is_auto_claude_file(file_path)
-                        ):
-                            result["conflicting_files"].append(file_path)
+                    file_path = parse_conflict_file_path(line)
+                    if (
+                        file_path
+                        and file_path not in result["conflicting_files"]
+                        and not _is_auto_claude_file(file_path)
+                    ):
+                        result["conflicting_files"].append(file_path)
 
             # Fallback: if we didn't parse conflicts, use diff to find files changed in both branches
             if not result["conflicting_files"]:

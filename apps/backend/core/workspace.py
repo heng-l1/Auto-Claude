@@ -88,6 +88,7 @@ from core.workspace.git_utils import (
     MAX_PARALLEL_AI_MERGES,
     _is_auto_claude_file,
     get_existing_build_worktree,
+    parse_conflict_file_path,
 )
 from core.workspace.git_utils import (
     apply_path_mapping as _apply_path_mapping,
@@ -1107,8 +1108,6 @@ def _check_git_conflicts(project_dir: Path, spec_name: str) -> dict:
     Returns:
         Dict with has_conflicts, conflicting_files, etc.
     """
-    import re
-
     spec_branch = _get_spec_branch(spec_name)
     result = {
         "has_conflicts": False,
@@ -1212,19 +1211,13 @@ def _check_git_conflicts(project_dir: Path, spec_name: str) -> dict:
             output = merge_tree_result.stdout + merge_tree_result.stderr
             for line in output.split("\n"):
                 if "CONFLICT" in line:
-                    match = re.search(
-                        r"(?:Merge conflict in|CONFLICT.*?:)\s*(.+?)(?:\s*$|\s+\()",
-                        line,
-                    )
-                    if match:
-                        file_path = match.group(1).strip()
-                        # Skip .auto-claude files - they should never be merged
-                        if (
-                            file_path
-                            and file_path not in result["conflicting_files"]
-                            and not _is_auto_claude_file(file_path)
-                        ):
-                            result["conflicting_files"].append(file_path)
+                    file_path = parse_conflict_file_path(line)
+                    if (
+                        file_path
+                        and file_path not in result["conflicting_files"]
+                        and not _is_auto_claude_file(file_path)
+                    ):
+                        result["conflicting_files"].append(file_path)
 
             # Fallback: if we didn't parse CONFLICT markers despite non-zero exit,
             # use diff to find files changed in both branches as a safety net

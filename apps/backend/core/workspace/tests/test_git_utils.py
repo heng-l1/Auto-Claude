@@ -1663,3 +1663,62 @@ class TestValidateMergedSyntaxErrorHandling:
 
         # Should return True since syntax is valid
         assert is_valid is True
+
+
+class TestParseConflictFilePath:
+    """Tests for parse_conflict_file_path() — extracts file paths from git CONFLICT output lines."""
+
+    def test_parse_conflict_content_merge(self):
+        """Standard 'Merge conflict in' format extracts just the file path."""
+        from core.workspace.git_utils import parse_conflict_file_path
+
+        result = parse_conflict_file_path("CONFLICT (content): Merge conflict in apps/frontend/file.tsx")
+        assert result == "apps/frontend/file.tsx"
+
+    def test_parse_conflict_modify_delete(self):
+        """Modify/delete format extracts file path before 'deleted' keyword."""
+        from core.workspace.git_utils import parse_conflict_file_path
+
+        result = parse_conflict_file_path(
+            "CONFLICT (modify/delete): path/file deleted in HEAD and modified in auto-claude/branch"
+        )
+        assert result == "path/file"
+
+    def test_parse_conflict_rename(self):
+        """Rename/rename format extracts the original file path before 'renamed' keyword."""
+        from core.workspace.git_utils import parse_conflict_file_path
+
+        result = parse_conflict_file_path(
+            "CONFLICT (rename/rename): src/old.ts renamed to src/new.ts in HEAD and to src/other.ts in branch"
+        )
+        assert result == "src/old.ts"
+
+    def test_parse_conflict_no_match(self):
+        """Non-CONFLICT lines return None."""
+        from core.workspace.git_utils import parse_conflict_file_path
+
+        result = parse_conflict_file_path("Auto-merging some/file.txt")
+        assert result is None
+
+    def test_parse_conflict_empty_string(self):
+        """Empty string returns None without errors."""
+        from core.workspace.git_utils import parse_conflict_file_path
+
+        result = parse_conflict_file_path("")
+        assert result is None
+
+    def test_parse_conflict_whitespace(self):
+        """Paths with leading/trailing whitespace are stripped."""
+        from core.workspace.git_utils import parse_conflict_file_path
+
+        result = parse_conflict_file_path("CONFLICT (content): Merge conflict in   apps/file.tsx  ")
+        assert result == "apps/file.tsx"
+
+    def test_parse_conflict_nested_path(self):
+        """Deep nested paths are captured fully."""
+        from core.workspace.git_utils import parse_conflict_file_path
+
+        result = parse_conflict_file_path(
+            "CONFLICT (content): Merge conflict in apps/frontend/src/renderer/components/task-detail/TaskDetailModal.tsx"
+        )
+        assert result == "apps/frontend/src/renderer/components/task-detail/TaskDetailModal.tsx"
