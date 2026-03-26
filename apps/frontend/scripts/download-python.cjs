@@ -937,8 +937,8 @@ async function downloadPython(targetPlatform, targetArch, options = {}) {
 
   const sitePackagesDir = path.join(platformDir, 'site-packages');
 
-  // Path to requirements.txt (in backend directory)
-  const requirementsPath = customRequirementsPath || path.join(frontendDir, '..', 'backend', 'requirements.txt');
+  // Path to requirements.lock (in backend directory)
+  const requirementsPath = customRequirementsPath || path.join(frontendDir, '..', 'backend', 'requirements.lock');
 
   // Check if already fully set up (Python + packages)
   const packagesMarker = path.join(sitePackagesDir, '.bundled');
