@@ -4,6 +4,7 @@ An autonomous multi-agent coding framework powered by Claude AI. Based on [Auto 
 
 [![License](https://img.shields.io/badge/license-AGPL--3.0-green?style=flat-square)](./agpl-3.0.txt)
 [![CI](https://img.shields.io/github/actions/workflow/status/heng-l1/Auto-Claude/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/heng-l1/Auto-Claude/actions)
+[![Security](https://github.com/heng-l1/Auto-Claude/actions/workflows/security.yml/badge.svg)](https://github.com/heng-l1/Auto-Claude/actions/workflows/security.yml)
 
 - MCP health check and test connection UI
 - Kanban board layout and card padding fixes
@@ -401,6 +402,17 @@ Auto Claude uses a three-layer security model:
 1. **OS Sandbox** - Bash commands run in isolation
 2. **Filesystem Restrictions** - Operations limited to project directory
 3. **Dynamic Command Allowlist** - Only approved commands based on detected project stack
+
+### Automated Security Scanning
+
+The project includes automated security scanning that runs on every pull request and main branch commit:
+
+- **Dependency Auditing** - Scans for known vulnerabilities in npm and Python dependencies
+- **Secret Scanning** - Detects accidentally committed secrets and credentials
+- **SAST Analysis** - Static analysis for security issues in TypeScript and Python code
+- **License Compliance** - Verifies all dependencies comply with AGPL-3.0
+
+Security scan results are available in the [GitHub Actions security workflow](https://github.com/heng-l1/Auto-Claude/actions/workflows/security.yml).
 
 ---
 
