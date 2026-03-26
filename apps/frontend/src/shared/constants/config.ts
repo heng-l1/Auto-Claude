@@ -3,8 +3,6 @@
  * Default settings, file paths, and project structure
  */
 
-import type { CustomMcpServer } from '../types/project';
-
 // ============================================
 // Terminal Timing Constants
 // ============================================
@@ -73,17 +71,7 @@ export const DEFAULT_APP_SETTINGS = {
   // GPU acceleration for terminal rendering
   // Default to 'off' until WebGL stability is proven across all GPU drivers.
   // Users can opt-in via Settings > Display > GPU Acceleration.
-  gpuAcceleration: 'off' as const,
-  // Global MCP server defaults (applied to all projects unless overridden)
-  // Graphiti excluded - it depends on per-project provider config
-  globalMcpServers: {
-    context7Enabled: true,
-    linearMcpEnabled: true,
-    electronEnabled: false,
-    puppeteerEnabled: false
-  },
-  // Global custom MCP servers (applied to all projects)
-  globalCustomMcpServers: [] as CustomMcpServer[]
+  gpuAcceleration: 'off' as const
 };
 
 // ============================================
@@ -117,13 +105,29 @@ export const DEFAULT_PROJECT_SETTINGS = {
 
 /** Available color tints for project tabs. All class strings are literal for Tailwind JIT safety. */
 export const TAB_COLORS = [
-  { id: 'red', bg: 'bg-red-500/10 dark:bg-red-500/20', swatch: 'bg-red-500', labelKey: 'projectTab.colorRed' },
-  { id: 'orange', bg: 'bg-orange-500/10 dark:bg-orange-500/20', swatch: 'bg-orange-500', labelKey: 'projectTab.colorOrange' },
-  { id: 'yellow', bg: 'bg-yellow-500/10 dark:bg-yellow-500/20', swatch: 'bg-yellow-500', labelKey: 'projectTab.colorYellow' },
-  { id: 'green', bg: 'bg-green-500/10 dark:bg-green-500/20', swatch: 'bg-green-500', labelKey: 'projectTab.colorGreen' },
-  { id: 'blue', bg: 'bg-blue-500/10 dark:bg-blue-500/20', swatch: 'bg-blue-500', labelKey: 'projectTab.colorBlue' },
-  { id: 'purple', bg: 'bg-purple-500/10 dark:bg-purple-500/20', swatch: 'bg-purple-500', labelKey: 'projectTab.colorPurple' },
-  { id: 'pink', bg: 'bg-pink-500/10 dark:bg-pink-500/20', swatch: 'bg-pink-500', labelKey: 'projectTab.colorPink' },
+  { id: 'red', bg: 'bg-red-500/10', swatch: 'bg-red-500', labelKey: 'projectTab.colorRed' },
+  { id: 'orange', bg: 'bg-orange-500/10', swatch: 'bg-orange-500', labelKey: 'projectTab.colorOrange' },
+  { id: 'yellow', bg: 'bg-yellow-500/10', swatch: 'bg-yellow-500', labelKey: 'projectTab.colorYellow' },
+  { id: 'green', bg: 'bg-green-500/10', swatch: 'bg-green-500', labelKey: 'projectTab.colorGreen' },
+  { id: 'blue', bg: 'bg-blue-500/10', swatch: 'bg-blue-500', labelKey: 'projectTab.colorBlue' },
+  { id: 'purple', bg: 'bg-purple-500/10', swatch: 'bg-purple-500', labelKey: 'projectTab.colorPurple' },
+  { id: 'pink', bg: 'bg-pink-500/10', swatch: 'bg-pink-500', labelKey: 'projectTab.colorPink' },
+] as const;
+
+// ============================================
+// Tab Group Color Constants
+// ============================================
+
+/** Chrome-style color palette for project tab groups. All class strings are literal for Tailwind JIT safety. */
+export const TAB_GROUP_COLORS = [
+  { id: 'grey', bg: 'bg-gray-500/10', chip: 'bg-gray-500', border: 'border-gray-500', labelKey: 'tabGroup.colorGrey' },
+  { id: 'blue', bg: 'bg-blue-500/10', chip: 'bg-blue-500', border: 'border-blue-500', labelKey: 'tabGroup.colorBlue' },
+  { id: 'red', bg: 'bg-red-500/10', chip: 'bg-red-500', border: 'border-red-500', labelKey: 'tabGroup.colorRed' },
+  { id: 'yellow', bg: 'bg-yellow-500/10', chip: 'bg-yellow-500', border: 'border-yellow-500', labelKey: 'tabGroup.colorYellow' },
+  { id: 'green', bg: 'bg-green-500/10', chip: 'bg-green-500', border: 'border-green-500', labelKey: 'tabGroup.colorGreen' },
+  { id: 'pink', bg: 'bg-pink-500/10', chip: 'bg-pink-500', border: 'border-pink-500', labelKey: 'tabGroup.colorPink' },
+  { id: 'purple', bg: 'bg-purple-500/10', chip: 'bg-purple-500', border: 'border-purple-500', labelKey: 'tabGroup.colorPurple' },
+  { id: 'cyan', bg: 'bg-cyan-500/10', chip: 'bg-cyan-500', border: 'border-cyan-500', labelKey: 'tabGroup.colorCyan' },
 ] as const;
 
 // ============================================

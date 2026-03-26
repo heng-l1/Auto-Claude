@@ -9,7 +9,8 @@ import type {
   InitializationResult,
   AutoBuildVersionInfo,
   GitStatus,
-  GitBranchDetail
+  GitBranchDetail,
+  TabState
 } from '../../shared/types';
 import { projectStore } from '../project-store';
 import {
@@ -377,7 +378,7 @@ export function registerProjectHandlers(
 
   ipcMain.handle(
     IPC_CHANNELS.TAB_STATE_GET,
-    async (): Promise<IPCResult<{ openProjectIds: string[]; activeProjectId: string | null; tabOrder: string[] }>> => {
+    async (): Promise<IPCResult<TabState>> => {
       const tabState = projectStore.getTabState();
       console.log('[IPC] TAB_STATE_GET returning:', tabState);
       return { success: true, data: tabState };
@@ -388,7 +389,7 @@ export function registerProjectHandlers(
     IPC_CHANNELS.TAB_STATE_SAVE,
     async (
       _,
-      tabState: { openProjectIds: string[]; activeProjectId: string | null; tabOrder: string[] }
+      tabState: TabState
     ): Promise<IPCResult> => {
       console.log('[IPC] TAB_STATE_SAVE called with:', tabState);
       projectStore.saveTabState(tabState);

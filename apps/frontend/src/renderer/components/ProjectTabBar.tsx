@@ -4,9 +4,12 @@ import { Plus } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Button } from './ui/button';
 import { SortableProjectTab } from './SortableProjectTab';
+import { SortableTabGroupChip } from './SortableTabGroupChip';
 import { UsageIndicator } from './UsageIndicator';
 import { AuthStatusIndicator } from './AuthStatusIndicator';
-import type { Project } from '../../shared/types';
+import { useProjectStore } from '../stores/project-store';
+import { TAB_GROUP_COLORS } from '../../shared/constants/config';
+import type { Project, TabGroup, TabGroupColor } from '../../shared/types';
 
 interface ProjectTabBarProps {
   projects: Project[];
@@ -37,6 +40,47 @@ export function ProjectTabBar({
   const { t } = useTranslation('common');
   const [renamingProjectId, setRenamingProjectId] = useState<string | null>(null);
 
+  // Tab group state from store (subscribe to trigger re-renders on changes)
+  const tabGroups = useProjectStore(state => state.tabGroups);
+  // Subscribe to tabOrder so layout re-computes when order changes
+  useProjectStore(state => state.tabOrder);
+
+  // Tab group selectors from store
+  const getTabLayout = useProjectStore(state => state.getTabLayout);
+  const getVisibleTabs = useProjectStore(state => state.getVisibleTabs);
+  const findGroupByTabId = useProjectStore(state => state.findGroupByTabId);
+
+  // Tab group actions from store
+  const createTabGroup = useProjectStore(state => state.createTabGroup);
+  const addTabToGroup = useProjectStore(state => state.addTabToGroup);
+  const removeTabFromGroup = useProjectStore(state => state.removeTabFromGroup);
+  const moveTabToGroup = useProjectStore(state => state.moveTabToGroup);
+  const toggleTabGroupCollapsed = useProjectStore(state => state.toggleTabGroupCollapsed);
+  const renameTabGroup = useProjectStore(state => state.renameTabGroup);
+  const storeSetTabGroupColor = useProjectStore(state => state.setTabGroupColor);
+  const removeTabGroup = useProjectStore(state => state.removeTabGroup);
+  const closeTabGroup = useProjectStore(state => state.closeTabGroup);
+
+  // Compute group-aware tab layout and project lookup map
+  const tabLayout = getTabLayout();
+  const projectMap = new Map(projects.map(p => [p.id, p]));
+
+  // Pre-compute visual tab indices for keyboard shortcut hints.
+  // Only visible tabs (ungrouped + expanded group members) get an index.
+  let visualTabIndex = 0;
+  const visualIndexMap = new Map<string, number>();
+  for (const entry of tabLayout) {
+    if (entry.type === 'group') {
+      if (!entry.group.collapsed) {
+        for (const projectId of entry.projectIds) {
+          visualIndexMap.set(projectId, visualTabIndex++);
+        }
+      }
+    } else {
+      visualIndexMap.set(entry.projectId, visualTabIndex++);
+    }
+  }
+
   // Keyboard shortcuts for tab navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -59,27 +103,36 @@ export function ProjectTabBar({
       const isMod = e.metaKey || e.ctrlKey;
       if (!isMod) return;
 
-      // Cmd/Ctrl + 1-9: Switch to tab N
+      // Cmd/Ctrl + 1-9: Switch to visible tab N (by visual position)
       if (e.key >= '1' && e.key <= '9') {
         e.preventDefault();
+        const visibleTabs = getVisibleTabs();
         const index = parseInt(e.key, 10) - 1;
-        if (index < projects.length) {
-          onProjectSelect(projects[index].id);
+        if (index < visibleTabs.length) {
+          onProjectSelect(visibleTabs[index]);
         }
         return;
       }
 
-      // Cmd/Ctrl + Tab: Next tab
-      // Cmd/Ctrl + Shift + Tab: Previous tab
+      // Cmd/Ctrl + Tab: Next visible tab
+      // Cmd/Ctrl + Shift + Tab: Previous visible tab
+      // Skips members of collapsed groups
       if (e.key === 'Tab') {
         e.preventDefault();
-        const currentIndex = projects.findIndex((p) => p.id === activeProjectId);
-        if (currentIndex === -1 || projects.length === 0) return;
+        const visibleTabs = getVisibleTabs();
+        if (visibleTabs.length === 0) return;
+
+        const currentIndex = visibleTabs.indexOf(activeProjectId ?? '');
+        if (currentIndex === -1) {
+          // Active tab is in a collapsed group or not found — select first visible tab
+          onProjectSelect(visibleTabs[0]);
+          return;
+        }
 
         const nextIndex = e.shiftKey
-          ? (currentIndex - 1 + projects.length) % projects.length
-          : (currentIndex + 1) % projects.length;
-        onProjectSelect(projects[nextIndex].id);
+          ? (currentIndex - 1 + visibleTabs.length) % visibleTabs.length
+          : (currentIndex + 1) % visibleTabs.length;
+        onProjectSelect(visibleTabs[nextIndex]);
         return;
       }
 
@@ -92,11 +145,42 @@ export function ProjectTabBar({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [projects, activeProjectId, onProjectSelect, onProjectClose]);
+  }, [projects, activeProjectId, onProjectSelect, onProjectClose, getVisibleTabs]);
 
   if (projects.length === 0) {
     return null;
   }
+
+  /** Render a SortableProjectTab with all standard and group-related props */
+  const renderTab = (project: Project, group?: TabGroup) => {
+    const isActiveTab = activeProjectId === project.id;
+    const currentGroup = group ?? findGroupByTabId(project.id);
+    return (
+      <SortableProjectTab
+        key={project.id}
+        project={project}
+        isActive={isActiveTab}
+        canClose={projects.length > 1}
+        tabIndex={visualIndexMap.get(project.id) ?? 0}
+        onSelect={() => onProjectSelect(project.id)}
+        onClose={(e) => {
+          e.stopPropagation();
+          onProjectClose(project.id);
+        }}
+        onSettingsClick={isActiveTab ? onSettingsClick : undefined}
+        onRename={onRenameTab ? (name) => onRenameTab(project.id, name) : undefined}
+        isRenaming={project.id === renamingProjectId}
+        onRenameComplete={() => setRenamingProjectId(null)}
+        onColorChange={onTabColorChange ? (color) => onTabColorChange(project.id, color) : undefined}
+        tabGroups={tabGroups}
+        currentGroup={currentGroup}
+        onCreateGroup={(tabId) => createTabGroup([tabId])}
+        onAddToGroup={addTabToGroup}
+        onRemoveFromGroup={removeTabFromGroup}
+        onMoveToGroup={moveTabToGroup}
+      />
+    );
+  };
 
   return (
     <div className={cn(
@@ -105,28 +189,41 @@ export function ProjectTabBar({
       className
     )}>
       <div className="flex items-center flex-1 min-w-0">
-        {projects.map((project, index) => {
-          const isActiveTab = activeProjectId === project.id;
-          return (
-            <SortableProjectTab
-              key={project.id}
-              project={project}
-              isActive={isActiveTab}
-              canClose={projects.length > 1}
-              tabIndex={index}
-              onSelect={() => onProjectSelect(project.id)}
-              onClose={(e) => {
-                e.stopPropagation();
-                onProjectClose(project.id);
-              }}
-              // Pass control props only for active tab
-              onSettingsClick={isActiveTab ? onSettingsClick : undefined}
-              onRename={onRenameTab ? (name) => onRenameTab(project.id, name) : undefined}
-              isRenaming={project.id === renamingProjectId}
-              onRenameComplete={() => setRenamingProjectId(null)}
-              onColorChange={onTabColorChange ? (color) => onTabColorChange(project.id, color) : undefined}
-            />
-          );
+        {tabLayout.map((entry) => {
+          if (entry.type === 'group') {
+            const colorConfig = TAB_GROUP_COLORS.find(c => c.id === entry.group.color);
+            return (
+              <div
+                key={`group:${entry.group.id}`}
+                className={cn(
+                  'flex items-center',
+                  colorConfig?.bg,
+                  'border-b-2',
+                  colorConfig?.border
+                )}
+              >
+                <SortableTabGroupChip
+                  group={entry.group}
+                  tabCount={entry.projectIds.length}
+                  onToggleCollapsed={toggleTabGroupCollapsed}
+                  onRename={renameTabGroup}
+                  onSetColor={(groupId, color) => storeSetTabGroupColor(groupId, color as TabGroupColor)}
+                  onUngroup={removeTabGroup}
+                  onCloseGroup={closeTabGroup}
+                />
+                {!entry.group.collapsed && entry.projectIds.map((projectId) => {
+                  const project = projectMap.get(projectId);
+                  if (!project) return null;
+                  return renderTab(project, entry.group);
+                })}
+              </div>
+            );
+          }
+
+          // Standalone tab (not in any group)
+          const project = projectMap.get(entry.projectId);
+          if (!project) return null;
+          return renderTab(project);
         })}
       </div>
 

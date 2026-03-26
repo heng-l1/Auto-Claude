@@ -12,9 +12,12 @@ import {
   ContextMenuItem,
   ContextMenuLabel,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubTrigger,
+  ContextMenuSubContent,
 } from './ui/context-menu';
-import { TAB_COLORS } from '../../shared/constants/config';
-import type { Project } from '../../shared/types';
+import { TAB_COLORS, TAB_GROUP_COLORS } from '../../shared/constants/config';
+import type { Project, TabGroup } from '../../shared/types';
 import { useTerminalStore } from '../stores/terminal-store';
 
 interface SortableProjectTabProps {
@@ -34,6 +37,18 @@ interface SortableProjectTabProps {
   onRenameComplete?: () => void;
   /** Callback when user changes the tab color via context menu. Pass undefined to remove color. */
   onColorChange?: (color: string | undefined) => void;
+  /** All existing tab groups for context menu submenus */
+  tabGroups?: TabGroup[];
+  /** The group this tab currently belongs to (undefined if ungrouped) */
+  currentGroup?: TabGroup;
+  /** Callback to create a new group with this tab */
+  onCreateGroup?: (tabId: string) => void;
+  /** Callback to add this tab to an existing group */
+  onAddToGroup?: (tabId: string, groupId: string) => void;
+  /** Callback to remove this tab from its current group */
+  onRemoveFromGroup?: (tabId: string) => void;
+  /** Callback to move this tab to a different group */
+  onMoveToGroup?: (tabId: string, groupId: string) => void;
 }
 
 // Detect if running on macOS for keyboard shortcut display
@@ -53,7 +68,13 @@ export function SortableProjectTab({
   onRename,
   isRenaming,
   onRenameComplete,
-  onColorChange
+  onColorChange,
+  tabGroups,
+  currentGroup,
+  onCreateGroup,
+  onAddToGroup,
+  onRemoveFromGroup,
+  onMoveToGroup
 }: SortableProjectTabProps) {
   const { t } = useTranslation('common');
   // Derive display name from custom tab name or project name
@@ -150,6 +171,12 @@ export function SortableProjectTab({
       setEditValue(displayName);
     }
   };
+
+  // Determine if any group management context menu items will render (for separator visibility)
+  const otherGroups = tabGroups?.filter(g => g.id !== currentGroup?.id) ?? [];
+  const hasGroupMenuItems = currentGroup
+    ? !!(onRemoveFromGroup || (onMoveToGroup && otherGroups.length > 0))
+    : !!(onCreateGroup || (onAddToGroup && tabGroups && tabGroups.length > 0));
 
   return (
     <ContextMenu>
@@ -314,6 +341,70 @@ export function SortableProjectTab({
       </ContextMenuTrigger>
 
       <ContextMenuContent>
+        {/* Tab group management items */}
+        {!currentGroup && (
+          <>
+            {onCreateGroup && (
+              <ContextMenuItem onClick={() => onCreateGroup(project.id)}>
+                {t('tabGroup.addToNewGroup')}
+              </ContextMenuItem>
+            )}
+            {onAddToGroup && tabGroups && tabGroups.length > 0 && (
+              <ContextMenuSub>
+                <ContextMenuSubTrigger>
+                  {t('tabGroup.addToGroup')}
+                </ContextMenuSubTrigger>
+                <ContextMenuSubContent>
+                  {tabGroups.map((group) => {
+                    const groupColor = TAB_GROUP_COLORS.find(c => c.id === group.color);
+                    return (
+                      <ContextMenuItem
+                        key={group.id}
+                        onClick={() => onAddToGroup(project.id, group.id)}
+                      >
+                        <span className={cn('w-3 h-3 rounded-full inline-block mr-2', groupColor?.chip)} />
+                        {group.name}
+                      </ContextMenuItem>
+                    );
+                  })}
+                </ContextMenuSubContent>
+              </ContextMenuSub>
+            )}
+          </>
+        )}
+        {currentGroup && (
+          <>
+            {onRemoveFromGroup && (
+              <ContextMenuItem onClick={() => onRemoveFromGroup(project.id)}>
+                {t('tabGroup.removeFromGroup')}
+              </ContextMenuItem>
+            )}
+            {onMoveToGroup && tabGroups && tabGroups.filter(g => g.id !== currentGroup.id).length > 0 && (
+              <ContextMenuSub>
+                <ContextMenuSubTrigger>
+                  {t('tabGroup.moveToGroup')}
+                </ContextMenuSubTrigger>
+                <ContextMenuSubContent>
+                  {tabGroups
+                    .filter((group) => group.id !== currentGroup.id)
+                    .map((group) => {
+                      const groupColor = TAB_GROUP_COLORS.find(c => c.id === group.color);
+                      return (
+                        <ContextMenuItem
+                          key={group.id}
+                          onClick={() => onMoveToGroup(project.id, group.id)}
+                        >
+                          <span className={cn('w-3 h-3 rounded-full inline-block mr-2', groupColor?.chip)} />
+                          {group.name}
+                        </ContextMenuItem>
+                      );
+                    })}
+                </ContextMenuSubContent>
+              </ContextMenuSub>
+            )}
+          </>
+        )}
+        {hasGroupMenuItems && <ContextMenuSeparator />}
         <ContextMenuItem
           onClick={() => {
             setIsEditing(true);

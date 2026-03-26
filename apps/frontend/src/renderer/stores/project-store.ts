@@ -1,11 +1,21 @@
 import { create } from 'zustand';
-import type { Project, ProjectSettings, AutoBuildVersionInfo, InitializationResult } from '../../shared/types';
+import { v4 as uuid } from 'uuid';
+import type { Project, ProjectSettings, AutoBuildVersionInfo, InitializationResult, TabGroup, TabGroupColor } from '../../shared/types';
+import { TAB_GROUP_COLORS } from '../../shared/constants/config';
+
+/** A single entry in the tab layout - either a standalone tab or a group with its member tabs */
+export type TabLayoutItem =
+  | { type: 'tab'; projectId: string }
+  | { type: 'group'; group: TabGroup; projectIds: string[] };
 
 // localStorage keys for persisting project state (legacy - now using IPC)
 const LAST_SELECTED_PROJECT_KEY = 'lastSelectedProjectId';
 
 // Debounce timer for saving tab state
 let saveTabStateTimeout: ReturnType<typeof setTimeout> | null = null;
+
+// Rotating color index for automatic tab group color assignment
+let nextGroupColorIndex = 0;
 
 interface ProjectState {
   projects: Project[];
@@ -17,6 +27,7 @@ interface ProjectState {
   openProjectIds: string[]; // Array of open project IDs
   activeProjectId: string | null; // Currently active tab
   tabOrder: string[]; // Order of tabs for drag and drop
+  tabGroups: TabGroup[]; // Chrome-style tab groups
 
   // Actions
   setProjects: (projects: Project[]) => void;
@@ -34,11 +45,28 @@ interface ProjectState {
   reorderTabs: (fromIndex: number, toIndex: number) => void;
   restoreTabState: () => void;
 
+  // Tab group actions
+  createTabGroup: (tabIds: string[], name?: string, color?: TabGroupColor) => void;
+  removeTabGroup: (groupId: string) => void;
+  renameTabGroup: (groupId: string, name: string) => void;
+  setTabGroupColor: (groupId: string, color: TabGroupColor) => void;
+  toggleTabGroupCollapsed: (groupId: string) => void;
+  addTabToGroup: (tabId: string, groupId: string) => void;
+  removeTabFromGroup: (tabId: string) => void;
+  moveTabToGroup: (tabId: string, groupId: string) => void;
+  closeTabGroup: (groupId: string) => void;
+
+  // Tab group selectors
+  findGroupByTabId: (tabId: string) => TabGroup | undefined;
+
   // Selectors
   getSelectedProject: () => Project | undefined;
   getOpenProjects: () => Project[];
   getActiveProject: () => Project | undefined;
   getProjectTabs: () => Project[];
+  getTabLayout: () => TabLayoutItem[];
+  getSortableItems: () => string[];
+  getVisibleTabs: () => string[];
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
@@ -51,6 +79,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   openProjectIds: [],
   activeProjectId: null,
   tabOrder: [],
+  tabGroups: [],
 
   setProjects: (projects) => set({ projects }),
 
@@ -132,6 +161,15 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const newOpenProjectIds = state.openProjectIds.filter(id => id !== projectId);
     const newTabOrder = state.tabOrder.filter(id => id !== projectId);
 
+    // Remove tab from any group and auto-delete empty groups
+    let newTabGroups = state.tabGroups.map(g => {
+      if (g.tabIds.includes(projectId)) {
+        return { ...g, tabIds: g.tabIds.filter(id => id !== projectId) };
+      }
+      return g;
+    });
+    newTabGroups = newTabGroups.filter(g => g.tabIds.length > 0);
+
     // If closing the active project, select another one or null
     let newActiveProjectId = state.activeProjectId;
     if (state.activeProjectId === projectId) {
@@ -142,6 +180,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     set({
       openProjectIds: newOpenProjectIds,
       tabOrder: newTabOrder,
+      tabGroups: newTabGroups,
       activeProjectId: newActiveProjectId
     });
 
@@ -173,6 +212,241 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     console.log('[ProjectStore] restoreTabState called - now handled by IPC');
   },
 
+  // Tab group actions
+  createTabGroup: (tabIds, name, color) => {
+    const state = get();
+
+    // Filter to only tabs that exist in tabOrder
+    const validTabIds = tabIds.filter(id => state.tabOrder.includes(id));
+    if (validTabIds.length === 0) return;
+
+    // Assign color: use provided color, or rotate through the palette
+    const groupColor: TabGroupColor = color ?? TAB_GROUP_COLORS[nextGroupColorIndex % TAB_GROUP_COLORS.length].id as TabGroupColor;
+    nextGroupColorIndex++;
+
+    const newGroup: TabGroup = {
+      id: uuid(),
+      name: name ?? 'New group',
+      color: groupColor,
+      collapsed: false,
+      tabIds: validTabIds,
+    };
+
+    // Ensure member adjacency in tabOrder:
+    // Find position of first member, then cluster all members there
+    const firstMemberIndex = state.tabOrder.findIndex(id => validTabIds.includes(id));
+    const nonMembers = state.tabOrder.filter(id => !validTabIds.includes(id));
+    // Count non-member items before the first member to compute correct insertion point
+    const insertAt = state.tabOrder.slice(0, firstMemberIndex).filter(id => !validTabIds.includes(id)).length;
+    // Preserve relative order of members from tabOrder
+    const orderedMembers = state.tabOrder.filter(id => validTabIds.includes(id));
+    const newTabOrder = [
+      ...nonMembers.slice(0, insertAt),
+      ...orderedMembers,
+      ...nonMembers.slice(insertAt),
+    ];
+
+    set({
+      tabGroups: [...state.tabGroups, newGroup],
+      tabOrder: newTabOrder,
+    });
+    saveTabStateToMain();
+  },
+
+  removeTabGroup: (groupId) => {
+    const state = get();
+    set({
+      tabGroups: state.tabGroups.filter(g => g.id !== groupId),
+    });
+    saveTabStateToMain();
+  },
+
+  renameTabGroup: (groupId, name) => {
+    const state = get();
+    set({
+      tabGroups: state.tabGroups.map(g =>
+        g.id === groupId ? { ...g, name } : g
+      ),
+    });
+    saveTabStateToMain();
+  },
+
+  setTabGroupColor: (groupId, color) => {
+    const state = get();
+    set({
+      tabGroups: state.tabGroups.map(g =>
+        g.id === groupId ? { ...g, color } : g
+      ),
+    });
+    saveTabStateToMain();
+  },
+
+  toggleTabGroupCollapsed: (groupId) => {
+    const state = get();
+    const group = state.tabGroups.find(g => g.id === groupId);
+    if (!group) return;
+
+    const willCollapse = !group.collapsed;
+    let newActiveProjectId = state.activeProjectId;
+
+    if (willCollapse && state.activeProjectId && group.tabIds.includes(state.activeProjectId)) {
+      // Active tab is in the collapsing group - find first visible tab outside
+      const tabsOutsideCollapsedGroups = state.tabOrder.filter(id => {
+        const tabGroup = state.tabGroups.find(g => g.tabIds.includes(id));
+        // Tab is outside any group, or in an expanded group that isn't being collapsed
+        return !tabGroup || (tabGroup.id !== groupId && !tabGroup.collapsed);
+      });
+
+      if (tabsOutsideCollapsedGroups.length > 0) {
+        newActiveProjectId = tabsOutsideCollapsedGroups[0];
+      } else {
+        // All tabs are in collapsed groups - expand the nearest other group and select its first tab
+        const firstOtherGroup = state.tabGroups.find(g => g.id !== groupId && g.tabIds.length > 0);
+        if (firstOtherGroup) {
+          set({
+            tabGroups: state.tabGroups.map(g => {
+              if (g.id === groupId) return { ...g, collapsed: true };
+              if (g.id === firstOtherGroup.id) return { ...g, collapsed: false };
+              return g;
+            }),
+            activeProjectId: firstOtherGroup.tabIds[0],
+          });
+          if (firstOtherGroup.tabIds[0]) get().selectProject(firstOtherGroup.tabIds[0]);
+          saveTabStateToMain();
+          return;
+        }
+      }
+    }
+
+    set({
+      tabGroups: state.tabGroups.map(g =>
+        g.id === groupId ? { ...g, collapsed: willCollapse } : g
+      ),
+      activeProjectId: newActiveProjectId,
+    });
+    if (newActiveProjectId !== state.activeProjectId && newActiveProjectId) {
+      get().selectProject(newActiveProjectId);
+    }
+    saveTabStateToMain();
+  },
+
+  addTabToGroup: (tabId, groupId) => {
+    const state = get();
+    const targetGroup = state.tabGroups.find(g => g.id === groupId);
+    if (!targetGroup || !state.tabOrder.includes(tabId)) return;
+    if (targetGroup.tabIds.includes(tabId)) return; // Already in this group
+
+    // Remove from any prior group
+    let updatedGroups = state.tabGroups.map(g => {
+      if (g.id !== groupId && g.tabIds.includes(tabId)) {
+        return { ...g, tabIds: g.tabIds.filter(id => id !== tabId) };
+      }
+      return g;
+    });
+    // Auto-delete empty groups (except target)
+    updatedGroups = updatedGroups.filter(g => g.tabIds.length > 0 || g.id === groupId);
+
+    // Add tab to target group
+    updatedGroups = updatedGroups.map(g =>
+      g.id === groupId ? { ...g, tabIds: [...g.tabIds, tabId] } : g
+    );
+
+    // Move tab adjacent to group in tabOrder (after last existing member)
+    const tabOrderWithoutTab = state.tabOrder.filter(id => id !== tabId);
+    const existingGroupMembers = targetGroup.tabIds;
+    let insertIndex = tabOrderWithoutTab.length;
+    if (existingGroupMembers.length > 0) {
+      const memberIndices = existingGroupMembers
+        .map(id => tabOrderWithoutTab.indexOf(id))
+        .filter(idx => idx >= 0);
+      if (memberIndices.length > 0) {
+        insertIndex = Math.max(...memberIndices) + 1;
+      }
+    }
+    const newTabOrder = [
+      ...tabOrderWithoutTab.slice(0, insertIndex),
+      tabId,
+      ...tabOrderWithoutTab.slice(insertIndex),
+    ];
+
+    set({
+      tabGroups: updatedGroups,
+      tabOrder: newTabOrder,
+    });
+    saveTabStateToMain();
+  },
+
+  removeTabFromGroup: (tabId) => {
+    const state = get();
+    const group = state.tabGroups.find(g => g.tabIds.includes(tabId));
+    if (!group) return;
+
+    const updatedTabIds = group.tabIds.filter(id => id !== tabId);
+
+    // Auto-delete group if empty, otherwise update its tabIds
+    const updatedGroups = updatedTabIds.length === 0
+      ? state.tabGroups.filter(g => g.id !== group.id)
+      : state.tabGroups.map(g =>
+          g.id === group.id ? { ...g, tabIds: updatedTabIds } : g
+        );
+
+    set({ tabGroups: updatedGroups });
+    saveTabStateToMain();
+  },
+
+  moveTabToGroup: (tabId, groupId) => {
+    // Atomic remove from old group + add to new group
+    get().addTabToGroup(tabId, groupId);
+  },
+
+  closeTabGroup: (groupId) => {
+    const state = get();
+    const group = state.tabGroups.find(g => g.id === groupId);
+    if (!group) return;
+
+    const memberIds = group.tabIds;
+    const newOpenProjectIds = state.openProjectIds.filter(id => !memberIds.includes(id));
+    const newTabOrder = state.tabOrder.filter(id => !memberIds.includes(id));
+    const newTabGroups = state.tabGroups.filter(g => g.id !== groupId);
+
+    // Select nearest tab outside the group if active tab was in it
+    let newActiveProjectId = state.activeProjectId;
+    if (state.activeProjectId && memberIds.includes(state.activeProjectId)) {
+      if (newTabOrder.length > 0) {
+        // Find the tab nearest to where the group was positioned
+        const groupFirstIndex = state.tabOrder.indexOf(memberIds[0]);
+        let closestTab: string | null = null;
+        let closestDistance = Number.POSITIVE_INFINITY;
+        for (const id of newTabOrder) {
+          const distance = Math.abs(state.tabOrder.indexOf(id) - groupFirstIndex);
+          if (distance < closestDistance) {
+            closestDistance = distance;
+            closestTab = id;
+          }
+        }
+        newActiveProjectId = closestTab;
+      } else {
+        newActiveProjectId = null;
+      }
+    }
+
+    set({
+      openProjectIds: newOpenProjectIds,
+      tabOrder: newTabOrder,
+      tabGroups: newTabGroups,
+      activeProjectId: newActiveProjectId,
+    });
+    if (newActiveProjectId !== state.activeProjectId && newActiveProjectId) {
+      get().selectProject(newActiveProjectId);
+    }
+    saveTabStateToMain();
+  },
+
+  // Tab group selectors
+  findGroupByTabId: (tabId) => {
+    const state = get();
+    return state.tabGroups.find(g => g.tabIds.includes(tabId));
+  },
 
   // Original selectors
   getSelectedProject: () => {
@@ -202,6 +476,104 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       .filter(p => state.openProjectIds.includes(p.id) && !state.tabOrder.includes(p.id));
 
     return [...orderedProjects, ...remainingProjects];
+  },
+
+  getTabLayout: () => {
+    const state = get();
+    const { tabOrder, tabGroups } = state;
+
+    // Build a lookup from tabId -> group for quick access
+    const tabToGroup = new Map<string, TabGroup>();
+    for (const group of tabGroups) {
+      for (const tabId of group.tabIds) {
+        tabToGroup.set(tabId, group);
+      }
+    }
+
+    // Track which groups have already been emitted (by id)
+    const emittedGroupIds = new Set<string>();
+    // Track which tabs have been consumed (placed into a group entry)
+    const consumedTabIds = new Set<string>();
+
+    const layout: TabLayoutItem[] = [];
+
+    for (const tabId of tabOrder) {
+      // Skip tabs already consumed by a previously-emitted group
+      if (consumedTabIds.has(tabId)) continue;
+
+      const group = tabToGroup.get(tabId);
+
+      if (group && !emittedGroupIds.has(group.id)) {
+        // First occurrence of a member of this group.
+        // Defensively repair contiguity: gather ALL members from tabOrder
+        // (even those appearing later) and cluster them at this position.
+        const orderedMembers = tabOrder.filter(id => group.tabIds.includes(id));
+        for (const memberId of orderedMembers) {
+          consumedTabIds.add(memberId);
+        }
+        emittedGroupIds.add(group.id);
+
+        layout.push({
+          type: 'group',
+          group,
+          projectIds: orderedMembers,
+        });
+      } else if (!group) {
+        // Ungrouped tab
+        layout.push({
+          type: 'tab',
+          projectId: tabId,
+        });
+      }
+      // If group was already emitted, skip (tab was consumed above)
+    }
+
+    return layout;
+  },
+
+  getSortableItems: () => {
+    const state = get();
+    const layout = state.getTabLayout();
+    const items: string[] = [];
+
+    for (const entry of layout) {
+      if (entry.type === 'group') {
+        // Group chip is always represented by its prefixed ID
+        items.push(`group:${entry.group.id}`);
+        // Only include individual member tab IDs if the group is expanded
+        if (!entry.group.collapsed) {
+          for (const projectId of entry.projectIds) {
+            items.push(projectId);
+          }
+        }
+      } else {
+        items.push(entry.projectId);
+      }
+    }
+
+    return items;
+  },
+
+  getVisibleTabs: () => {
+    const state = get();
+    const layout = state.getTabLayout();
+    const visibleIds: string[] = [];
+
+    for (const entry of layout) {
+      if (entry.type === 'group') {
+        // Only include member tabs if the group is expanded
+        if (!entry.group.collapsed) {
+          for (const projectId of entry.projectIds) {
+            visibleIds.push(projectId);
+          }
+        }
+        // Collapsed group members are skipped entirely for keyboard nav
+      } else {
+        visibleIds.push(entry.projectId);
+      }
+    }
+
+    return visibleIds;
   }
 }));
 
@@ -220,7 +592,8 @@ function saveTabStateToMain(): void {
     const tabState = {
       openProjectIds: store.openProjectIds,
       activeProjectId: store.activeProjectId,
-      tabOrder: store.tabOrder
+      tabOrder: store.tabOrder,
+      tabGroups: store.tabGroups
     };
     console.log('[ProjectStore] Saving tab state to main process:', tabState);
     try {
@@ -248,7 +621,8 @@ export async function loadProjects(): Promise<void> {
       useProjectStore.setState({
         openProjectIds: tabStateResult.data.openProjectIds || [],
         activeProjectId: tabStateResult.data.activeProjectId || null,
-        tabOrder: tabStateResult.data.tabOrder || []
+        tabOrder: tabStateResult.data.tabOrder || [],
+        tabGroups: tabStateResult.data.tabGroups || []
       });
     }
 
@@ -278,24 +652,36 @@ export async function loadProjects(): Promise<void> {
         ? currentState.activeProjectId
         : null;
 
+      // Clean up tab groups - remove invalid tab IDs and empty groups
+      const validTabGroups = currentState.tabGroups
+        .map(g => ({
+          ...g,
+          tabIds: g.tabIds.filter(id => result.data?.some((p) => p.id === id) ?? false)
+        }))
+        .filter(g => g.tabIds.length > 0);
+
       console.log('[ProjectStore] Tab state cleanup:', {
         originalOpenProjectIds: currentState.openProjectIds,
         validOpenProjectIds,
         originalTabOrder: currentState.tabOrder,
         validTabOrder,
         originalActiveProjectId: currentState.activeProjectId,
-        validActiveProjectId
+        validActiveProjectId,
+        originalTabGroups: currentState.tabGroups.length,
+        validTabGroups: validTabGroups.length
       });
 
       // Update store with cleaned tab state if needed
       if (validOpenProjectIds.length !== currentState.openProjectIds.length ||
           validTabOrder.length !== currentState.tabOrder.length ||
-          validActiveProjectId !== currentState.activeProjectId) {
+          validActiveProjectId !== currentState.activeProjectId ||
+          validTabGroups.length !== currentState.tabGroups.length) {
         console.log('[ProjectStore] Updating cleaned tab state');
         useProjectStore.setState({
           openProjectIds: validOpenProjectIds,
           tabOrder: validTabOrder,
-          activeProjectId: validActiveProjectId
+          activeProjectId: validActiveProjectId,
+          tabGroups: validTabGroups
         });
         // Save cleaned state back to main process
         saveTabStateToMain();

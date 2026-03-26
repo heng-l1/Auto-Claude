@@ -13,7 +13,8 @@ import type {
   GraphitiConnectionTestResult,
   GitStatus,
   KanbanPreferences,
-  GitBranchDetail
+  GitBranchDetail,
+  TabGroup
 } from '../../shared/types';
 
 // Tab state interface (persisted in main process)
@@ -21,6 +22,7 @@ export interface TabState {
   openProjectIds: string[];
   activeProjectId: string | null;
   tabOrder: string[];
+  tabGroups?: TabGroup[];
 }
 
 export interface ProjectAPI {

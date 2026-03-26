@@ -2,7 +2,7 @@ import { app } from 'electron';
 import { readFileSync, existsSync, mkdirSync, readdirSync, Dirent } from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import type { Project, ProjectSettings, Task, TaskStatus, TaskMetadata, ImplementationPlan, ReviewReason, PlanSubtask, KanbanPreferences, ExecutionPhase } from '../shared/types';
+import type { Project, ProjectSettings, Task, TaskStatus, TaskMetadata, ImplementationPlan, ReviewReason, PlanSubtask, KanbanPreferences, ExecutionPhase, TabGroup } from '../shared/types';
 import { DEFAULT_PROJECT_SETTINGS, AUTO_BUILD_PATHS, getSpecsDir, JSON_ERROR_PREFIX, JSON_ERROR_TITLE_SUFFIX, TASK_STATUS_PRIORITY } from '../shared/constants';
 import { getAutoBuildPath, isInitialized } from './project-initializer';
 import { getTaskWorktreeDir } from './worktree-paths';
@@ -15,6 +15,7 @@ interface TabState {
   openProjectIds: string[];
   activeProjectId: string | null;
   tabOrder: string[];
+  tabGroups?: TabGroup[];
 }
 
 interface StoreData {
@@ -171,7 +172,8 @@ export class ProjectStore {
     return this.data.tabState || {
       openProjectIds: [],
       activeProjectId: null,
-      tabOrder: []
+      tabOrder: [],
+      tabGroups: []
     };
   }
 
@@ -181,12 +183,23 @@ export class ProjectStore {
   saveTabState(tabState: TabState): void {
     // Filter out any project IDs that no longer exist
     const validProjectIds = this.data.projects.map(p => p.id);
+
+    // Filter tabGroups: remove stale project IDs from each group's tabIds,
+    // then auto-delete groups that become empty after filtering
+    const tabGroups = (tabState.tabGroups || [])
+      .map(group => ({
+        ...group,
+        tabIds: group.tabIds.filter(id => validProjectIds.includes(id))
+      }))
+      .filter(group => group.tabIds.length > 0);
+
     this.data.tabState = {
       openProjectIds: tabState.openProjectIds.filter(id => validProjectIds.includes(id)),
       activeProjectId: tabState.activeProjectId && validProjectIds.includes(tabState.activeProjectId)
         ? tabState.activeProjectId
         : null,
-      tabOrder: tabState.tabOrder.filter(id => validProjectIds.includes(id))
+      tabOrder: tabState.tabOrder.filter(id => validProjectIds.includes(id)),
+      tabGroups
     };
     this.save();
   }

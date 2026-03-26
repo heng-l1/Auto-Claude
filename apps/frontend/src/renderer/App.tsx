@@ -70,8 +70,8 @@ import { GlobalDownloadIndicator } from './components/GlobalDownloadIndicator';
 import { useIpcListeners } from './hooks/useIpc';
 import { useGlobalTerminalListeners } from './hooks/useGlobalTerminalListeners';
 import { useTerminalProfileChange } from './hooks/useTerminalProfileChange';
-import { COLOR_THEMES, UI_SCALE_MIN, UI_SCALE_MAX, UI_SCALE_DEFAULT, TAB_COLORS } from '../shared/constants';
-import type { Task, Project, ColorTheme } from '../shared/types';
+import { COLOR_THEMES, UI_SCALE_MIN, UI_SCALE_MAX, UI_SCALE_DEFAULT, TAB_COLORS, TAB_GROUP_COLORS } from '../shared/constants';
+import type { Task, Project, ColorTheme, TabGroup } from '../shared/types';
 import { ProjectTabBar } from './components/ProjectTabBar';
 import { AddProjectModal } from './components/AddProjectModal';
 import { ViewStateProvider } from './contexts/ViewStateContext';
@@ -164,6 +164,17 @@ export function App() {
   const openProjectTab = useProjectStore((state) => state.openProjectTab);
   const setActiveProject = useProjectStore((state) => state.setActiveProject);
   const reorderTabs = useProjectStore((state) => state.reorderTabs);
+
+  // Tab group state and actions for DnD integration
+  const getSortableItems = useProjectStore((state) => state.getSortableItems);
+  const findGroupByTabId = useProjectStore((state) => state.findGroupByTabId);
+  const addTabToGroup = useProjectStore((state) => state.addTabToGroup);
+  const removeTabFromGroup = useProjectStore((state) => state.removeTabFromGroup);
+  // Subscribe to tabOrder and tabGroups to trigger re-renders when they change
+  // (required for SortableContext items and DragOverlay to stay current)
+  useProjectStore((state) => state.tabOrder);
+  useProjectStore((state) => state.tabGroups);
+
   const tasks = useTaskStore((state) => state.tasks);
   const settings = useSettingsStore((state) => state.settings);
   const settingsLoading = useSettingsStore((state) => state.isLoading);
@@ -237,6 +248,8 @@ export function App() {
 
   // Track dragging state for overlay
   const [activeDragProject, setActiveDragProject] = useState<Project | null>(null);
+  const [activeDragType, setActiveDragType] = useState<'tab' | 'group' | null>(null);
+  const [activeDragGroup, setActiveDragGroup] = useState<TabGroup | null>(null);
 
   // Get tabs and selected project
   const projectTabs = getProjectTabs();
@@ -796,27 +809,147 @@ export function App() {
     setRemoveProjectError(null);
   };
 
-  // Handle drag start - set the active dragged project
+  // Handle drag start - determine if dragging a tab or group chip
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
-    const draggedProject = projectTabs.find(p => p.id === active.id);
-    if (draggedProject) {
-      setActiveDragProject(draggedProject);
+    const activeId = String(active.id);
+
+    if (activeId.startsWith('group:')) {
+      // Group chip is being dragged
+      const groupId = activeId.slice(6);
+      const group = useProjectStore.getState().tabGroups.find(g => g.id === groupId);
+      if (group) {
+        setActiveDragType('group');
+        setActiveDragGroup(group);
+        setActiveDragProject(null);
+      }
+    } else {
+      // Tab is being dragged
+      const draggedProject = projectTabs.find(p => p.id === activeId);
+      if (draggedProject) {
+        setActiveDragType('tab');
+        setActiveDragProject(draggedProject);
+        setActiveDragGroup(null);
+      }
     }
   };
 
-  // Handle drag end - reorder tabs if dropped over another tab
+  // Handle drag end - 5 group-aware drag cases
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
+
+    // Reset all drag state
     setActiveDragProject(null);
+    setActiveDragGroup(null);
+    setActiveDragType(null);
 
-    if (!over) return;
+    const activeId = String(active.id);
+    const activeIsGroup = activeId.startsWith('group:');
 
-    const oldIndex = projectTabs.findIndex(p => p.id === active.id);
-    const newIndex = projectTabs.findIndex(p => p.id === over.id);
+    if (!over) {
+      // Case 5: Tab dragged to empty space -> remove from group
+      if (!activeIsGroup) {
+        const sourceGroup = findGroupByTabId(activeId);
+        if (sourceGroup) {
+          removeTabFromGroup(activeId);
+        }
+      }
+      return;
+    }
 
-    if (oldIndex !== newIndex && oldIndex !== -1 && newIndex !== -1) {
-      reorderTabs(oldIndex, newIndex);
+    const overId = String(over.id);
+    if (activeId === overId) return; // Dropped on itself
+
+    const overIsGroup = overId.startsWith('group:');
+
+    if (activeIsGroup) {
+      // Case 1: Group chip dragged -> reorder entire group block in tabOrder
+      const groupId = activeId.slice(6);
+      const state = useProjectStore.getState();
+      const group = state.tabGroups.find(g => g.id === groupId);
+      if (!group) return;
+
+      // Build blocks: each group forms a block, ungrouped tabs are solo blocks
+      type TabBlock = { type: 'group'; groupId: string; tabIds: string[] } | { type: 'tab'; tabId: string };
+      const blocks: TabBlock[] = [];
+      const processedIds = new Set<string>();
+
+      for (const id of state.tabOrder) {
+        if (processedIds.has(id)) continue;
+        const tabGroup = state.tabGroups.find(g => g.tabIds.includes(id));
+        if (tabGroup) {
+          const members = state.tabOrder.filter(tid => tabGroup.tabIds.includes(tid));
+          for (const m of members) processedIds.add(m);
+          blocks.push({ type: 'group', groupId: tabGroup.id, tabIds: members });
+        } else {
+          processedIds.add(id);
+          blocks.push({ type: 'tab', tabId: id });
+        }
+      }
+
+      // Find block indices for the dragged group and drop target
+      const activeBlockIdx = blocks.findIndex(b => b.type === 'group' && b.groupId === groupId);
+      const overBlockIdx = overIsGroup
+        ? blocks.findIndex(b => b.type === 'group' && b.groupId === overId.slice(6))
+        : blocks.findIndex(b =>
+            (b.type === 'tab' && b.tabId === overId) ||
+            (b.type === 'group' && b.tabIds.includes(overId))
+          );
+
+      if (activeBlockIdx === -1 || overBlockIdx === -1 || activeBlockIdx === overBlockIdx) return;
+
+      // Reorder blocks using standard arrayMove (splice) logic
+      const newBlocks = [...blocks];
+      const [movedBlock] = newBlocks.splice(activeBlockIdx, 1);
+      newBlocks.splice(overBlockIdx, 0, movedBlock);
+
+      // Flatten blocks back to tabOrder
+      const newTabOrder = newBlocks.flatMap(b => b.type === 'group' ? b.tabIds : [b.tabId]);
+
+      // Update tabOrder and trigger persistence via setActiveProject
+      useProjectStore.setState({ tabOrder: newTabOrder });
+      setActiveProject(state.activeProjectId);
+      return;
+    }
+
+    // Tab is being dragged (not a group chip)
+    if (overIsGroup) {
+      // Case 2: Tab dragged onto group chip -> add tab to that group
+      const groupId = overId.slice(6);
+      addTabToGroup(activeId, groupId);
+      return;
+    }
+
+    // Tab dragged onto another tab
+    const overGroup = findGroupByTabId(overId);
+    const sourceGroup = findGroupByTabId(activeId);
+
+    if (overGroup) {
+      // Case 3: Tab dragged onto a tab that is in a group -> reorder + auto-join group
+      if (sourceGroup?.id === overGroup.id) {
+        // Within-group reorder: just reorder in tabOrder
+        const state = useProjectStore.getState();
+        const oldIndex = state.tabOrder.indexOf(activeId);
+        const newIndex = state.tabOrder.indexOf(overId);
+        if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+          reorderTabs(oldIndex, newIndex);
+        }
+      } else {
+        // Tab from outside (or different group) -> join target group
+        // addTabToGroup handles removal from prior group and tabOrder adjacency
+        addTabToGroup(activeId, overGroup.id);
+      }
+    } else {
+      // Case 4: Tab dragged onto a tab NOT in a group -> reorder + remove from source group
+      const state = useProjectStore.getState();
+      const oldIndex = state.tabOrder.indexOf(activeId);
+      const newIndex = state.tabOrder.indexOf(overId);
+      if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+        reorderTabs(oldIndex, newIndex);
+      }
+      if (sourceGroup) {
+        removeTabFromGroup(activeId);
+      }
     }
   };
 
@@ -955,7 +1088,7 @@ export function App() {
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
             >
-              <SortableContext items={projectTabs.map(p => p.id)} strategy={horizontalListSortingStrategy}>
+              <SortableContext items={getSortableItems()} strategy={horizontalListSortingStrategy}>
                 <ProjectTabBarWithContext
                   projects={projectTabs}
                   activeProjectId={activeProjectId}
@@ -968,15 +1101,31 @@ export function App() {
                 />
               </SortableContext>
 
-              {/* Drag overlay - shows what's being dragged */}
+              {/* Drag overlay - shows tab or group chip preview */}
               <DragOverlay>
-                {activeDragProject && (() => {
+                {activeDragType === 'tab' && activeDragProject && (() => {
                   const dragTabColor = TAB_COLORS.find(c => c.id === activeDragProject.settings?.tabColor);
                   return (
                     <div className={cn('flex items-center gap-2 bg-card border border-border rounded-md px-4 py-2.5 shadow-lg max-w-[200px]', dragTabColor?.bg)}>
                       <div className="w-1 h-4 bg-muted-foreground rounded-full" />
                       <span className="truncate font-medium text-sm">
                         {activeDragProject.settings?.customTabName || activeDragProject.name}
+                      </span>
+                    </div>
+                  );
+                })()}
+                {activeDragType === 'group' && activeDragGroup && (() => {
+                  const groupColor = TAB_GROUP_COLORS.find(c => c.id === activeDragGroup.color);
+                  return (
+                    <div className={cn(
+                      'flex items-center gap-2 bg-card border border-border rounded-md px-4 py-2.5 shadow-lg max-w-[200px]',
+                      groupColor?.bg,
+                      'border-b-2',
+                      groupColor?.border
+                    )}>
+                      <span className={cn('w-2.5 h-2.5 rounded-full flex-shrink-0', groupColor?.chip)} />
+                      <span className="truncate font-medium text-sm">
+                        {activeDragGroup.name} ({activeDragGroup.tabIds.length})
                       </span>
                     </div>
                   );

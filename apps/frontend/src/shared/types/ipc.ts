@@ -166,6 +166,32 @@ export interface GitBranchDetail {
 }
 
 // ============================================
+// Tab Group Types
+// ============================================
+
+/**
+ * Available colors for tab groups, matching Chrome's built-in palette
+ */
+export type TabGroupColor = 'grey' | 'blue' | 'red' | 'yellow' | 'green' | 'pink' | 'purple' | 'cyan';
+
+/**
+ * A named, color-coded group of project tabs
+ * Supports collapsing to save space in the tab bar
+ */
+export interface TabGroup {
+  /** Unique identifier for the group */
+  id: string;
+  /** User-visible group name */
+  name: string;
+  /** Color theme for the group chip and underline */
+  color: TabGroupColor;
+  /** Whether the group is collapsed (hiding member tabs) */
+  collapsed: boolean;
+  /** Ordered list of project IDs belonging to this group */
+  tabIds: string[];
+}
+
+// ============================================
 // Electron API
 // ============================================
 
@@ -175,6 +201,7 @@ export interface TabState {
   openProjectIds: string[];
   activeProjectId: string | null;
   tabOrder: string[];
+  tabGroups?: TabGroup[];
 }
 
 export interface ElectronAPI {
