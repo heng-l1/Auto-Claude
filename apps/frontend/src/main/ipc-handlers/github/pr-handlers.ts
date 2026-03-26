@@ -2396,9 +2396,17 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
             }
           }
 
+          const lineLevelCount = inlineComments.filter((c) => c.line !== undefined).length;
+          const fileLevelCount = inlineComments.filter((c) => c.subject_type === "file").length;
+          const eligibleCount = findings.filter((f) => f.file && f.line && f.line > 0).length;
+          const skippedCount = eligibleCount - inlineComments.length;
+
           debugLog("Posting review with inline comments", {
             prNumber,
-            inlineCount: inlineComments.length,
+            lineLevel: lineLevelCount,
+            fileLevel: fileLevelCount,
+            skipped: skippedCount,
+            commitSha: commitSha ?? "none",
             totalFindings: findings.length,
           });
 
@@ -2410,6 +2418,9 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
           };
           if (inlineComments.length > 0) {
             reviewPayload.comments = inlineComments;
+            if (commitSha) {
+              reviewPayload.commit_id = commitSha;
+            }
           }
 
           try {
@@ -2447,7 +2458,7 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
               reviewId = fallbackResponse.id;
             } else {
               // If inline comments fail (e.g., line not in diff), retry without them
-              if (inlineComments.length > 0 && errorMsg.includes("pull_request_review_thread.line")) {
+              if (inlineComments.length > 0 && (errorMsg.includes("pull_request_review_thread.line") || errorMsg.includes("Line could not be resolved"))) {
                 debugLog("Inline comments failed, retrying without them", { prNumber });
                 const retryResponse = (await githubFetch(
                   config.token,
