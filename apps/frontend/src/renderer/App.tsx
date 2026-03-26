@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Download, RefreshCw, AlertCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { debugLog } from '../shared/utils/debug-logger';
 import {
   DndContext,
@@ -78,6 +79,18 @@ import { ViewStateProvider } from './contexts/ViewStateContext';
 
 // Version constant for version-specific warnings (e.g., reauthentication notices)
 const VERSION_WARNING_275 = '2.7.5';
+
+// View transition animation variants
+const viewTransitionVariants = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1 },
+  exit: { opacity: 0 }
+};
+
+const viewTransitionConfig = {
+  duration: 0.2,
+  ease: 'easeInOut' as const
+};
 
 // Sidebar view persistence helpers — stores last-used view per project in localStorage
 const SIDEBAR_VIEW_KEY_PREFIX = 'sidebar-view';
