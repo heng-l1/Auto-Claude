@@ -25,6 +25,7 @@ dev = [
     "coverage>=7.0.0",
     "mypy>=1.0.0",
     "types-toml>=0.10.0",
+    "pip-tools>=7.0.0",
 ]
 
 [tool.pytest.ini_options]

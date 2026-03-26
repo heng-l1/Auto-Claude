@@ -18,7 +18,31 @@ on:
         type: boolean
 
 jobs:
+  validate-lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install pip-tools
+        run: pip install pip-tools
+
+      - name: Validate lock file is in sync
+        run: |
+          cd apps/backend
+          pip-compile --dry-run --quiet requirements.txt -o requirements.lock --generate-hashes
+          if [ $? -ne 0 ]; then
+            echo "::error::Lock file is out of sync with requirements.txt. Run 'npm run lockfile:sync' and commit the changes."
+            exit 1
+          fi
+          echo "Lock file is in sync with requirements.txt"
+
   build-macos:
+    needs: [validate-lockfile]
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -47,7 +71,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/Library/Caches/pip
-          key: pip-wheel-${{ runner.os }}-arm64-${{ hashFiles('apps/backend/requirements.txt') }}
+          key: pip-wheel-${{ runner.os }}-arm64-${{ hashFiles('apps/backend/requirements.lock') }}
           restore-keys: |
             pip-wheel-${{ runner.os }}-arm64-
 
@@ -55,7 +79,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: apps/frontend/python-runtime
-          key: python-bundle-${{ runner.os }}-arm64-3.12.8-${{ hashFiles('apps/backend/requirements.txt') }}
+          key: python-bundle-${{ runner.os }}-arm64-3.12.8-${{ hashFiles('apps/backend/requirements.lock') }}
           restore-keys: |
             python-bundle-${{ runner.os }}-arm64-3.12.8-
 
@@ -78,6 +102,7 @@ jobs:
             apps/frontend/dist/*.blockmap
 
   build-windows:
+    needs: [validate-lockfile]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -109,7 +134,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~\AppData\Local\pip\Cache
-          key: pip-wheel-${{ runner.os }}-x64-${{ hashFiles('apps/backend/requirements.txt') }}
+          key: pip-wheel-${{ runner.os }}-x64-${{ hashFiles('apps/backend/requirements.lock') }}
           restore-keys: |
             pip-wheel-${{ runner.os }}-x64-
 
@@ -117,7 +142,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: apps/frontend/python-runtime
-          key: python-bundle-${{ runner.os }}-x64-3.12.8-${{ hashFiles('apps/backend/requirements.txt') }}
+          key: python-bundle-${{ runner.os }}-x64-3.12.8-${{ hashFiles('apps/backend/requirements.lock') }}
           restore-keys: |
             python-bundle-${{ runner.os }}-x64-3.12.8-
 
@@ -139,6 +164,7 @@ jobs:
             apps/frontend/dist/*.blockmap
 
   build-linux:
+    needs: [validate-lockfile]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -175,7 +201,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: pip-wheel-${{ runner.os }}-x64-${{ hashFiles('apps/backend/requirements.txt') }}
+          key: pip-wheel-${{ runner.os }}-x64-${{ hashFiles('apps/backend/requirements.lock') }}
           restore-keys: |
             pip-wheel-${{ runner.os }}-x64-
 
@@ -183,7 +209,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: apps/frontend/python-runtime
-          key: python-bundle-${{ runner.os }}-x64-3.12.8-${{ hashFiles('apps/backend/requirements.txt') }}
+          key: python-bundle-${{ runner.os }}-x64-3.12.8-${{ hashFiles('apps/backend/requirements.lock') }}
           restore-keys: |
             python-bundle-${{ runner.os }}-x64-3.12.8-
 

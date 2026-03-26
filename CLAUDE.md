@@ -164,6 +164,37 @@ Each spec in `.auto-claude/specs/XXX-name/` contains: `spec.md`, `requirements.j
 
 Graph-based semantic memory in `integrations/graphiti/`. Configured through the Electron app's onboarding/settings UI (CLI users can alternatively set `GRAPHITI_ENABLED=true` in `.env`). See [ARCHITECTURE.md](shared_docs/ARCHITECTURE.md#memory-system) for details.
 
+### Python Dependencies and Lock Files
+
+**Security-first dependency management:** Backend Python dependencies use `requirements.txt` (human-editable) + `requirements.lock` (auto-generated, pinned versions with hashes for security).
+
+**Lock file workflow:**
+
+1. **After modifying `requirements.txt`** (adding/removing/updating dependencies):
+   ```bash
+   cd apps/backend
+   uv pip compile requirements.txt --generate-hashes --output-file requirements.lock
+   ```
+
+2. **When to regenerate `requirements.lock`:**
+   - After ANY change to `requirements.txt`
+   - Weekly/monthly for security updates (run compile, review diff, commit)
+   - After dependency vulnerability alerts
+
+3. **Why lock files exist:**
+   - **Security:** SHA256 hashes prevent supply-chain attacks
+   - **Reproducibility:** Exact versions ensure consistent builds across environments
+   - **Audit trail:** Git history shows exactly what changed in dependencies
+
+4. **CRITICAL:** Both `requirements.txt` AND `requirements.lock` MUST be committed together. Never commit one without the other. The lock file is not gitignored—it's a first-class artifact that ensures secure, reproducible installs.
+
+Installation uses the lock file by default:
+```bash
+uv pip install -r requirements.lock  # Secure, pinned install
+```
+
+See [apps/backend/DEPENDENCIES.md](apps/backend/DEPENDENCIES.md) for full dependency management guide.
+
 ## Frontend Development
 
 ### Tech Stack
