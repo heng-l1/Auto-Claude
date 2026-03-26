@@ -87,7 +87,7 @@ export function TerminalHeader({
 
   return (
     <div className="electron-no-drag group/header flex h-9 items-center justify-between border-b border-border/50 bg-card/30 px-2">
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2 overflow-hidden">
         {/* Drag handle - visible on hover */}
         {dragHandleListeners && (
           <div
@@ -188,7 +188,7 @@ export function TerminalHeader({
           )
         )}
       </div>
-      <div className="flex items-center gap-1">
+      <div className="flex flex-shrink-0 items-center gap-1">
         {/* Resume All button - shown when 2+ terminals have pending resume */}
         {showResumeAllButton && (
           <Button
