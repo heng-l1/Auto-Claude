@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Download, RefreshCw, AlertCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { debugLog } from '../shared/utils/debug-logger';
 import {
   DndContext,
@@ -79,6 +80,42 @@ import { ViewStateProvider } from './contexts/ViewStateContext';
 // Version constant for version-specific warnings (e.g., reauthentication notices)
 const VERSION_WARNING_275 = '2.7.5';
 
+/**
+ * Hook to detect user's reduced motion preference.
+ * Listens for changes to the prefers-reduced-motion media query.
+ */
+function useReducedMotion(): boolean {
+  const [reducedMotion, setReducedMotion] = useState(() => {
+    // Check if window is available (for SSR safety)
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  });
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+    const handleChange = (event: MediaQueryListEvent) => {
+      setReducedMotion(event.matches);
+    };
+
+    // Add listener for changes
+    mediaQuery.addEventListener('change', handleChange);
+
+    return () => {
+      mediaQuery.removeEventListener('change', handleChange);
+    };
+  }, []);
+
+  return reducedMotion;
+}
+
+// View transition animation variants
+const viewTransitionVariants = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1 },
+  exit: { opacity: 0 }
+};
+
 // Sidebar view persistence helpers — stores last-used view per project in localStorage
 const SIDEBAR_VIEW_KEY_PREFIX = 'sidebar-view';
 
@@ -154,6 +191,14 @@ export function App() {
 
   // Handle terminal profile change events (recreate terminals on profile switch)
   useTerminalProfileChange();
+
+  // Detect reduced motion preference for accessibility
+  const reducedMotion = useReducedMotion();
+
+  // View transition config that respects reduced motion preference
+  const viewTransitionConfig = reducedMotion
+    ? { duration: 0 }
+    : { duration: 0.15, ease: 'easeInOut' as const };
 
   // Stores
   const projects = useProjectStore((state) => state.projects);
@@ -990,17 +1035,14 @@ export function App() {
           <main className="flex-1 overflow-hidden">
             {selectedProject ? (
               <>
-                {activeView === 'kanban' && (
-                  <KanbanBoard
-                    tasks={tasks}
-                    onTaskClick={handleTaskClick}
-                    onNewTaskClick={() => setIsNewTaskDialogOpen(true)}
-                    onRefresh={handleRefreshTasks}
-                    isRefreshing={isRefreshingTasks}
-                  />
-                )}
                 {/* TerminalGrid is always mounted but hidden when not active to preserve terminal state */}
-                <div className={activeView === 'terminals' ? 'h-full' : 'hidden'}>
+                <motion.div
+                  className="h-full"
+                  style={{ display: activeView === 'terminals' ? 'block' : 'none' }}
+                  initial={false}
+                  animate={{ opacity: activeView === 'terminals' ? 1 : 0 }}
+                  transition={viewTransitionConfig}
+                >
                   <TerminalGrid
                     projectPath={selectedProject?.path}
                     onNewTaskClick={(initialDescription, sourceTerminalId) => {
@@ -1010,42 +1052,16 @@ export function App() {
                     }}
                     isActive={activeView === 'terminals'}
                   />
-                </div>
-                {activeView === 'roadmap' && (activeProjectId || selectedProjectId) && (
-                  <Roadmap projectId={activeProjectId || selectedProjectId!} onGoToTask={handleGoToTask} />
-                )}
-                {activeView === 'context' && (activeProjectId || selectedProjectId) && (
-                  <ErrorBoundary>
-                    <Context projectId={activeProjectId || selectedProjectId!} />
-                  </ErrorBoundary>
-                )}
-                {activeView === 'ideation' && (activeProjectId || selectedProjectId) && (
-                  <Ideation projectId={activeProjectId || selectedProjectId!} onGoToTask={handleGoToTask} />
-                )}
-                {activeView === 'insights' && (activeProjectId || selectedProjectId) && (
-                  <Insights projectId={activeProjectId || selectedProjectId!} />
-                )}
-                {activeView === 'github-issues' && (activeProjectId || selectedProjectId) && (
-                  <GitHubIssues
-                    onOpenSettings={() => {
-                      setSettingsInitialProjectSection('github');
-                      setIsSettingsDialogOpen(true);
-                    }}
-                    onNavigateToTask={handleGoToTask}
-                  />
-                )}
-                {activeView === 'gitlab-issues' && (activeProjectId || selectedProjectId) && (
-                  <GitLabIssues
-                    onOpenSettings={() => {
-                      setSettingsInitialProjectSection('gitlab');
-                      setIsSettingsDialogOpen(true);
-                    }}
-                    onNavigateToTask={handleGoToTask}
-                  />
-                )}
+                </motion.div>
                 {/* GitHubPRs is always mounted but hidden when not active to preserve review state */}
                 {(activeProjectId || selectedProjectId) && (
-                  <div className={activeView === 'github-prs' ? 'h-full' : 'hidden'}>
+                  <motion.div
+                    className="h-full"
+                    style={{ display: activeView === 'github-prs' ? 'block' : 'none' }}
+                    initial={false}
+                    animate={{ opacity: activeView === 'github-prs' ? 1 : 0 }}
+                    transition={viewTransitionConfig}
+                  >
                     <GitHubPRs
                       onOpenSettings={() => {
                         setSettingsInitialProjectSection('github');
@@ -1054,24 +1070,180 @@ export function App() {
                       isActive={activeView === 'github-prs'}
                       onDiscussInTerminal={handleDiscussInTerminal}
                     />
-                  </div>
+                  </motion.div>
                 )}
-                {activeView === 'gitlab-merge-requests' && (activeProjectId || selectedProjectId) && (
-                  <GitLabMergeRequests
-                    projectId={activeProjectId || selectedProjectId!}
-                    onOpenSettings={() => {
-                      setSettingsInitialProjectSection('gitlab');
-                      setIsSettingsDialogOpen(true);
-                    }}
-                  />
-                )}
-                {activeView === 'changelog' && (activeProjectId || selectedProjectId) && (
-                  <Changelog />
-                )}
-                {activeView === 'worktrees' && (activeProjectId || selectedProjectId) && (
-                  <Worktrees projectId={activeProjectId || selectedProjectId!} />
-                )}
-                {activeView === 'agent-tools' && <AgentTools />}
+                {/* Animated views with fade transitions */}
+                <AnimatePresence mode="wait">
+                  {activeView === 'kanban' && (
+                    <motion.div
+                      key="kanban"
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      variants={viewTransitionVariants}
+                      transition={viewTransitionConfig}
+                      className="h-full"
+                    >
+                      <KanbanBoard
+                        tasks={tasks}
+                        onTaskClick={handleTaskClick}
+                        onNewTaskClick={() => setIsNewTaskDialogOpen(true)}
+                        onRefresh={handleRefreshTasks}
+                        isRefreshing={isRefreshingTasks}
+                      />
+                    </motion.div>
+                  )}
+                  {activeView === 'roadmap' && (activeProjectId || selectedProjectId) && (
+                    <motion.div
+                      key="roadmap"
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      variants={viewTransitionVariants}
+                      transition={viewTransitionConfig}
+                      className="h-full"
+                    >
+                      <Roadmap projectId={activeProjectId || selectedProjectId!} onGoToTask={handleGoToTask} />
+                    </motion.div>
+                  )}
+                  {activeView === 'context' && (activeProjectId || selectedProjectId) && (
+                    <motion.div
+                      key="context"
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      variants={viewTransitionVariants}
+                      transition={viewTransitionConfig}
+                      className="h-full"
+                    >
+                      <ErrorBoundary>
+                        <Context projectId={activeProjectId || selectedProjectId!} />
+                      </ErrorBoundary>
+                    </motion.div>
+                  )}
+                  {activeView === 'ideation' && (activeProjectId || selectedProjectId) && (
+                    <motion.div
+                      key="ideation"
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      variants={viewTransitionVariants}
+                      transition={viewTransitionConfig}
+                      className="h-full"
+                    >
+                      <Ideation projectId={activeProjectId || selectedProjectId!} onGoToTask={handleGoToTask} />
+                    </motion.div>
+                  )}
+                  {activeView === 'insights' && (activeProjectId || selectedProjectId) && (
+                    <motion.div
+                      key="insights"
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      variants={viewTransitionVariants}
+                      transition={viewTransitionConfig}
+                      className="h-full"
+                    >
+                      <Insights projectId={activeProjectId || selectedProjectId!} />
+                    </motion.div>
+                  )}
+                  {activeView === 'github-issues' && (activeProjectId || selectedProjectId) && (
+                    <motion.div
+                      key="github-issues"
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      variants={viewTransitionVariants}
+                      transition={viewTransitionConfig}
+                      className="h-full"
+                    >
+                      <GitHubIssues
+                        onOpenSettings={() => {
+                          setSettingsInitialProjectSection('github');
+                          setIsSettingsDialogOpen(true);
+                        }}
+                        onNavigateToTask={handleGoToTask}
+                      />
+                    </motion.div>
+                  )}
+                  {activeView === 'gitlab-issues' && (activeProjectId || selectedProjectId) && (
+                    <motion.div
+                      key="gitlab-issues"
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      variants={viewTransitionVariants}
+                      transition={viewTransitionConfig}
+                      className="h-full"
+                    >
+                      <GitLabIssues
+                        onOpenSettings={() => {
+                          setSettingsInitialProjectSection('gitlab');
+                          setIsSettingsDialogOpen(true);
+                        }}
+                        onNavigateToTask={handleGoToTask}
+                      />
+                    </motion.div>
+                  )}
+                  {activeView === 'gitlab-merge-requests' && (activeProjectId || selectedProjectId) && (
+                    <motion.div
+                      key="gitlab-merge-requests"
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      variants={viewTransitionVariants}
+                      transition={viewTransitionConfig}
+                      className="h-full"
+                    >
+                      <GitLabMergeRequests
+                        projectId={activeProjectId || selectedProjectId!}
+                        onOpenSettings={() => {
+                          setSettingsInitialProjectSection('gitlab');
+                          setIsSettingsDialogOpen(true);
+                        }}
+                      />
+                    </motion.div>
+                  )}
+                  {activeView === 'changelog' && (activeProjectId || selectedProjectId) && (
+                    <motion.div
+                      key="changelog"
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      variants={viewTransitionVariants}
+                      transition={viewTransitionConfig}
+                      className="h-full"
+                    >
+                      <Changelog />
+                    </motion.div>
+                  )}
+                  {activeView === 'worktrees' && (activeProjectId || selectedProjectId) && (
+                    <motion.div
+                      key="worktrees"
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      variants={viewTransitionVariants}
+                      transition={viewTransitionConfig}
+                      className="h-full"
+                    >
+                      <Worktrees projectId={activeProjectId || selectedProjectId!} />
+                    </motion.div>
+                  )}
+                  {activeView === 'agent-tools' && (
+                    <motion.div
+                      key="agent-tools"
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      variants={viewTransitionVariants}
+                      transition={viewTransitionConfig}
+                      className="h-full"
+                    >
+                      <AgentTools />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </>
             ) : (
               <WelcomeScreen
