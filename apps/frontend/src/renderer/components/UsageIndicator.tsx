@@ -524,7 +524,7 @@ export function UsageIndicator() {
           ) : isApiKeyProfile ? (
             isApiKeyNoLimit ? (
               <span className="text-xs font-semibold font-mono text-muted-foreground" title={t('common:usage.tokensUsed')}>
-                {formatUsageValue(usage.tokenUsage!.totalTokens)}
+                {formatUsageValue(usage.tokenUsage?.totalTokens)}
               </span>
             ) : (
               <span className={`text-xs font-semibold font-mono ${sessionColorClass}`} title={t('common:usage.tokenLimit')}>
