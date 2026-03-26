@@ -1,10 +1,10 @@
 /**
- * Unit tests for parsePatchForNewFileLines()
- * Tests patch parsing logic that determines valid new-file line numbers
- * for GitHub review API comments.
+ * Unit tests for parsePatchForNewFileLines() and buildReviewComments()
+ * Tests patch parsing logic and comment routing for GitHub review API.
  */
 import { describe, it, expect } from 'vitest';
-import { parsePatchForNewFileLines } from '../pr-handlers';
+import { parsePatchForNewFileLines, buildReviewComments } from '../pr-handlers';
+import type { PRReviewFinding } from '../pr-handlers';
 
 describe('parsePatchForNewFileLines', () => {
   describe('single-hunk patch', () => {
@@ -304,6 +304,302 @@ describe('parsePatchForNewFileLines', () => {
       const result = parsePatchForNewFileLines(patch);
 
       expect(result).toEqual(new Set([1, 2, 3, 4]));
+    });
+  });
+});
+
+/**
+ * Helper to create a minimal PRReviewFinding for testing.
+ * Only the fields relevant to comment routing are required.
+ */
+function makeFinding(overrides: Partial<PRReviewFinding> & { file: string; line: number }): PRReviewFinding {
+  return {
+    id: 'f-1',
+    severity: 'medium',
+    category: 'quality',
+    title: 'Test finding',
+    description: 'Test description',
+    fixable: false,
+    ...overrides,
+  };
+}
+
+describe('buildReviewComments', () => {
+  describe('inline comment routing (line in diff)', () => {
+    it('should produce an inline comment with path and line when line is in the diff', () => {
+      const fileLineMap = new Map<string, Set<number>>([
+        ['src/index.ts', new Set([10, 11, 12])],
+      ]);
+      const findings = [makeFinding({ file: 'src/index.ts', line: 11 })];
+
+      const comments = buildReviewComments(findings, fileLineMap);
+
+      expect(comments).toHaveLength(1);
+      expect(comments[0].path).toBe('src/index.ts');
+      expect(comments[0].line).toBe(11);
+      expect(comments[0].subject_type).toBeUndefined();
+      expect(comments[0].body).toContain('**[MEDIUM] Test finding**');
+    });
+
+    it('should include severity emoji in inline comment body', () => {
+      const fileLineMap = new Map<string, Set<number>>([
+        ['src/main.ts', new Set([5])],
+      ]);
+
+      const criticalFinding = makeFinding({ file: 'src/main.ts', line: 5, severity: 'critical', title: 'Critical bug' });
+      const comments = buildReviewComments([criticalFinding], fileLineMap);
+
+      expect(comments[0].body).toMatch(/^🔴/);
+      expect(comments[0].body).toContain('**[CRITICAL] Critical bug**');
+    });
+
+    it('should include suggested fix in inline comment body when present', () => {
+      const fileLineMap = new Map<string, Set<number>>([
+        ['src/app.ts', new Set([1])],
+      ]);
+      const finding = makeFinding({
+        file: 'src/app.ts',
+        line: 1,
+        suggestedFix: 'return true;',
+      });
+
+      const comments = buildReviewComments([finding], fileLineMap);
+
+      expect(comments[0].body).toContain('**Suggested fix:**');
+      expect(comments[0].body).toContain('return true;');
+    });
+  });
+
+  describe('file-level comment routing (line NOT in diff)', () => {
+    it('should produce a file-level comment with subject_type "file" when line is not in the diff', () => {
+      const fileLineMap = new Map<string, Set<number>>([
+        ['src/utils.ts', new Set([1, 2, 3])],
+      ]);
+      // Line 50 is NOT in the diff (only lines 1-3 are)
+      const findings = [makeFinding({ file: 'src/utils.ts', line: 50 })];
+
+      const comments = buildReviewComments(findings, fileLineMap);
+
+      expect(comments).toHaveLength(1);
+      expect(comments[0].path).toBe('src/utils.ts');
+      expect(comments[0].line).toBeUndefined();
+      expect(comments[0].subject_type).toBe('file');
+    });
+
+    it('should prefix file-level comment body with "> Line N:" hint', () => {
+      const fileLineMap = new Map<string, Set<number>>([
+        ['src/config.ts', new Set([10])],
+      ]);
+      const findings = [makeFinding({ file: 'src/config.ts', line: 99, title: 'Unused var' })];
+
+      const comments = buildReviewComments(findings, fileLineMap);
+
+      expect(comments[0].body).toMatch(/^> Line 99: /);
+      expect(comments[0].body).toContain('**[MEDIUM] Unused var**');
+    });
+  });
+
+  describe('skipping findings for files not in PR', () => {
+    it('should skip a finding whose file is not present in the fileLineMap', () => {
+      const fileLineMap = new Map<string, Set<number>>([
+        ['src/included.ts', new Set([1, 2])],
+      ]);
+      // This file is not in the PR at all
+      const findings = [makeFinding({ file: 'src/not-in-pr.ts', line: 5 })];
+
+      const comments = buildReviewComments(findings, fileLineMap);
+
+      expect(comments).toHaveLength(0);
+    });
+
+    it('should only include comments for files that are in the PR', () => {
+      const fileLineMap = new Map<string, Set<number>>([
+        ['src/a.ts', new Set([1])],
+      ]);
+      const findings = [
+        makeFinding({ id: 'f-1', file: 'src/a.ts', line: 1 }),
+        makeFinding({ id: 'f-2', file: 'src/b.ts', line: 1 }),
+        makeFinding({ id: 'f-3', file: 'src/c.ts', line: 1 }),
+      ];
+
+      const comments = buildReviewComments(findings, fileLineMap);
+
+      // Only the finding for src/a.ts should produce a comment
+      expect(comments).toHaveLength(1);
+      expect(comments[0].path).toBe('src/a.ts');
+    });
+  });
+
+  describe('path normalization', () => {
+    it('should strip leading "./" from finding paths', () => {
+      const fileLineMap = new Map<string, Set<number>>([
+        ['src/handler.ts', new Set([10])],
+      ]);
+      // Finding path has leading "./" which should be stripped to match the map key
+      const findings = [makeFinding({ file: './src/handler.ts', line: 10 })];
+
+      const comments = buildReviewComments(findings, fileLineMap);
+
+      expect(comments).toHaveLength(1);
+      expect(comments[0].path).toBe('src/handler.ts');
+      expect(comments[0].line).toBe(10);
+    });
+
+    it('should not modify paths without leading "./"', () => {
+      const fileLineMap = new Map<string, Set<number>>([
+        ['src/router.ts', new Set([5])],
+      ]);
+      const findings = [makeFinding({ file: 'src/router.ts', line: 5 })];
+
+      const comments = buildReviewComments(findings, fileLineMap);
+
+      expect(comments[0].path).toBe('src/router.ts');
+    });
+
+    it('should strip leading "./" for file-level comments too', () => {
+      const fileLineMap = new Map<string, Set<number>>([
+        ['lib/utils.ts', new Set([1])],
+      ]);
+      // Line 999 is out of diff, but path has "./" prefix
+      const findings = [makeFinding({ file: './lib/utils.ts', line: 999 })];
+
+      const comments = buildReviewComments(findings, fileLineMap);
+
+      expect(comments).toHaveLength(1);
+      expect(comments[0].path).toBe('lib/utils.ts');
+      expect(comments[0].subject_type).toBe('file');
+    });
+  });
+
+  describe('null fileLineMap fallback (all-inline behavior)', () => {
+    it('should produce inline comments for all findings when fileLineMap is null', () => {
+      const findings = [
+        makeFinding({ id: 'f-1', file: 'src/a.ts', line: 10 }),
+        makeFinding({ id: 'f-2', file: 'src/b.ts', line: 20 }),
+        makeFinding({ id: 'f-3', file: 'src/c.ts', line: 30 }),
+      ];
+
+      const comments = buildReviewComments(findings, null);
+
+      expect(comments).toHaveLength(3);
+      // All should have line numbers (inline), no subject_type
+      for (const comment of comments) {
+        expect(comment.line).toBeDefined();
+        expect(comment.subject_type).toBeUndefined();
+      }
+    });
+
+    it('should normalize paths even when fileLineMap is null', () => {
+      const findings = [makeFinding({ file: './src/test.ts', line: 5 })];
+
+      const comments = buildReviewComments(findings, null);
+
+      expect(comments).toHaveLength(1);
+      expect(comments[0].path).toBe('src/test.ts');
+      expect(comments[0].line).toBe(5);
+    });
+
+    it('should not skip any files when fileLineMap is null', () => {
+      const findings = [
+        makeFinding({ id: 'f-1', file: 'any/random/file.ts', line: 1 }),
+        makeFinding({ id: 'f-2', file: 'another/file.ts', line: 2 }),
+      ];
+
+      const comments = buildReviewComments(findings, null);
+
+      // No files are skipped when fileLineMap is null
+      expect(comments).toHaveLength(2);
+    });
+  });
+
+  describe('mixed routing scenarios', () => {
+    it('should correctly route inline, file-level, and skipped findings in one call', () => {
+      const fileLineMap = new Map<string, Set<number>>([
+        ['src/changed.ts', new Set([10, 11, 12])],
+        ['src/also-changed.ts', new Set([1, 2])],
+      ]);
+      const findings = [
+        // Inline: line 10 is in the diff for src/changed.ts
+        makeFinding({ id: 'inline', file: 'src/changed.ts', line: 10, severity: 'high', title: 'Inline' }),
+        // File-level: line 99 is NOT in the diff but file is in the PR
+        makeFinding({ id: 'file-level', file: 'src/also-changed.ts', line: 99, severity: 'low', title: 'File-level' }),
+        // Skipped: file not in PR at all
+        makeFinding({ id: 'skipped', file: 'src/untouched.ts', line: 5, severity: 'medium', title: 'Skipped' }),
+      ];
+
+      const comments = buildReviewComments(findings, fileLineMap);
+
+      // Only 2 comments (the skipped finding is omitted)
+      expect(comments).toHaveLength(2);
+
+      // Inline comment
+      const inlineComment = comments.find(c => c.line !== undefined);
+      expect(inlineComment).toBeDefined();
+      expect(inlineComment!.path).toBe('src/changed.ts');
+      expect(inlineComment!.line).toBe(10);
+      expect(inlineComment!.subject_type).toBeUndefined();
+
+      // File-level comment
+      const fileLevelComment = comments.find(c => c.subject_type === 'file');
+      expect(fileLevelComment).toBeDefined();
+      expect(fileLevelComment!.path).toBe('src/also-changed.ts');
+      expect(fileLevelComment!.line).toBeUndefined();
+      expect(fileLevelComment!.body).toMatch(/^> Line 99: /);
+    });
+
+    it('should skip findings with no file or non-positive line', () => {
+      const fileLineMap = new Map<string, Set<number>>([
+        ['src/a.ts', new Set([1])],
+      ]);
+      const findings = [
+        makeFinding({ file: '', line: 10 }),
+        makeFinding({ file: 'src/a.ts', line: 0 }),
+        makeFinding({ file: 'src/a.ts', line: -1 }),
+        makeFinding({ file: 'src/a.ts', line: 1 }), // only this one should produce a comment
+      ];
+
+      const comments = buildReviewComments(findings, fileLineMap);
+
+      expect(comments).toHaveLength(1);
+      expect(comments[0].path).toBe('src/a.ts');
+      expect(comments[0].line).toBe(1);
+    });
+
+    it('should handle all severity emojis correctly', () => {
+      const fileLineMap = new Map<string, Set<number>>([
+        ['src/file.ts', new Set([1, 2, 3, 4])],
+      ]);
+      const findings = [
+        makeFinding({ id: 'f-1', file: 'src/file.ts', line: 1, severity: 'critical', title: 'Crit' }),
+        makeFinding({ id: 'f-2', file: 'src/file.ts', line: 2, severity: 'high', title: 'High' }),
+        makeFinding({ id: 'f-3', file: 'src/file.ts', line: 3, severity: 'medium', title: 'Med' }),
+        makeFinding({ id: 'f-4', file: 'src/file.ts', line: 4, severity: 'low', title: 'Low' }),
+      ];
+
+      const comments = buildReviewComments(findings, fileLineMap);
+
+      expect(comments[0].body).toMatch(/^🔴/);
+      expect(comments[1].body).toMatch(/^🟠/);
+      expect(comments[2].body).toMatch(/^🟡/);
+      expect(comments[3].body).toMatch(/^🔵/);
+    });
+  });
+
+  describe('empty findings', () => {
+    it('should return empty array for empty findings list', () => {
+      const fileLineMap = new Map<string, Set<number>>([
+        ['src/file.ts', new Set([1])],
+      ]);
+
+      const comments = buildReviewComments([], fileLineMap);
+
+      expect(comments).toEqual([]);
+    });
+
+    it('should return empty array for empty findings with null fileLineMap', () => {
+      const comments = buildReviewComments([], null);
+
+      expect(comments).toEqual([]);
     });
   });
 });

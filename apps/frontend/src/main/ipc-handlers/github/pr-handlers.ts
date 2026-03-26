@@ -278,6 +278,71 @@ export function parsePatchForNewFileLines(patch: string | null | undefined): Set
 }
 
 /**
+ * Review comment produced by buildReviewComments().
+ * Includes optional subject_type for file-level comments.
+ */
+export interface ReviewComment {
+  path: string;
+  line?: number;
+  body: string;
+  subject_type?: "line" | "file";
+}
+
+/**
+ * Build review comments with diff-aware routing:
+ * - Inline (line-level) for findings on lines within the diff
+ * - File-level for findings on lines outside the diff but in a PR file
+ * - Skipped for findings on files not in the PR
+ *
+ * @param findings - Array of PR review findings to route
+ * @param fileLineMap - Map of filename → valid line numbers in the diff, or null to fall back to all-inline
+ * @returns Array of review comments with routing metadata
+ */
+export function buildReviewComments(
+  findings: PRReviewFinding[],
+  fileLineMap: Map<string, Set<number>> | null,
+): ReviewComment[] {
+  const comments: ReviewComment[] = [];
+  for (const f of findings) {
+    if (f.file && f.line && f.line > 0) {
+      const emoji =
+        { critical: "🔴", high: "🟠", medium: "🟡", low: "🔵" }[f.severity] || "⚪";
+      let commentBody = `${emoji} **[${f.severity.toUpperCase()}] ${f.title}**\n\n${f.description}`;
+      const suggestedFix = f.suggestedFix?.trim();
+      if (suggestedFix) {
+        commentBody += `\n\n**Suggested fix:**\n\`\`\`\n${suggestedFix}\n\`\`\``;
+      }
+
+      // Normalize path by stripping leading './' to match GitHub's repo-relative paths
+      const normalizedPath = f.file.replace(/^\.\//, "");
+
+      if (fileLineMap) {
+        // Diff-aware routing: validate line against the PR diff
+        const validLines = fileLineMap.get(normalizedPath);
+        if (validLines) {
+          if (validLines.has(f.line)) {
+            // Line is in the diff — post as inline line-level comment
+            comments.push({ path: normalizedPath, line: f.line, body: commentBody });
+          } else {
+            // Line is NOT in the diff — post as file-level comment with line hint
+            comments.push({
+              path: normalizedPath,
+              body: `> Line ${f.line}: ${commentBody}`,
+              subject_type: "file",
+            });
+          }
+        }
+        // If file not in map, skip this finding (file not in PR)
+      } else {
+        // fileLineMap is null (fetch failed) — fall back to original behavior
+        comments.push({ path: normalizedPath, line: f.line, body: commentBody });
+      }
+    }
+  }
+  return comments;
+}
+
+/**
  * Sentinel value indicating a review is waiting for CI checks to complete.
  * Used as a placeholder in runningReviews before the actual process is spawned.
  */
@@ -2349,52 +2414,8 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
             findingsCount: findings.length,
           });
 
-          // Build review comments with diff-aware routing:
-          // - Inline (line-level) for findings on lines within the diff
-          // - File-level for findings on lines outside the diff but in a PR file
-          // - Skipped for findings on files not in the PR
-          const inlineComments: Array<{
-            path: string;
-            line?: number;
-            body: string;
-            subject_type?: "line" | "file";
-          }> = [];
-          for (const f of findings) {
-            if (f.file && f.line && f.line > 0) {
-              const emoji =
-                { critical: "🔴", high: "🟠", medium: "🟡", low: "🔵" }[f.severity] || "⚪";
-              let commentBody = `${emoji} **[${f.severity.toUpperCase()}] ${f.title}**\n\n${f.description}`;
-              const suggestedFix = f.suggestedFix?.trim();
-              if (suggestedFix) {
-                commentBody += `\n\n**Suggested fix:**\n\`\`\`\n${suggestedFix}\n\`\`\``;
-              }
-
-              // Normalize path by stripping leading './' to match GitHub's repo-relative paths
-              const normalizedPath = f.file.replace(/^\.\//, "");
-
-              if (fileLineMap) {
-                // Diff-aware routing: validate line against the PR diff
-                const validLines = fileLineMap.get(normalizedPath);
-                if (validLines) {
-                  if (validLines.has(f.line)) {
-                    // Line is in the diff — post as inline line-level comment
-                    inlineComments.push({ path: normalizedPath, line: f.line, body: commentBody });
-                  } else {
-                    // Line is NOT in the diff — post as file-level comment with line hint
-                    inlineComments.push({
-                      path: normalizedPath,
-                      body: `> Line ${f.line}: ${commentBody}`,
-                      subject_type: "file",
-                    });
-                  }
-                }
-                // If file not in map, skip this finding (file not in PR)
-              } else {
-                // fileLineMap is null (fetch failed) — fall back to original behavior
-                inlineComments.push({ path: normalizedPath, line: f.line, body: commentBody });
-              }
-            }
-          }
+          // Build review comments with diff-aware routing
+          const inlineComments = buildReviewComments(findings, fileLineMap);
 
           const lineLevelCount = inlineComments.filter((c) => c.line !== undefined).length;
           const fileLevelCount = inlineComments.filter((c) => c.subject_type === "file").length;
