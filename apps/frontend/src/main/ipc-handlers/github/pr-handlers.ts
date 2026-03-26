@@ -2258,6 +2258,51 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
           return false;
         }
 
+        // Fetch PR file patches to build a map of valid commentable line numbers per file
+        let fileLineMap: Map<string, Set<number>> | null = null;
+        try {
+          const prFiles = (await githubFetch(
+            config.token,
+            `/repos/${config.repo}/pulls/${prNumber}/files?per_page=100`
+          )) as Array<{ filename: string; patch?: string }>;
+
+          fileLineMap = new Map<string, Set<number>>();
+          for (const file of prFiles) {
+            fileLineMap.set(file.filename, parsePatchForNewFileLines(file.patch));
+          }
+          debugLog("Fetched PR file patches", {
+            prNumber,
+            fileCount: prFiles.length,
+          });
+        } catch (error) {
+          debugLog("Failed to fetch PR file patches, skipping line validation", {
+            prNumber,
+            error: error instanceof Error ? error.message : error,
+          });
+          fileLineMap = null;
+        }
+
+        // Fetch PR HEAD SHA for commit_id in review payload
+        let commitSha: string | null = null;
+        try {
+          const prData = (await githubFetch(
+            config.token,
+            `/repos/${config.repo}/pulls/${prNumber}`
+          )) as { head: { sha: string } };
+
+          commitSha = prData.head.sha;
+          debugLog("Fetched PR HEAD SHA", {
+            prNumber,
+            commitSha,
+          });
+        } catch (error) {
+          debugLog("Failed to fetch PR HEAD SHA, omitting commit_id", {
+            prNumber,
+            error: error instanceof Error ? error.message : error,
+          });
+          commitSha = null;
+        }
+
         try {
           // Filter findings if selection provided
           const selectedSet = selectedFindingIds ? new Set(selectedFindingIds) : null;
