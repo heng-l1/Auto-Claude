@@ -98,7 +98,7 @@ async function main() {
   // Install dependencies
   console.log('\nInstalling dependencies...');
   const pip = getPipPath();
-  if (!run(`"${pip}" install -r requirements.txt`)) {
+  if (!run(`"${pip}" install -r requirements.lock`)) {
     console.error('Failed to install dependencies');
     process.exit(1);
   }
