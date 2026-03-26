@@ -223,6 +223,125 @@ function sanitizeNetworkData(data: string, maxLength = 1000000): string {
 const { debug: debugLog } = createContextLogger("GitHub PR");
 
 /**
+ * Parse a GitHub API patch string into a set of valid new-file line numbers.
+ *
+ * Walks @@ hunk headers and counts + (additions) and space-prefixed (context)
+ * lines to determine which new-file line numbers are commentable via the
+ * GitHub review API. Deletion lines (- prefix) are excluded.
+ *
+ * @param patch - Raw patch string from GitHub API file object
+ * @returns Set of valid new-file line numbers
+ */
+export function parsePatchForNewFileLines(patch: string | null | undefined): Set<number> {
+  const validLines = new Set<number>();
+
+  if (!patch) {
+    return validLines;
+  }
+
+  const lines = patch.split("\n");
+  let newLineNumber = 0;
+
+  for (const line of lines) {
+    // Parse @@ hunk header to get new-file start line
+    const hunkMatch = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (hunkMatch) {
+      newLineNumber = Number.parseInt(hunkMatch[1], 10);
+      continue;
+    }
+
+    if (newLineNumber === 0) {
+      // Haven't seen a hunk header yet, skip
+      continue;
+    }
+
+    // Skip "\ No newline at end of file" marker
+    if (line.startsWith("\\")) {
+      continue;
+    }
+
+    if (line.startsWith("+")) {
+      // Addition line — valid commentable new-file line
+      validLines.add(newLineNumber);
+      newLineNumber++;
+    } else if (line.startsWith("-")) {
+      // Deletion line — not a new-file line, don't increment new line counter
+    } else {
+      // Context line (space prefix) — valid commentable new-file line
+      validLines.add(newLineNumber);
+      newLineNumber++;
+    }
+  }
+
+  return validLines;
+}
+
+/**
+ * Review comment produced by buildReviewComments().
+ * Includes optional subject_type for file-level comments.
+ */
+export interface ReviewComment {
+  path: string;
+  line?: number;
+  body: string;
+  subject_type?: "line" | "file";
+}
+
+/**
+ * Build review comments with diff-aware routing:
+ * - Inline (line-level) for findings on lines within the diff
+ * - File-level for findings on lines outside the diff but in a PR file
+ * - Skipped for findings on files not in the PR
+ *
+ * @param findings - Array of PR review findings to route
+ * @param fileLineMap - Map of filename → valid line numbers in the diff, or null to fall back to all-inline
+ * @returns Array of review comments with routing metadata
+ */
+export function buildReviewComments(
+  findings: PRReviewFinding[],
+  fileLineMap: Map<string, Set<number>> | null,
+): ReviewComment[] {
+  const comments: ReviewComment[] = [];
+  for (const f of findings) {
+    if (f.file && f.line && f.line > 0) {
+      const emoji =
+        { critical: "🔴", high: "🟠", medium: "🟡", low: "🔵" }[f.severity] || "⚪";
+      let commentBody = `${emoji} **[${f.severity.toUpperCase()}] ${f.title}**\n\n${f.description}`;
+      const suggestedFix = f.suggestedFix?.trim();
+      if (suggestedFix) {
+        commentBody += `\n\n**Suggested fix:**\n\`\`\`\n${suggestedFix}\n\`\`\``;
+      }
+
+      // Normalize path by stripping leading './' to match GitHub's repo-relative paths
+      const normalizedPath = f.file.replace(/^\.\//, "");
+
+      if (fileLineMap) {
+        // Diff-aware routing: validate line against the PR diff
+        const validLines = fileLineMap.get(normalizedPath);
+        if (validLines) {
+          if (validLines.has(f.line)) {
+            // Line is in the diff — post as inline line-level comment
+            comments.push({ path: normalizedPath, line: f.line, body: commentBody });
+          } else {
+            // Line is NOT in the diff — post as file-level comment with line hint
+            comments.push({
+              path: normalizedPath,
+              body: `> Line ${f.line}: ${commentBody}`,
+              subject_type: "file",
+            });
+          }
+        }
+        // If file not in map, skip this finding (file not in PR)
+      } else {
+        // fileLineMap is null (fetch failed) — fall back to original behavior
+        comments.push({ path: normalizedPath, line: f.line, body: commentBody });
+      }
+    }
+  }
+  return comments;
+}
+
+/**
  * Sentinel value indicating a review is waiting for CI checks to complete.
  * Used as a placeholder in runningReviews before the actual process is spawned.
  */
@@ -2215,6 +2334,50 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
             selected: findings.length,
           });
 
+          // Fetch file patches to build diff-aware line map for comment routing
+          let fileLineMap: Map<string, Set<number>> | null = null;
+          try {
+            const filesResponse = (await githubFetch(
+              config.token,
+              `/repos/${config.repo}/pulls/${prNumber}/files?per_page=100`
+            )) as Array<{ filename: string; patch?: string }>;
+
+            fileLineMap = new Map();
+            for (const file of filesResponse) {
+              if (file.patch) {
+                fileLineMap.set(file.filename, parsePatchForNewFileLines(file.patch));
+              } else {
+                fileLineMap.set(file.filename, new Set());
+              }
+            }
+            debugLog("Built fileLineMap from PR files", {
+              prNumber,
+              fileCount: fileLineMap.size,
+            });
+          } catch (error) {
+            debugLog("Failed to fetch PR files for diff-aware routing, falling back to inline-only", {
+              prNumber,
+              error: error instanceof Error ? error.message : error,
+            });
+            fileLineMap = null;
+          }
+
+          // Fetch HEAD commit SHA for commit_id in review payload
+          let commitSha: string | null = null;
+          try {
+            const prData = (await githubFetch(
+              config.token,
+              `/repos/${config.repo}/pulls/${prNumber}`
+            )) as { head: { sha: string } };
+            commitSha = prData.head.sha;
+            debugLog("Fetched HEAD SHA", { prNumber, commitSha });
+          } catch (error) {
+            debugLog("Failed to fetch HEAD SHA, posting without commit_id", {
+              prNumber,
+              error: error instanceof Error ? error.message : error,
+            });
+          }
+
           // No overall review body — findings are posted as inline line-level comments only
           const body = "";
 
@@ -2249,35 +2412,34 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
             findingsCount: findings.length,
           });
 
-          // Build inline review comments for each finding with file+line info
-          const inlineComments: Array<{ path: string; line: number; body: string }> = [];
-          for (const f of findings) {
-            if (f.file && f.line && f.line > 0) {
-              const emoji =
-                { critical: "🔴", high: "🟠", medium: "🟡", low: "🔵" }[f.severity] || "⚪";
-              let commentBody = `${emoji} **[${f.severity.toUpperCase()}] ${f.title}**\n\n${f.description}`;
-              const suggestedFix = f.suggestedFix?.trim();
-              if (suggestedFix) {
-                commentBody += `\n\n**Suggested fix:**\n\`\`\`\n${suggestedFix}\n\`\`\``;
-              }
-              inlineComments.push({ path: f.file, line: f.line, body: commentBody });
-            }
-          }
+          // Build diff-aware review comments using file patch data
+          const reviewComments = buildReviewComments(findings, fileLineMap);
 
-          debugLog("Posting review with inline comments", {
+          // Categorize comments for debug logging
+          const lineLevel = reviewComments.filter((c) => c.line !== undefined).length;
+          const fileLevel = reviewComments.filter((c) => c.subject_type === "file").length;
+          const skipped = findings.filter((f) => f.file && f.line && f.line > 0).length - lineLevel - fileLevel;
+
+          debugLog("Posting review with diff-aware comments", {
             prNumber,
-            inlineCount: inlineComments.length,
+            lineLevel,
+            fileLevel,
+            skipped,
+            commitSha,
             totalFindings: findings.length,
           });
 
-          // Post review via GitHub API with inline comments
+          // Post review via GitHub API with diff-aware comments
           let reviewId: number;
           const reviewPayload: Record<string, unknown> = {
             body,
             event,
           };
-          if (inlineComments.length > 0) {
-            reviewPayload.comments = inlineComments;
+          if (commitSha) {
+            reviewPayload.commit_id = commitSha;
+          }
+          if (reviewComments.length > 0) {
+            reviewPayload.comments = reviewComments;
           }
 
           try {
@@ -2315,7 +2477,7 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
               reviewId = fallbackResponse.id;
             } else {
               // If inline comments fail (e.g., line not in diff), retry without them
-              if (inlineComments.length > 0 && errorMsg.includes("pull_request_review_thread.line")) {
+              if (reviewComments.length > 0 && (errorMsg.includes("pull_request_review_thread.line") || errorMsg.includes("Line could not be resolved"))) {
                 debugLog("Inline comments failed, retrying without them", { prNumber });
                 const retryResponse = (await githubFetch(
                   config.token,
