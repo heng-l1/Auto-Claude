@@ -535,16 +535,16 @@ describe('buildReviewComments', () => {
       // Inline comment
       const inlineComment = comments.find(c => c.line !== undefined);
       expect(inlineComment).toBeDefined();
-      expect(inlineComment!.path).toBe('src/changed.ts');
-      expect(inlineComment!.line).toBe(10);
-      expect(inlineComment!.subject_type).toBeUndefined();
+      expect(inlineComment?.path).toBe('src/changed.ts');
+      expect(inlineComment?.line).toBe(10);
+      expect(inlineComment?.subject_type).toBeUndefined();
 
       // File-level comment
       const fileLevelComment = comments.find(c => c.subject_type === 'file');
       expect(fileLevelComment).toBeDefined();
-      expect(fileLevelComment!.path).toBe('src/also-changed.ts');
-      expect(fileLevelComment!.line).toBeUndefined();
-      expect(fileLevelComment!.body).toMatch(/^> Line 99: /);
+      expect(fileLevelComment?.path).toBe('src/also-changed.ts');
+      expect(fileLevelComment?.line).toBeUndefined();
+      expect(fileLevelComment?.body).toMatch(/^> Line 99: /);
     });
 
     it('should skip findings with no file or non-positive line', () => {
