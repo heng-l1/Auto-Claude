@@ -81,9 +81,9 @@ jobs:
 
       - name: Run bandit security scan
         run: |
-          bandit -r apps/backend/ -f json -o bandit-report.json || true
+          bandit -r apps/backend/ -ll -f json -o bandit-report.json || true
           # Also output to console for visibility
-          bandit -r apps/backend/ -f txt || true
+          bandit -r apps/backend/ -ll -f txt || true
         continue-on-error: true
 
       - name: Upload bandit results
@@ -112,8 +112,7 @@ jobs:
 
       - name: Run pytest
         run: |
-          cd apps/backend
-          pytest tests/ -v --cov=. --cov-report=json --cov-report=term
+          pytest tests/ -v --cov=apps/backend --cov-report=json --cov-report=term
         continue-on-error: false
 
       - name: Upload coverage report
@@ -121,7 +120,7 @@ jobs:
         if: always()
         with:
           name: backend-coverage
-          path: apps/backend/coverage.json
+          path: coverage.json
 
   frontend-tests:
     name: Frontend Tests
