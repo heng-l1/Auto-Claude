@@ -604,6 +604,10 @@ export class UsageMonitor extends EventEmitter {
       sessionUsageLimit = rateLimitData.tokensLimit;
     }
 
+    if (rateLimitData && rateLimitData.tokensLimit === 0) {
+      this.debugLog('[UsageMonitor] tokensLimit is 0 for profile ' + profileId + ' (spend-limit-only workspace) - UI will show total tokens instead of percentage');
+    }
+
     // Build token usage object if we have accumulation data
     const tokenUsage = tokenData ? {
       inputTokens: tokenData.inputTokens,
