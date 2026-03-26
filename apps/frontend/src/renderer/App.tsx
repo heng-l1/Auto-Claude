@@ -80,16 +80,40 @@ import { ViewStateProvider } from './contexts/ViewStateContext';
 // Version constant for version-specific warnings (e.g., reauthentication notices)
 const VERSION_WARNING_275 = '2.7.5';
 
+/**
+ * Hook to detect user's reduced motion preference.
+ * Listens for changes to the prefers-reduced-motion media query.
+ */
+function useReducedMotion(): boolean {
+  const [reducedMotion, setReducedMotion] = useState(() => {
+    // Check if window is available (for SSR safety)
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  });
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+    const handleChange = (event: MediaQueryListEvent) => {
+      setReducedMotion(event.matches);
+    };
+
+    // Add listener for changes
+    mediaQuery.addEventListener('change', handleChange);
+
+    return () => {
+      mediaQuery.removeEventListener('change', handleChange);
+    };
+  }, []);
+
+  return reducedMotion;
+}
+
 // View transition animation variants
 const viewTransitionVariants = {
   initial: { opacity: 0 },
   animate: { opacity: 1 },
   exit: { opacity: 0 }
-};
-
-const viewTransitionConfig = {
-  duration: 0.15,
-  ease: 'easeInOut' as const
 };
 
 // Sidebar view persistence helpers — stores last-used view per project in localStorage
@@ -167,6 +191,14 @@ export function App() {
 
   // Handle terminal profile change events (recreate terminals on profile switch)
   useTerminalProfileChange();
+
+  // Detect reduced motion preference for accessibility
+  const reducedMotion = useReducedMotion();
+
+  // View transition config that respects reduced motion preference
+  const viewTransitionConfig = reducedMotion
+    ? { duration: 0 }
+    : { duration: 0.15, ease: 'easeInOut' as const };
 
   // Stores
   const projects = useProjectStore((state) => state.projects);
