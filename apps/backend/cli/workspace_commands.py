@@ -813,7 +813,6 @@ def _check_git_merge_conflicts(
                 "git",
                 "merge-tree",
                 "--write-tree",
-                "--no-messages",
                 result["base_branch"],  # Use branch names, not commit hashes
                 spec_branch,
             ],

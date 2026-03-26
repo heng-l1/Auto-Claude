@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { writeToTerminal } from '../stores/terminal-store';
+import { useTerminalStore, writeToTerminal } from '../stores/terminal-store';
 import { terminalBufferManager } from '../lib/terminal-buffer-manager';
 import { debugLog, debugWarn } from '../../shared/utils/debug-logger';
 
@@ -42,25 +42,45 @@ export function useGlobalTerminalListeners(): void {
       return;
     }
 
-    debugLog('[GlobalTerminalListeners] Registering global terminal output listener');
+    debugLog('[GlobalTerminalListeners] Registering global terminal listeners');
 
     // Register global terminal output listener
     // This listener runs for ALL terminals, regardless of which project is active
-    globalCleanup = window.electronAPI.onTerminalOutput((terminalId: string, data: string) => {
-      // Use writeToTerminal which:
-      // 1. Always buffers to terminalBufferManager for persistence
-      // 2. Writes to xterm immediately if terminal has a registered callback (visible)
-      writeToTerminal(terminalId, data);
+    const outputCleanup = window.electronAPI.onTerminalOutput(
+      (terminalId: string, data: string) => {
+        // Use writeToTerminal which:
+        // 1. Always buffers to terminalBufferManager for persistence
+        // 2. Writes to xterm immediately if terminal has a registered callback (visible)
+        writeToTerminal(terminalId, data);
 
-      debugLog(
-        `[GlobalTerminalListeners] Processed output for ${terminalId}, buffer size: ${terminalBufferManager.getSize(terminalId)}`
-      );
-    });
+        debugLog(
+          `[GlobalTerminalListeners] Processed output for ${terminalId}, buffer size: ${terminalBufferManager.getSize(terminalId)}`
+        );
+      }
+    );
+
+    // Register global Claude busy state listener
+    // Migrated from per-terminal useTerminalEvents to ensure busy state is tracked
+    // even when terminal components are unmounted (e.g., during project switches)
+    const claudeBusyCleanup = window.electronAPI.onTerminalClaudeBusy(
+      (terminalId: string, isBusy: boolean) => {
+        useTerminalStore.getState().setClaudeBusy(terminalId, isBusy);
+        debugLog(
+          `[GlobalTerminalListeners] Claude busy state for ${terminalId}: ${isBusy}`
+        );
+      }
+    );
+
+    // Compose cleanup for all listeners
+    globalCleanup = () => {
+      outputCleanup();
+      claudeBusyCleanup();
+    };
 
     // Cleanup on unmount (app shutdown)
     return () => {
       if (globalCleanup) {
-        debugLog('[GlobalTerminalListeners] Cleaning up global terminal output listener');
+        debugLog('[GlobalTerminalListeners] Cleaning up global terminal listeners');
         globalCleanup();
         globalCleanup = null;
       }

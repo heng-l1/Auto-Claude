@@ -589,10 +589,10 @@ describe('SortableProjectTab', () => {
         'max-w-[180px]',      // mobile
         'sm:max-w-[220px]',   // 640px+
         'md:max-w-[280px]',   // 768px+
-        'bg-background',
+        'bg-muted/60',
         'border-b-primary',
         'text-foreground',
-        'hover:bg-background'
+        'hover:bg-muted/70'
       ];
 
       expect(props.isActive).toBe(true);

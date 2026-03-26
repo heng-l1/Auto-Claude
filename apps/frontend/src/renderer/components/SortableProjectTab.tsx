@@ -15,6 +15,7 @@ import {
 } from './ui/context-menu';
 import { TAB_COLORS } from '../../shared/constants/config';
 import type { Project } from '../../shared/types';
+import { useTerminalStore } from '../stores/terminal-store';
 
 interface SortableProjectTabProps {
   project: Project;
@@ -64,6 +65,14 @@ export function SortableProjectTab({
 
   // Resolve color tint config from project settings
   const tabColorConfig = TAB_COLORS.find(c => c.id === project.settings?.tabColor);
+
+  // Direct store subscription for project-scoped terminal activity alerts.
+  // Returns primitive boolean — no useShallow needed, re-renders only when value changes.
+  const hasTerminalActivity = useTerminalStore(
+    (state) => state.terminals.some(
+      t => t.hasActivityAlert === true && t.projectPath === project.path
+    )
+  );
 
   // Inline rename state
   const [isEditing, setIsEditing] = useState(false);
@@ -156,7 +165,8 @@ export function SortableProjectTab({
               : 'max-w-[120px] sm:max-w-[160px] md:max-w-[200px]',
             'border-r border-border last:border-r-0',
             'touch-none transition-all duration-200',
-            isDragging && 'opacity-60 scale-[0.98] shadow-lg'
+            isDragging && 'opacity-60 scale-[0.98] shadow-lg',
+            tabColorConfig?.bg
           )}
           {...attributes}
         >
@@ -171,14 +181,13 @@ export function SortableProjectTab({
                   'min-w-0 truncate hover:bg-muted/50 transition-colors',
                   'border-b-2 border-transparent cursor-pointer',
                   isActive && [
-                    'bg-background border-b-primary text-foreground',
-                    'hover:bg-background'
+                    'bg-muted/60 border-b-primary text-foreground',
+                    'hover:bg-muted/70'
                   ],
                   !isActive && [
                     'text-muted-foreground',
                     'hover:text-foreground'
-                  ],
-                  tabColorConfig?.bg
+                  ]
                 )}
                 onClick={onSelect}
               >
@@ -218,6 +227,12 @@ export function SortableProjectTab({
                     onDoubleClick={handleDoubleClick}
                   >
                     {displayName}
+                  </span>
+                )}
+                {hasTerminalActivity && !isActive && (
+                  <span className="relative flex h-2 w-2 flex-shrink-0">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
                   </span>
                 )}
               </div>

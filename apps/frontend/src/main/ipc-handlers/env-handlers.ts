@@ -184,6 +184,22 @@ export function registerEnvHandlers(
       existingVars['ENABLE_FANCY_UI'] = config.enableFancyUi ? 'true' : 'false';
     }
 
+    // Clear MCP server overrides (removes keys from .env so ENV_GET falls back to global defaults)
+    if (config.clearMcpServerOverrides && config.clearMcpServerOverrides.length > 0) {
+      const mcpKeyMap: Record<string, string> = {
+        context7Enabled: 'CONTEXT7_ENABLED',
+        linearMcpEnabled: 'LINEAR_MCP_ENABLED',
+        electronEnabled: 'ELECTRON_MCP_ENABLED',
+        puppeteerEnabled: 'PUPPETEER_MCP_ENABLED',
+      };
+      for (const key of config.clearMcpServerOverrides) {
+        const envKey = mcpKeyMap[key];
+        if (envKey) {
+          delete existingVars[envKey];
+        }
+      }
+    }
+
     // MCP Server Configuration
     if (config.mcpServers) {
       if (config.mcpServers.context7Enabled !== undefined) {
@@ -513,14 +529,32 @@ ${existingVars['GRAPHITI_DB_PATH'] ? `GRAPHITI_DB_PATH=${existingVars['GRAPHITI_
         };
       }
 
-      // MCP Server Configuration (per-project overrides)
-      // Default: context7=true, linear=true (if API key set), electron/puppeteer=false
+      // MCP Server Configuration: merge global defaults with project overrides
+      // Global defaults come from settings.json; project .env overrides when key is explicitly set
+      const globalMcp = globalSettings.globalMcpServers;
+
       config.mcpServers = {
-        context7Enabled: vars['CONTEXT7_ENABLED']?.toLowerCase() !== 'false', // default true
-        graphitiEnabled: config.graphitiEnabled, // follows GRAPHITI_ENABLED
-        linearMcpEnabled: vars['LINEAR_MCP_ENABLED']?.toLowerCase() !== 'false', // default true
-        electronEnabled: vars['ELECTRON_MCP_ENABLED']?.toLowerCase() === 'true', // default false
-        puppeteerEnabled: vars['PUPPETEER_MCP_ENABLED']?.toLowerCase() === 'true', // default false
+        context7Enabled: vars['CONTEXT7_ENABLED'] !== undefined
+          ? vars['CONTEXT7_ENABLED'].toLowerCase() !== 'false'
+          : (globalMcp?.context7Enabled ?? true),
+        graphitiEnabled: config.graphitiEnabled, // follows GRAPHITI_ENABLED (always per-project)
+        linearMcpEnabled: vars['LINEAR_MCP_ENABLED'] !== undefined
+          ? vars['LINEAR_MCP_ENABLED'].toLowerCase() !== 'false'
+          : (globalMcp?.linearMcpEnabled ?? true),
+        electronEnabled: vars['ELECTRON_MCP_ENABLED'] !== undefined
+          ? vars['ELECTRON_MCP_ENABLED'].toLowerCase() === 'true'
+          : (globalMcp?.electronEnabled ?? false),
+        puppeteerEnabled: vars['PUPPETEER_MCP_ENABLED'] !== undefined
+          ? vars['PUPPETEER_MCP_ENABLED'].toLowerCase() === 'true'
+          : (globalMcp?.puppeteerEnabled ?? false),
+      };
+
+      // Track which MCP toggles have explicit project-level overrides in .env
+      config.mcpServersOverridden = {
+        context7Enabled: vars['CONTEXT7_ENABLED'] !== undefined,
+        linearMcpEnabled: vars['LINEAR_MCP_ENABLED'] !== undefined,
+        electronEnabled: vars['ELECTRON_MCP_ENABLED'] !== undefined,
+        puppeteerEnabled: vars['PUPPETEER_MCP_ENABLED'] !== undefined,
       };
 
       // Parse per-agent MCP overrides (AGENT_MCP_<agent>_ADD/REMOVE)
@@ -548,6 +582,24 @@ ${existingVars['GRAPHITI_DB_PATH'] ? `GRAPHITI_DB_PATH=${existingVars['GRAPHITI_
         } catch {
           // Invalid JSON, ignore
           config.customMcpServers = [];
+        }
+      }
+
+      // Merge global custom MCP servers (append those not overridden by project)
+      const globalCustomServers = globalSettings.globalCustomMcpServers || [];
+      if (globalCustomServers.length > 0) {
+        const projectServerIds = new Set(
+          (config.customMcpServers || []).map(s => s.id)
+        );
+        const mergedGlobalServers = globalCustomServers.filter(
+          s => !projectServerIds.has(s.id)
+        );
+        if (mergedGlobalServers.length > 0) {
+          config.customMcpServers = [
+            ...(config.customMcpServers || []),
+            ...mergedGlobalServers,
+          ];
+          config.globalCustomMcpServerIds = mergedGlobalServers.map(s => s.id);
         }
       }
 

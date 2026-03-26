@@ -158,6 +158,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const resizeSequenceRef = useRef<number>(0);
   // Track post-creation dimension check timeout for cleanup
   const postCreationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Concurrency guard for reactive worktree sync polling
+  // Prevents overlapping getWorktreeStatus IPC calls when the effect fires while a check is in-flight
+  const isCheckingWorktreeRef = useRef(false);
 
   // Worktree dialog state
   const [showWorktreeDialog, setShowWorktreeDialog] = useState(false);
@@ -181,6 +184,12 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const associatedTask = terminal?.associatedTaskId
     ? tasks.find((t) => t.id === terminal.associatedTaskId)
     : undefined;
+
+  // Derive primitive variables from associatedTask for stable useEffect deps.
+  // Using object properties directly (e.g., associatedTask?.specId) in deps would cause
+  // the effect to re-run on every render since the task object reference may change.
+  const associatedTaskSpecId = associatedTask?.specId;
+  const associatedTaskTitle = associatedTask?.title;
 
   // Setup drop zone for file drag-and-drop
   const { setNodeRef: setDropRef, isOver } = useDroppable({
@@ -459,9 +468,13 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         window.electronAPI.setTerminalTitle(id, title);
         // Inject context message after a delay to let the shell prompt appear.
         // Windows ConPTY is slower than Unix PTY, so it needs a longer grace period.
-        setTimeout(() => {
-          window.electronAPI.sendTerminalInput(id, contextMessage + '\r');
-        }, platformIsWindows ? 500 : 300);
+        // Guard: only send if contextMessage is non-empty to prevent sending a bare Enter
+        // (the reactive worktree sync effect sets contextMessage to '' when syncing)
+        if (contextMessage) {
+          setTimeout(() => {
+            window.electronAPI.sendTerminalInput(id, contextMessage + '\r');
+          }, platformIsWindows ? 500 : 300);
+        }
       }
       // If there's a pending Claude invocation from "Discuss in Terminal",
       // execute it now that the PTY process exists.
@@ -472,11 +485,13 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         const { contextMessage } = currentTerminal.pendingClaudeInvocation;
         useTerminalStore.getState().updateTerminal(id, { pendingClaudeInvocation: undefined });
         window.electronAPI.invokeClaudeInTerminal(id, effectiveCwd);
-        setTimeout(() => {
-          if (isMountedRef.current) {
-            window.electronAPI.sendTerminalInput(id, contextMessage + '\r');
-          }
-        }, 3000);
+        if (contextMessage) {
+          setTimeout(() => {
+            if (isMountedRef.current) {
+              window.electronAPI.sendTerminalInput(id, contextMessage + '\r');
+            }
+          }, 3000);
+        }
       }
     },
     onError: (error) => {
@@ -882,6 +897,89 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     resetForRecreate();
   }, [id, setWorktreeConfig, updateTerminal, prepareForRecreate, resetForRecreate]);
 
+  // Reactive worktree sync polling
+  // When a task is associated but the terminal has no worktree config, polls getWorktreeStatus
+  // every 5 seconds to detect when a worktree becomes available (e.g., after build pipeline starts).
+  // This is additive to the one-shot check in handleTaskSelect — it catches worktrees that are
+  // created after the initial task selection (spec/planning phase tasks that get worktrees later).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: associatedTaskSpecId and associatedTaskTitle are stable primitive deps derived from associatedTask
+  useEffect(() => {
+    const taskId = terminal?.associatedTaskId;
+
+    // Gate: no associated task — nothing to poll for
+    if (!taskId) return;
+
+    // Gate: already synced — worktree config is present
+    if (terminal?.worktreeConfig) return;
+
+    // Gate: task not loaded yet (still resolving from tasks array)
+    if (!associatedTask) return;
+
+    // Gate: task opted out of worktree isolation
+    if (associatedTask.metadata?.useWorktree === false) return;
+
+    // Gate: terminal phases — no point polling once task is complete or failed
+    const phase = associatedTask.executionProgress?.phase;
+    if (phase === 'complete' || phase === 'failed') return;
+
+    let isCancelled = false;
+
+    const checkAndSync = async () => {
+      // Concurrency guard: prevent overlapping IPC calls
+      if (isCheckingWorktreeRef.current) return;
+      isCheckingWorktreeRef.current = true;
+
+      try {
+        const result = await window.electronAPI.getWorktreeStatus(taskId);
+
+        if (isCancelled) return;
+
+        if (result.success && result.data?.exists && result.data.worktreePath) {
+          // Re-read store state after async call to avoid stale closures
+          const currentTerminal = useTerminalStore.getState().terminals.find((t) => t.id === id);
+
+          // Skip if worktree was already applied while we were checking
+          if (currentTerminal?.worktreeConfig) return;
+
+          // Re-read the task to get the latest specId/title (avoid stale closure)
+          const specId = associatedTaskSpecId;
+          const title = associatedTaskTitle;
+          if (!specId || !title) return;
+
+          const config: TerminalWorktreeConfig = {
+            name: specId,
+            worktreePath: result.data.worktreePath,
+            branchName: result.data.branch ?? '',
+            baseBranch: result.data.baseBranch ?? '',
+            hasGitBranch: !!result.data.branch,
+            taskId,
+            createdAt: new Date().toISOString(),
+            terminalId: id,
+          };
+
+          // Set pending task switch with empty contextMessage — we only need the title override.
+          // The empty contextMessage is guarded by the `if (contextMessage)` check in onCreated.
+          pendingTaskSwitchRef.current = { contextMessage: '', title };
+
+          await applyWorktreeConfig(config);
+        }
+      } catch {
+        // getWorktreeStatus failed — will retry on next interval
+      } finally {
+        isCheckingWorktreeRef.current = false;
+      }
+    };
+
+    // Run immediately on mount/dep change, then poll every 5 seconds
+    checkAndSync();
+    const intervalId = setInterval(checkAndSync, 5000);
+
+    return () => {
+      isCancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [id, terminal?.associatedTaskId, terminal?.worktreeConfig, associatedTask?.metadata?.useWorktree, associatedTask?.status, associatedTask?.executionProgress?.phase, associatedTaskSpecId, associatedTaskTitle, applyWorktreeConfig]);
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: terminal?.worktreeConfig?.worktreePath is intentionally read from closure — stale value is acceptable
   const handleTaskSelect = useCallback(async (taskId: string) => {
     const selectedTask = tasks.find((t) => t.id === taskId);
@@ -1076,6 +1174,7 @@ Please confirm you're ready by saying: I'm ready to work on ${selectedTask.title
         onToggleExpand={onToggleExpand}
         pendingClaudeResume={terminal?.pendingClaudeResume}
         isClaudeIdle={showClaudeBusyIndicator && !isClaudeBusy}
+        hasActivityAlert={terminal?.hasActivityAlert}
       />
 
       <div

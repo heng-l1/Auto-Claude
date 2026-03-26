@@ -51,6 +51,7 @@ import {
   loadProjectEnvConfig,
   clearProjectEnvConfig
 } from '../stores/project-env-store';
+import { useTerminalStore } from '../stores/terminal-store';
 import { AddProjectModal } from './AddProjectModal';
 import { GitSetupModal } from './GitSetupModal';
 import { RateLimitIndicator } from './RateLimitIndicator';
@@ -109,6 +110,11 @@ export function Sidebar({
   const projects = useProjectStore((state) => state.projects);
   const selectedProjectId = useProjectStore((state) => state.selectedProjectId);
   const settings = useSettingsStore((state) => state.settings);
+
+  // Returns primitive boolean — no useShallow needed, re-renders only when value changes
+  const hasTerminalActivity = useTerminalStore(
+    (state) => state.terminals.some(t => t.hasActivityAlert === true)
+  );
 
   const [showAddProjectModal, setShowAddProjectModal] = useState(false);
   const [showInitDialog, setShowInitDialog] = useState(false);
@@ -291,6 +297,8 @@ export function Sidebar({
   const renderNavItem = (item: NavItem) => {
     const isActive = activeView === item.id;
     const Icon = item.icon;
+    // Show amber dot on Terminals nav item when there's activity and user isn't on terminals view
+    const showActivityDot = item.id === 'terminals' && hasTerminalActivity && !isActive;
 
     const button = (
       <button
@@ -306,7 +314,17 @@ export function Sidebar({
           isCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5'
         )}
       >
-        <Icon className="h-4 w-4 shrink-0" />
+        {showActivityDot ? (
+          <span className="relative shrink-0 inline-flex">
+            <Icon className="h-4 w-4" />
+            <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
+            </span>
+          </span>
+        ) : (
+          <Icon className="h-4 w-4 shrink-0" />
+        )}
         {!isCollapsed && (
           <>
             <span className="flex-1 text-left">{t(item.labelKey)}</span>

@@ -45,6 +45,8 @@ interface TerminalHeaderProps {
   pendingClaudeResume?: boolean;
   /** Whether Claude is idle (waiting for user input) */
   isClaudeIdle?: boolean;
+  /** Whether this terminal has a pending activity alert (Claude went busy->idle while not active) */
+  hasActivityAlert?: boolean;
 }
 
 export function TerminalHeader({
@@ -71,6 +73,7 @@ export function TerminalHeader({
   onToggleExpand,
   pendingClaudeResume,
   isClaudeIdle,
+  hasActivityAlert,
 }: TerminalHeaderProps) {
   const { t } = useTranslation(['terminal', 'common']);
   const backlogTasks = tasks.filter((t) => t.status === 'backlog');
@@ -84,7 +87,7 @@ export function TerminalHeader({
 
   return (
     <div className="electron-no-drag group/header flex h-9 items-center justify-between border-b border-border/50 bg-card/30 px-2">
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2 overflow-hidden">
         {/* Drag handle - visible on hover */}
         {dragHandleListeners && (
           <div
@@ -141,6 +144,18 @@ export function TerminalHeader({
             {terminalCount < 4 && <span>{t('terminal:claude.waitingForInput')}</span>}
           </span>
         )}
+        {hasActivityAlert && (
+          <span
+            className="flex items-center gap-1 text-[10px] font-medium text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded"
+            title={t('terminal:activity.completed')}
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
+            </span>
+            {terminalCount < 4 && <span>{t('terminal:activity.completed')}</span>}
+          </span>
+        )}
         <TaskSelector
           terminalId={terminalId}
           backlogTasks={backlogTasks}
@@ -173,7 +188,7 @@ export function TerminalHeader({
           )
         )}
       </div>
-      <div className="flex items-center gap-1">
+      <div className="flex flex-shrink-0 items-center gap-1">
         {/* Resume All button - shown when 2+ terminals have pending resume */}
         {showResumeAllButton && (
           <Button

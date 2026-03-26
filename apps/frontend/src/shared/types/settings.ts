@@ -2,7 +2,7 @@
  * Application settings types
  */
 
-import type { NotificationSettings, GraphitiEmbeddingProvider } from './project';
+import type { NotificationSettings, GraphitiEmbeddingProvider, CustomMcpServer, AgentMcpOverrides } from './project';
 import type { ChangelogFormat, ChangelogAudience, ChangelogEmojiLevel } from './changelog';
 import type { SupportedLanguage } from '../constants/i18n';
 
@@ -225,6 +225,23 @@ export interface AgentProfile {
   isAutoProfile?: boolean;
 }
 
+// Global MCP server toggle defaults (no graphitiEnabled - it's provider-dependent)
+export interface GlobalMcpServers {
+  context7Enabled?: boolean;
+  linearMcpEnabled?: boolean;
+  electronEnabled?: boolean;
+  puppeteerEnabled?: boolean;
+}
+
+/**
+ * Agent settings source configuration
+ * Determines where an agent's model and thinking settings come from
+ */
+export type AgentSettingsSource =
+  | { type: 'phase'; phase: 'spec' | 'planning' | 'coding' | 'qa' }
+  | { type: 'feature'; feature: 'insights' | 'ideation' | 'roadmap' | 'githubIssues' | 'githubPrs' | 'utility' }
+  | { type: 'fixed'; model: ModelTypeShort; thinking: ThinkingLevel };
+
 export interface AppSettings {
   theme: 'light' | 'dark' | 'system';
   colorTheme?: ColorTheme;
@@ -298,6 +315,8 @@ export interface AppSettings {
   customTerminalPath?: string; // For 'custom' terminal
   // YOLO mode: invoke Claude with --dangerously-skip-permissions flag
   dangerouslySkipPermissions?: boolean;
+  // YOLO Max mode: combine YOLO mode with maximum effort level (CLAUDE_CODE_EFFORT_LEVEL=max)
+  yoloMaxMode?: boolean;
   // Anonymous error reporting (Sentry) - enabled by default to help improve the app
   sentryEnabled?: boolean;
   // Auto-name Claude terminals based on initial message (only triggers once per session)
@@ -308,6 +327,12 @@ export interface AppSettings {
   sidebarCollapsed?: boolean;
   // GPU acceleration for terminal rendering (WebGL)
   gpuAcceleration?: GpuAcceleration;
+  // Global MCP server defaults (applied to all projects unless overridden)
+  globalMcpServers?: GlobalMcpServers;
+  // Global custom MCP servers (applied to all projects)
+  globalCustomMcpServers?: CustomMcpServer[];
+  // Global per-agent MCP overrides (add/remove MCPs from specific agents across all projects)
+  globalAgentMcpOverrides?: AgentMcpOverrides;
 }
 
 // GPU acceleration mode for terminal WebGL rendering

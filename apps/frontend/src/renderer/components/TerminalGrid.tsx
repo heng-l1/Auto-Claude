@@ -41,7 +41,7 @@ interface TerminalGridProps {
 }
 
 export function TerminalGrid({ projectPath, onNewTaskClick, isActive = false }: TerminalGridProps) {
-  const { t } = useTranslation('common');
+  const { t } = useTranslation(['terminal', 'common']);
   const allTerminals = useTerminalStore((state) => state.terminals);
 
   // Track terminals that are in the grace period before being filtered out
@@ -140,6 +140,13 @@ export function TerminalGrid({ projectPath, onNewTaskClick, isActive = false }: 
 
   // Expanded terminal state - when set, this terminal takes up the full grid space
   const [expandedTerminalId, setExpandedTerminalId] = useState<string | null>(null);
+
+  // Terminals with pending activity alerts (for mini activity bar in expanded view)
+  // Excludes the currently expanded terminal and filters to current project
+  const terminalsWithActivity = useMemo(() =>
+    terminals.filter(t => t.hasActivityAlert && t.id !== expandedTerminalId),
+    [terminals, expandedTerminalId]
+  );
 
   // Reset expanded terminal and clear pending cleanup when project changes
   useEffect(() => {
@@ -538,7 +545,7 @@ export function TerminalGrid({ projectPath, onNewTaskClick, isActive = false }: 
               }}
             >
               <Settings className="h-3 w-3" />
-              {t('actions.settings')}
+              {t('common:actions.settings')}
             </Button>
             {terminals.some((t) => t.status === 'running' && !t.isClaudeMode) && (
               <Button
@@ -587,25 +594,55 @@ export function TerminalGrid({ projectPath, onNewTaskClick, isActive = false }: 
             fileExplorerOpen && "pr-0"
           )}>
             {expandedTerminalId ? (
-              // Show only the expanded terminal
+              // Show only the expanded terminal with optional mini activity bar
               (() => {
                 const expandedTerminal = terminals.find(t => t.id === expandedTerminalId);
                 if (!expandedTerminal) return null;
                 return (
-                  <div className="h-full p-1">
-                    <SortableTerminalWrapper
-                      id={expandedTerminal.id}
-                      cwd={expandedTerminal.cwd || projectPath}
-                      projectPath={projectPath}
-                      isActive={expandedTerminal.id === activeTerminalId}
-                      onClose={() => handleCloseTerminal(expandedTerminal.id)}
-                      onActivate={() => setActiveTerminal(expandedTerminal.id)}
-                      tasks={tasks}
-                      onNewTaskClick={onNewTaskClick}
-                      terminalCount={1}
-                      isExpanded={true}
-                      onToggleExpand={() => handleToggleExpand(expandedTerminal.id)}
-                    />
+                  <div className="flex flex-col h-full">
+                    {/* Mini activity bar - shows chips for other terminals with pending alerts */}
+                    {terminalsWithActivity.length > 0 && (
+                      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-card/30">
+                        <span className="text-[10px] text-muted-foreground font-medium">
+                          {t('terminal:activity.otherTerminals')}
+                        </span>
+                        <div className="flex items-center gap-1.5 overflow-x-auto">
+                          {terminalsWithActivity.map((terminal) => (
+                            <button
+                              key={terminal.id}
+                              type="button"
+                              onClick={() => {
+                                setExpandedTerminalId(terminal.id);
+                                setActiveTerminal(terminal.id);
+                              }}
+                              className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 text-[10px] font-medium transition-colors"
+                            >
+                              <span className="relative flex h-1.5 w-1.5">
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+                                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-amber-500" />
+                              </span>
+                              {terminal.title}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {/* Expanded terminal */}
+                    <div className="flex-1 min-h-0 p-1">
+                      <SortableTerminalWrapper
+                        id={expandedTerminal.id}
+                        cwd={expandedTerminal.cwd || projectPath}
+                        projectPath={projectPath}
+                        isActive={expandedTerminal.id === activeTerminalId}
+                        onClose={() => handleCloseTerminal(expandedTerminal.id)}
+                        onActivate={() => setActiveTerminal(expandedTerminal.id)}
+                        tasks={tasks}
+                        onNewTaskClick={onNewTaskClick}
+                        terminalCount={1}
+                        isExpanded={true}
+                        onToggleExpand={() => handleToggleExpand(expandedTerminal.id)}
+                      />
+                    </div>
                   </div>
                 );
               })()

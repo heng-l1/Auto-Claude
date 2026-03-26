@@ -48,6 +48,10 @@
     "global-memory": {
       "title": "Global Memory",
       "description": "Cross-project working patterns"
+    },
+    "global-mcp": {
+      "title": "MCP Servers",
+      "description": "Global MCP server defaults"
     }
   },
   "apiProfiles": {
@@ -286,6 +290,12 @@
       "label": "YOLO Mode",
       "description": "Start Claude with --dangerously-skip-permissions flag, bypassing all safety prompts. Use with extreme caution.",
       "warning": "This mode bypasses Claude's permission system. Only enable if you fully trust the code being executed."
+    },
+    "yoloMaxMode": {
+      "label": "YOLO Max",
+      "description": "Maximum power: combines YOLO mode (skip all permissions) with max effort level for Claude.",
+      "warning": "YOLO Max enables both permission bypass AND maximum compute effort.",
+      "badge": "MAX"
     }
   },
   "updates": {
@@ -691,6 +701,11 @@
     "remove": "Remove",
     "restore": "Restore",
     "noMcpServers": "No MCP servers",
+    "globalDefault": "Global default",
+    "projectOverride": "Project override",
+    "resetToGlobal": "Reset to global defaults",
+    "globalBadge": "Global",
+    "overridesGlobal": "Overrides global",
     "cannotRemove": "Cannot remove (required)",
     "servers": {
       "context7": {
@@ -930,6 +945,19 @@
     "backendDisabled": "Disabled",
     "backendEntryCount": "{{count}} entries stored",
     "backendNoEntries": "No entries stored yet"
+  },
+  "globalMcp": {
+    "title": "Global MCP Servers",
+    "description": "Configure default MCP servers that apply to all projects",
+    "infoNote": "These are the default MCP server settings for all projects. Individual projects can override these in their project settings.",
+    "builtInServers": "Built-in Servers",
+    "customServersSection": "Custom Servers",
+    "noCustomServers": "No custom servers configured globally. Add one to make it available across all projects.",
+    "addCustomServer": "Add Custom Server",
+    "graphitiNote": "Graphiti Memory requires memory configuration in project settings",
+    "agentDefaults": "Per-Agent MCP Defaults",
+    "agentDefaultsDescription": "Configure which MCP servers each agent phase gets by default across all projects",
+    "agentDefaultsNote": "Individual projects can further customize agent MCPs in their Agent Tools view"
   },
   "agents": {
     "pr_template_filler": {

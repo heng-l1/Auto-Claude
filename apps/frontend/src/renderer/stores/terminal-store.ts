@@ -132,6 +132,7 @@ export interface Terminal {
   projectPath?: string;  // Project this terminal belongs to (for multi-project support)
   worktreeConfig?: TerminalWorktreeConfig;  // Associated worktree for isolated development
   isClaudeBusy?: boolean;  // Whether Claude Code is actively processing (for visual indicator)
+  hasActivityAlert?: boolean;  // Set when Claude goes busy->idle on non-active terminal (amber dot indicator)
   pendingClaudeResume?: boolean;  // Whether this terminal has a pending Claude resume (deferred until tab activated)
   displayOrder?: number;  // Display order for tab persistence (lower = further left)
   claudeNamedOnce?: boolean;  // Whether this Claude terminal has been auto-named based on initial message (prevents repeated naming)
@@ -170,6 +171,7 @@ interface TerminalState {
   setClaudeBusy: (id: string, isBusy: boolean) => void;
   setPendingClaudeResume: (id: string, pending: boolean) => void;
   setClaudeNamedOnce: (id: string, named: boolean) => void;
+  clearActivityAlert: (id: string) => void;
   clearAllTerminals: () => void;
   setHasRestoredSessions: (value: boolean) => void;
   reorderTerminals: (activeId: string, overId: string) => void;
@@ -375,7 +377,12 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   },
 
   setActiveTerminal: (id: string | null) => {
-    set({ activeTerminalId: id });
+    set((state) => ({
+      activeTerminalId: id,
+      terminals: id
+        ? state.terminals.map((t) => t.id === id ? { ...t, hasActivityAlert: undefined } : t)
+        : state.terminals,
+    }));
   },
 
   setTerminalStatus: (id: string, status: TerminalStatus) => {
@@ -413,12 +420,19 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
       }
     }
 
+    // Auto-rename default-titled terminals when entering Claude mode.
+    // Only rename titles matching "Terminal N" pattern — preserves user-customized,
+    // worktree, and task-linked titles. Same regex as shouldAutoRenameTerminal().
+    const currentTitle = get().terminals.find(t => t.id === id)?.title ?? '';
+    const willRename = isClaudeMode && /^Terminal \d+$/.test(currentTitle);
+
     set((state) => ({
       terminals: state.terminals.map((t) =>
         t.id === id
           ? {
               ...t,
               isClaudeMode,
+              title: willRename ? 'Claude' : t.title,
               status: isClaudeMode ? 'claude-active' : (t.status === 'exited' ? 'exited' : 'running'),
               // Reset busy state and naming flag when leaving Claude mode
               isClaudeBusy: isClaudeMode ? t.isClaudeBusy : undefined,
@@ -427,6 +441,15 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
           : t
       ),
     }));
+
+    // Best-effort sync title to main process for session persistence
+    if (willRename) {
+      try {
+        window.electronAPI.setTerminalTitle(id, 'Claude');
+      } catch {
+        // Non-critical — renderer state is already updated
+      }
+    }
   },
 
   setClaudeSessionId: (id: string, sessionId: string) => {
@@ -465,11 +488,19 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     // Send CLAUDE_BUSY event to XState machine
     sendTerminalMachineEvent(id, { type: 'CLAUDE_BUSY', isBusy });
 
-    set((state) => ({
-      terminals: state.terminals.map((t) =>
-        t.id === id ? { ...t, isClaudeBusy: isBusy } : t
-      ),
-    }));
+    set((state) => {
+      // Detect busy->idle transition on a non-active terminal to trigger activity alert
+      const terminal = state.terminals.find(t => t.id === id);
+      const shouldAlert = terminal?.isClaudeBusy === true && !isBusy && id !== state.activeTerminalId;
+
+      return {
+        terminals: state.terminals.map((t) =>
+          t.id === id
+            ? { ...t, isClaudeBusy: isBusy, ...(shouldAlert ? { hasActivityAlert: true } : {}) }
+            : t
+        ),
+      };
+    });
   },
 
   setPendingClaudeResume: (id: string, pending: boolean) => {
@@ -510,6 +541,14 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     set((state) => ({
       terminals: state.terminals.map((t) =>
         t.id === id ? { ...t, claudeNamedOnce: named } : t
+      ),
+    }));
+  },
+
+  clearActivityAlert: (id: string) => {
+    set((state) => ({
+      terminals: state.terminals.map((t) =>
+        t.id === id ? { ...t, hasActivityAlert: undefined } : t
       ),
     }));
   },
