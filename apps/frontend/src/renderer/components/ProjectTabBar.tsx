@@ -185,10 +185,10 @@ export function ProjectTabBar({
   return (
     <div className={cn(
       'flex items-center border-b border-border bg-background',
-      'overflow-x-auto scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent',
+      'overflow-hidden',
       className
     )}>
-      <div className="flex items-center flex-1 min-w-0">
+      <div className="flex items-center flex-1 min-w-0 overflow-x-auto scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
         {tabLayout.map((entry) => {
           if (entry.type === 'group') {
             const colorConfig = TAB_GROUP_COLORS.find(c => c.id === entry.group.color);
@@ -196,11 +196,12 @@ export function ProjectTabBar({
               <div
                 key={`group:${entry.group.id}`}
                 className={cn(
-                  'flex items-center',
+                  'flex items-center min-w-0',
                   colorConfig?.bg,
                   'border-b-2',
                   colorConfig?.border
                 )}
+                style={{ flexGrow: entry.projectIds.length, flexShrink: 1 }}
               >
                 <SortableTabGroupChip
                   group={entry.group}
