@@ -2,7 +2,7 @@ import { Notification, shell } from 'electron';
 import type { BrowserWindow } from 'electron';
 import { projectStore } from './project-store';
 
-export type NotificationType = 'task-complete' | 'task-failed' | 'review-needed';
+export type NotificationType = 'task-complete' | 'task-failed' | 'review-needed' | 'pr-review-complete';
 
 interface NotificationOptions {
   title: string;
@@ -61,6 +61,17 @@ class NotificationService {
   }
 
   /**
+   * Send a notification for PR review completion
+   */
+  notifyPRReviewComplete(prNumber: number, projectId: string): void {
+    this.sendNotification('pr-review-complete', {
+      title: 'PR Review Complete',
+      body: `PR #${prNumber} review is complete and ready to post`,
+      projectId
+    });
+  }
+
+  /**
    * Send a system notification with optional sound
    */
   private sendNotification(type: NotificationType, options: NotificationOptions): void {
@@ -115,6 +126,7 @@ class NotificationService {
     onTaskComplete: boolean;
     onTaskFailed: boolean;
     onReviewNeeded: boolean;
+    onPRReviewComplete: boolean;
     sound: boolean;
   } {
     // Try to get project-specific settings
@@ -131,6 +143,7 @@ class NotificationService {
       onTaskComplete: true,
       onTaskFailed: true,
       onReviewNeeded: true,
+      onPRReviewComplete: true,
       sound: false
     };
   }
@@ -144,6 +157,7 @@ class NotificationService {
       onTaskComplete: boolean;
       onTaskFailed: boolean;
       onReviewNeeded: boolean;
+      onPRReviewComplete: boolean;
       sound: boolean;
     }
   ): boolean {
@@ -154,6 +168,8 @@ class NotificationService {
         return settings.onTaskFailed;
       case 'review-needed':
         return settings.onReviewNeeded;
+      case 'pr-review-complete':
+        return settings.onPRReviewComplete;
       default:
         return false;
     }

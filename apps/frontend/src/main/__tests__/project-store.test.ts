@@ -552,6 +552,7 @@ describe('ProjectStore', () => {
                 onTaskComplete: true,
                 onTaskFailed: true,
                 onReviewNeeded: true,
+                onPRReviewComplete: true,
                 sound: false
               },
               graphitiMcpEnabled: true,

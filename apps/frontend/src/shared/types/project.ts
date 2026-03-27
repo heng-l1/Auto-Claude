@@ -40,6 +40,8 @@ export interface NotificationSettings {
   onTaskComplete: boolean;
   onTaskFailed: boolean;
   onReviewNeeded: boolean;
+  /** Desktop notification when a PR review completes */
+  onPRReviewComplete: boolean;
   sound: boolean;
 }
 

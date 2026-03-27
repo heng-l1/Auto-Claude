@@ -342,6 +342,8 @@
     "onTaskFailedDescription": "Notify when a task encounters an error",
     "onReviewNeeded": "On Review Needed",
     "onReviewNeededDescription": "Notify when QA requires your review",
+    "onPRReviewComplete": "On PR Review Complete",
+    "onPRReviewCompleteDescription": "Notify when a PR review finishes and is ready to post",
     "sound": "Sound",
     "soundDescription": "Play sound with notifications"
   },
