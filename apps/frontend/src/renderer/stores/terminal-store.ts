@@ -548,3 +548,79 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     return state.terminals.filter(t => t.worktreeConfig !== undefined && t.status !== 'exited').length;
   },
 }));
+
+// Track in-flight restores to prevent concurrent restores for the same project
+const restoringProjects = new Set<string>();
+
+export async function restoreTerminalSessions(projectPath: string): Promise<void> {
+  if (!projectPath || typeof projectPath !== 'string') {
+    debugLog('[TerminalStore] Invalid projectPath, skipping restore');
+    return;
+  }
+
+  if (restoringProjects.has(projectPath)) {
+    debugLog('[TerminalStore] Already restoring terminals for this project, skipping');
+    return;
+  }
+  restoringProjects.add(projectPath);
+
+  try {
+    const store = useTerminalStore.getState();
+
+    const projectTerminals = store.terminals.filter(t => t.projectPath === projectPath);
+
+    if (projectTerminals.length > 0) {
+      const aliveChecks = await Promise.all(
+        projectTerminals.map(async (terminal) => {
+          try {
+            const result = await window.electronAPI.checkTerminalPtyAlive(terminal.id);
+            return { terminal, alive: result.success && result.data?.alive === true };
+          } catch {
+            return { terminal, alive: false };
+          }
+        })
+      );
+
+      const deadTerminals = aliveChecks.filter(c => !c.alive);
+
+      for (const { terminal } of deadTerminals) {
+        debugLog(`[TerminalStore] Removing dead terminal: ${terminal.id}`);
+        store.removeTerminal(terminal.id);
+      }
+
+      if (deadTerminals.length === 0) {
+        debugLog('[TerminalStore] All terminals have live PTY processes');
+        return;
+      }
+
+      debugLog(`[TerminalStore] ${deadTerminals.length} terminals had dead PTY, will restore from disk`);
+    }
+
+    debugLog(`[TerminalStore] Fetching terminal sessions from disk for project: ${projectPath}`);
+    const result = await window.electronAPI.getTerminalSessions(projectPath);
+    if (!result.success || !result.data || result.data.length === 0) {
+      debugLog(`[TerminalStore] No sessions found on disk for project: ${projectPath}, success: ${result.success}, sessionCount: ${result.data?.length || 0}`);
+      return;
+    }
+
+    debugLog(`[TerminalStore] Found ${result.data.length} sessions on disk for project: ${projectPath}`);
+
+    const sortedSessions = [...result.data].sort((a, b) => {
+      const orderA = a.displayOrder ?? Number.MAX_SAFE_INTEGER;
+      const orderB = b.displayOrder ?? Number.MAX_SAFE_INTEGER;
+      return orderA - orderB;
+    });
+
+    debugLog(`[TerminalStore] Adding ${sortedSessions.length} sorted sessions to store`);
+    for (const session of sortedSessions) {
+      store.addRestoredTerminal(session);
+    }
+
+    store.setHasRestoredSessions(true);
+    debugLog(`[TerminalStore] Completed terminal session restoration for project: ${projectPath}`);
+  } catch (error) {
+    debugError('[TerminalStore] Error restoring sessions:', error);
+  } finally {
+    restoringProjects.delete(projectPath);
+  }
+}
