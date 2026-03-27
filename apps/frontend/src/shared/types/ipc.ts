@@ -272,6 +272,7 @@ export interface ElectronAPI {
   sendTerminalInput: (id: string, data: string) => void;
   resizeTerminal: (id: string, cols: number, rows: number) => Promise<IPCResult<{ success: boolean }>>;
   invokeClaudeInTerminal: (id: string, cwd?: string) => void;
+  invokeClaudeInTerminalRemote: (id: string) => void;
   generateTerminalName: (command: string, cwd?: string) => Promise<IPCResult<string>>;
   setTerminalTitle: (id: string, title: string) => void;
   setTerminalWorktreeConfig: (id: string, config: TerminalWorktreeConfig | undefined) => void;
@@ -334,6 +335,8 @@ export interface ElectronAPI {
     profileId?: string;
     detectedAt: string;
   }) => void) => () => void;
+  /** Listen for foreground process changes (e.g., ssh, tmux, screen, mosh) */
+  onTerminalForegroundProcess: (callback: (id: string, processName?: string) => void) => () => void;
   /** Listen for pending Claude resume notifications (for deferred resume on tab activation) */
   onTerminalPendingResume: (callback: (id: string, sessionId?: string) => void) => () => void;
   /** Listen for profile change events - terminals need to be recreated with new profile env vars */

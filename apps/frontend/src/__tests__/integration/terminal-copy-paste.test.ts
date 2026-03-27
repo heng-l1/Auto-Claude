@@ -43,7 +43,12 @@ vi.mock('@xterm/xterm', () => ({
         theme: { cursorAccent: '#000000' },
         scrollback: 1000
       },
-      refresh: vi.fn()
+      refresh: vi.fn(),
+      parser: {
+        registerOscHandler: vi.fn().mockReturnValue({ dispose: vi.fn() })
+      },
+      selectAll: vi.fn(),
+      clear: vi.fn()
     };
   })
 }));
@@ -827,6 +832,555 @@ describe('Terminal copy/paste integration', () => {
       expect(mockSendTerminalInput).toHaveBeenCalledWith('test-terminal', 'test command');
 
       consoleErrorSpy.mockRestore();
+    });
+  });
+
+  describe('OSC 52 clipboard handler', () => {
+    it('should decode base64 payload and write to clipboard', async () => {
+      const { useXterm } = await import('../../renderer/components/terminal/useXterm');
+
+      let oscHandler: ((data: string) => boolean) | null = null;
+
+      // Override XTerm mock to capture OSC 52 handler
+      (XTerm as unknown as Mock).mockImplementation(function() {
+        return {
+          open: vi.fn(),
+          loadAddon: vi.fn(),
+          attachCustomKeyEventHandler: vi.fn(),
+          hasSelection: vi.fn(function() { return false; }),
+          getSelection: vi.fn(function() { return ''; }),
+          paste: vi.fn(),
+          input: vi.fn(),
+          onData: vi.fn(),
+          onResize: vi.fn(),
+          dispose: vi.fn(),
+          write: vi.fn(),
+          cols: 80,
+          rows: 24,
+          options: {
+            cursorBlink: true,
+            cursorStyle: 'block',
+            fontSize: 14,
+            fontFamily: 'monospace',
+            fontWeight: 'normal',
+            lineHeight: 1,
+            letterSpacing: 0,
+            theme: { cursorAccent: '#000000' },
+            scrollback: 1000
+          },
+          refresh: vi.fn(),
+          parser: {
+            registerOscHandler: vi.fn(function(id: number, handler: (data: string) => boolean) {
+              if (id === 52) {
+                oscHandler = handler;
+              }
+              return { dispose: vi.fn() };
+            })
+          },
+          selectAll: vi.fn(),
+          clear: vi.fn()
+        };
+      });
+
+      // Need to also override the addon mocks to be constructable
+      (FitAddon as unknown as Mock).mockImplementation(function() {
+        return { fit: vi.fn() };
+      });
+
+      (WebLinksAddon as unknown as Mock).mockImplementation(function() {
+        return {};
+      });
+
+      (SerializeAddon as unknown as Mock).mockImplementation(function() {
+        return {
+          serialize: vi.fn(function() { return ''; }),
+          dispose: vi.fn()
+        };
+      });
+
+      // Mock getBoundingClientRect to return valid dimensions so performInitialFit
+      // reaches xterm.open() and registers the OSC 52 handler
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+        x: 0, y: 0, width: 800, height: 600,
+        top: 0, right: 800, bottom: 600, left: 0,
+        toJSON: vi.fn()
+      } as unknown as DOMRect);
+
+      // Create a test wrapper component
+      const TestWrapper = () => {
+        const { terminalRef } = useXterm({ terminalId: 'test-terminal' });
+        return React.createElement('div', { ref: terminalRef });
+      };
+
+      render(React.createElement(TestWrapper));
+
+      let result: boolean | undefined;
+
+      // Use act() to flush useEffect that registers the OSC handler
+      await act(async () => {
+        if (oscHandler) {
+          result = oscHandler('c;SGVsbG8=');
+        }
+        // Wait for clipboard write
+        await new Promise(resolve => setTimeout(resolve, 0));
+      });
+
+      // Verify OSC 52 handler was registered and decoded base64
+      expect(oscHandler).not.toBeNull();
+      expect(result).toBe(true);
+      expect(mockClipboard.writeText).toHaveBeenCalledWith('Hello');
+    });
+
+    it('should ignore clipboard query requests', async () => {
+      const { useXterm } = await import('../../renderer/components/terminal/useXterm');
+
+      let oscHandler: ((data: string) => boolean) | null = null;
+
+      // Override XTerm mock to capture OSC 52 handler
+      (XTerm as unknown as Mock).mockImplementation(function() {
+        return {
+          open: vi.fn(),
+          loadAddon: vi.fn(),
+          attachCustomKeyEventHandler: vi.fn(),
+          hasSelection: vi.fn(function() { return false; }),
+          getSelection: vi.fn(function() { return ''; }),
+          paste: vi.fn(),
+          input: vi.fn(),
+          onData: vi.fn(),
+          onResize: vi.fn(),
+          dispose: vi.fn(),
+          write: vi.fn(),
+          cols: 80,
+          rows: 24,
+          options: {
+            cursorBlink: true,
+            cursorStyle: 'block',
+            fontSize: 14,
+            fontFamily: 'monospace',
+            fontWeight: 'normal',
+            lineHeight: 1,
+            letterSpacing: 0,
+            theme: { cursorAccent: '#000000' },
+            scrollback: 1000
+          },
+          refresh: vi.fn(),
+          parser: {
+            registerOscHandler: vi.fn(function(id: number, handler: (data: string) => boolean) {
+              if (id === 52) {
+                oscHandler = handler;
+              }
+              return { dispose: vi.fn() };
+            })
+          },
+          selectAll: vi.fn(),
+          clear: vi.fn()
+        };
+      });
+
+      // Need to also override the addon mocks to be constructable
+      (FitAddon as unknown as Mock).mockImplementation(function() {
+        return { fit: vi.fn() };
+      });
+
+      (WebLinksAddon as unknown as Mock).mockImplementation(function() {
+        return {};
+      });
+
+      (SerializeAddon as unknown as Mock).mockImplementation(function() {
+        return {
+          serialize: vi.fn(function() { return ''; }),
+          dispose: vi.fn()
+        };
+      });
+
+      // Mock getBoundingClientRect to return valid dimensions so performInitialFit
+      // reaches xterm.open() and registers the OSC 52 handler
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+        x: 0, y: 0, width: 800, height: 600,
+        top: 0, right: 800, bottom: 600, left: 0,
+        toJSON: vi.fn()
+      } as unknown as DOMRect);
+
+      const TestWrapper = () => {
+        const { terminalRef } = useXterm({ terminalId: 'test-terminal' });
+        return React.createElement('div', { ref: terminalRef });
+      };
+
+      render(React.createElement(TestWrapper));
+
+      let result: boolean | undefined;
+
+      // Use act() to flush useEffect that registers the OSC handler
+      await act(async () => {
+        if (oscHandler) {
+          result = oscHandler('c;?');
+        }
+      });
+
+      // Verify handler was registered and ignored query
+      expect(oscHandler).not.toBeNull();
+      expect(result).toBe(false);
+      expect(mockClipboard.writeText).not.toHaveBeenCalled();
+    });
+
+    it('should decode Unicode (emoji) correctly via TextDecoder', async () => {
+      const { useXterm } = await import('../../renderer/components/terminal/useXterm');
+
+      let oscHandler: ((data: string) => boolean) | null = null;
+
+      // Override XTerm mock to capture OSC 52 handler
+      (XTerm as unknown as Mock).mockImplementation(function() {
+        return {
+          open: vi.fn(),
+          loadAddon: vi.fn(),
+          attachCustomKeyEventHandler: vi.fn(),
+          hasSelection: vi.fn(function() { return false; }),
+          getSelection: vi.fn(function() { return ''; }),
+          paste: vi.fn(),
+          input: vi.fn(),
+          onData: vi.fn(),
+          onResize: vi.fn(),
+          dispose: vi.fn(),
+          write: vi.fn(),
+          cols: 80,
+          rows: 24,
+          options: {
+            cursorBlink: true,
+            cursorStyle: 'block',
+            fontSize: 14,
+            fontFamily: 'monospace',
+            fontWeight: 'normal',
+            lineHeight: 1,
+            letterSpacing: 0,
+            theme: { cursorAccent: '#000000' },
+            scrollback: 1000
+          },
+          refresh: vi.fn(),
+          parser: {
+            registerOscHandler: vi.fn(function(id: number, handler: (data: string) => boolean) {
+              if (id === 52) {
+                oscHandler = handler;
+              }
+              return { dispose: vi.fn() };
+            })
+          },
+          selectAll: vi.fn(),
+          clear: vi.fn()
+        };
+      });
+
+      // Need to also override the addon mocks to be constructable
+      (FitAddon as unknown as Mock).mockImplementation(function() {
+        return { fit: vi.fn() };
+      });
+
+      (WebLinksAddon as unknown as Mock).mockImplementation(function() {
+        return {};
+      });
+
+      (SerializeAddon as unknown as Mock).mockImplementation(function() {
+        return {
+          serialize: vi.fn(function() { return ''; }),
+          dispose: vi.fn()
+        };
+      });
+
+      // Mock getBoundingClientRect to return valid dimensions so performInitialFit
+      // reaches xterm.open() and registers the OSC 52 handler
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+        x: 0, y: 0, width: 800, height: 600,
+        top: 0, right: 800, bottom: 600, left: 0,
+        toJSON: vi.fn()
+      } as unknown as DOMRect);
+
+      const TestWrapper = () => {
+        const { terminalRef } = useXterm({ terminalId: 'test-terminal' });
+        return React.createElement('div', { ref: terminalRef });
+      };
+
+      render(React.createElement(TestWrapper));
+
+      // Encode emoji "🎉" as base64 (UTF-8 bytes via TextEncoder)
+      const emojiBytes = new TextEncoder().encode('🎉');
+      const base64Emoji = btoa(String.fromCharCode(...emojiBytes));
+
+      let result: boolean | undefined;
+
+      // Use act() to flush useEffect that registers the OSC handler
+      await act(async () => {
+        if (oscHandler) {
+          result = oscHandler(`c;${base64Emoji}`);
+        }
+        // Wait for clipboard write
+        await new Promise(resolve => setTimeout(resolve, 0));
+      });
+
+      // Verify handler was registered and decoded Unicode correctly
+      expect(oscHandler).not.toBeNull();
+      expect(result).toBe(true);
+      expect(mockClipboard.writeText).toHaveBeenCalledWith('🎉');
+    });
+
+    it('should handle invalid base64 gracefully without crashing', async () => {
+      const { useXterm } = await import('../../renderer/components/terminal/useXterm');
+
+      let oscHandler: ((data: string) => boolean) | null = null;
+
+      // Override XTerm mock to capture OSC 52 handler
+      (XTerm as unknown as Mock).mockImplementation(function() {
+        return {
+          open: vi.fn(),
+          loadAddon: vi.fn(),
+          attachCustomKeyEventHandler: vi.fn(),
+          hasSelection: vi.fn(function() { return false; }),
+          getSelection: vi.fn(function() { return ''; }),
+          paste: vi.fn(),
+          input: vi.fn(),
+          onData: vi.fn(),
+          onResize: vi.fn(),
+          dispose: vi.fn(),
+          write: vi.fn(),
+          cols: 80,
+          rows: 24,
+          options: {
+            cursorBlink: true,
+            cursorStyle: 'block',
+            fontSize: 14,
+            fontFamily: 'monospace',
+            fontWeight: 'normal',
+            lineHeight: 1,
+            letterSpacing: 0,
+            theme: { cursorAccent: '#000000' },
+            scrollback: 1000
+          },
+          refresh: vi.fn(),
+          parser: {
+            registerOscHandler: vi.fn(function(id: number, handler: (data: string) => boolean) {
+              if (id === 52) {
+                oscHandler = handler;
+              }
+              return { dispose: vi.fn() };
+            })
+          },
+          selectAll: vi.fn(),
+          clear: vi.fn()
+        };
+      });
+
+      // Need to also override the addon mocks to be constructable
+      (FitAddon as unknown as Mock).mockImplementation(function() {
+        return { fit: vi.fn() };
+      });
+
+      (WebLinksAddon as unknown as Mock).mockImplementation(function() {
+        return {};
+      });
+
+      (SerializeAddon as unknown as Mock).mockImplementation(function() {
+        return {
+          serialize: vi.fn(function() { return ''; }),
+          dispose: vi.fn()
+        };
+      });
+
+      // Mock getBoundingClientRect to return valid dimensions so performInitialFit
+      // reaches xterm.open() and registers the OSC 52 handler
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+        x: 0, y: 0, width: 800, height: 600,
+        top: 0, right: 800, bottom: 600, left: 0,
+        toJSON: vi.fn()
+      } as unknown as DOMRect);
+
+      const TestWrapper = () => {
+        const { terminalRef } = useXterm({ terminalId: 'test-terminal' });
+        return React.createElement('div', { ref: terminalRef });
+      };
+
+      render(React.createElement(TestWrapper));
+
+      let result: boolean | undefined;
+
+      // Use act() to flush useEffect that registers the OSC handler
+      await act(async () => {
+        if (oscHandler) {
+          // Call handler with invalid base64 — should not throw
+          result = oscHandler('c;!!!invalid===base64');
+        }
+      });
+
+      // Verify handler was registered and handled invalid base64 gracefully
+      expect(oscHandler).not.toBeNull();
+      expect(result).toBe(false);
+      expect(mockClipboard.writeText).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('context menu clipboard operations', () => {
+    it('should copy selection to clipboard via handleCopy', async () => {
+      const { useXterm } = await import('../../renderer/components/terminal/useXterm');
+
+      const mockHasSelection = vi.fn(function() { return true; });
+      const mockGetSelection = vi.fn(function() { return 'context menu selected text'; });
+
+      // Override XTerm mock with selection methods
+      (XTerm as unknown as Mock).mockImplementation(function() {
+        return {
+          open: vi.fn(),
+          loadAddon: vi.fn(),
+          attachCustomKeyEventHandler: vi.fn(),
+          hasSelection: mockHasSelection,
+          getSelection: mockGetSelection,
+          paste: vi.fn(),
+          input: vi.fn(),
+          onData: vi.fn(),
+          onResize: vi.fn(),
+          dispose: vi.fn(),
+          write: vi.fn(),
+          cols: 80,
+          rows: 24,
+          options: {
+            cursorBlink: true,
+            cursorStyle: 'block',
+            fontSize: 14,
+            fontFamily: 'monospace',
+            fontWeight: 'normal',
+            lineHeight: 1,
+            letterSpacing: 0,
+            theme: { cursorAccent: '#000000' },
+            scrollback: 1000
+          },
+          refresh: vi.fn(),
+          parser: {
+            registerOscHandler: vi.fn().mockReturnValue({ dispose: vi.fn() })
+          },
+          selectAll: vi.fn(),
+          clear: vi.fn()
+        };
+      });
+
+      // Need to also override the addon mocks to be constructable
+      (FitAddon as unknown as Mock).mockImplementation(function() {
+        return { fit: vi.fn() };
+      });
+
+      (WebLinksAddon as unknown as Mock).mockImplementation(function() {
+        return {};
+      });
+
+      (SerializeAddon as unknown as Mock).mockImplementation(function() {
+        return {
+          serialize: vi.fn(function() { return ''; }),
+          dispose: vi.fn()
+        };
+      });
+
+      // Capture hook methods via test wrapper
+      let capturedHandleCopy: (() => boolean) | null = null;
+
+      const TestWrapper = () => {
+        const result = useXterm({ terminalId: 'test-terminal' });
+        capturedHandleCopy = result.handleCopy;
+        return React.createElement('div', { ref: result.terminalRef });
+      };
+
+      render(React.createElement(TestWrapper));
+
+      expect(capturedHandleCopy).not.toBeNull();
+
+      await act(async () => {
+        const success = capturedHandleCopy!();
+        expect(success).toBe(true);
+        // Wait for clipboard write
+        await new Promise(resolve => setTimeout(resolve, 0));
+      });
+
+      // Verify handleCopy used xterm selection API
+      expect(mockHasSelection).toHaveBeenCalled();
+      expect(mockGetSelection).toHaveBeenCalled();
+      expect(mockClipboard.writeText).toHaveBeenCalledWith('context menu selected text');
+    });
+
+    it('should paste clipboard content into terminal via handlePaste', async () => {
+      const { useXterm } = await import('../../renderer/components/terminal/useXterm');
+
+      const mockPaste = vi.fn();
+
+      // Override XTerm mock with paste method
+      (XTerm as unknown as Mock).mockImplementation(function() {
+        return {
+          open: vi.fn(),
+          loadAddon: vi.fn(),
+          attachCustomKeyEventHandler: vi.fn(),
+          hasSelection: vi.fn(function() { return false; }),
+          getSelection: vi.fn(function() { return ''; }),
+          paste: mockPaste,
+          input: vi.fn(),
+          onData: vi.fn(),
+          onResize: vi.fn(),
+          dispose: vi.fn(),
+          write: vi.fn(),
+          cols: 80,
+          rows: 24,
+          options: {
+            cursorBlink: true,
+            cursorStyle: 'block',
+            fontSize: 14,
+            fontFamily: 'monospace',
+            fontWeight: 'normal',
+            lineHeight: 1,
+            letterSpacing: 0,
+            theme: { cursorAccent: '#000000' },
+            scrollback: 1000
+          },
+          refresh: vi.fn(),
+          parser: {
+            registerOscHandler: vi.fn().mockReturnValue({ dispose: vi.fn() })
+          },
+          selectAll: vi.fn(),
+          clear: vi.fn()
+        };
+      });
+
+      // Need to also override the addon mocks to be constructable
+      (FitAddon as unknown as Mock).mockImplementation(function() {
+        return { fit: vi.fn() };
+      });
+
+      (WebLinksAddon as unknown as Mock).mockImplementation(function() {
+        return {};
+      });
+
+      (SerializeAddon as unknown as Mock).mockImplementation(function() {
+        return {
+          serialize: vi.fn(function() { return ''; }),
+          dispose: vi.fn()
+        };
+      });
+
+      mockClipboard.readText.mockResolvedValue('context menu pasted text');
+
+      // Capture hook methods via test wrapper
+      let capturedHandlePaste: (() => void) | null = null;
+
+      const TestWrapper = () => {
+        const result = useXterm({ terminalId: 'test-terminal' });
+        capturedHandlePaste = result.handlePaste;
+        return React.createElement('div', { ref: result.terminalRef });
+      };
+
+      render(React.createElement(TestWrapper));
+
+      expect(capturedHandlePaste).not.toBeNull();
+
+      await act(async () => {
+        capturedHandlePaste!();
+        // Wait for clipboard read and paste
+        await new Promise(resolve => setTimeout(resolve, 0));
+      });
+
+      // Verify handlePaste read from clipboard and pasted to terminal
+      expect(mockClipboard.readText).toHaveBeenCalled();
+      expect(mockPaste).toHaveBeenCalledWith('context menu pasted text');
     });
   });
 });

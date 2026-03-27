@@ -1,4 +1,4 @@
-import { X, Sparkles, TerminalSquare, FolderGit, ExternalLink, GripVertical, Maximize2, Minimize2, RotateCcw } from 'lucide-react';
+import { X, Sparkles, TerminalSquare, FolderGit, ExternalLink, GripVertical, Maximize2, Minimize2, RotateCcw, Globe } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { SyntheticListenerMap } from '@dnd-kit/core/dist/hooks/utilities';
 import type { Task, TerminalWorktreeConfig } from '../../../shared/types';
@@ -10,6 +10,9 @@ import { STATUS_COLORS } from './types';
 import { TerminalTitle } from './TerminalTitle';
 import { TaskSelector } from './TaskSelector';
 import { WorktreeSelector } from './WorktreeSelector';
+
+/** Process names that indicate a remote or multiplexer session */
+const REMOTE_PROCESSES = new Set(['ssh', 'tmux', 'screen', 'mosh']);
 
 interface TerminalHeaderProps {
   terminalId: string;
@@ -47,6 +50,8 @@ interface TerminalHeaderProps {
   isClaudeIdle?: boolean;
   /** Whether this terminal has a pending activity alert (Claude went busy->idle while not active) */
   hasActivityAlert?: boolean;
+  /** Current foreground process name for remote/multiplexer badge */
+  foregroundProcess?: string;
 }
 
 export function TerminalHeader({
@@ -74,6 +79,7 @@ export function TerminalHeader({
   pendingClaudeResume,
   isClaudeIdle,
   hasActivityAlert,
+  foregroundProcess,
 }: TerminalHeaderProps) {
   const { t } = useTranslation(['terminal', 'common']);
   const backlogTasks = tasks.filter((t) => t.status === 'backlog');
@@ -154,6 +160,15 @@ export function TerminalHeader({
               <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
             </span>
             {terminalCount < 4 && <span>{t('terminal:activity.completed')}</span>}
+          </span>
+        )}
+        {foregroundProcess && REMOTE_PROCESSES.has(foregroundProcess) && (
+          <span
+            className="flex items-center gap-1 text-[10px] font-medium text-blue-400 bg-blue-400/10 px-1.5 py-0.5 rounded"
+            title={t('terminal:remoteSession.badge', { process: foregroundProcess })}
+          >
+            <Globe className="h-2.5 w-2.5" />
+            {terminalCount < 4 && <span>{foregroundProcess}</span>}
           </span>
         )}
         <TaskSelector

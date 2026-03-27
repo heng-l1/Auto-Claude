@@ -34,6 +34,8 @@ export interface TerminalProcess {
   hasExited?: boolean;
   /** Tags this terminal as a PR discussion for memory extraction on close */
   prDiscussionContext?: { prNumber: number; repo: string };
+  /** The current foreground process name (e.g., 'ssh', 'tmux', 'screen', 'mosh') */
+  foregroundProcess?: string;
 }
 
 /**

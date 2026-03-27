@@ -14,6 +14,9 @@ import enTaskReview from './locales/en/taskReview.json';
 import enTerminal from './locales/en/terminal.json';
 import enErrors from './locales/en/errors.json';
 
+// Import French translation resources
+import frTerminal from './locales/fr/terminal.json';
+
 export const defaultNS = 'common';
 
 export const resources = {
@@ -29,6 +32,9 @@ export const resources = {
     taskReview: enTaskReview,
     terminal: enTerminal,
     errors: enErrors
+  },
+  fr: {
+    terminal: frTerminal
   }
 } as const;
 

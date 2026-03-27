@@ -1,0 +1,74 @@
+{
+  "expand": {
+    "expand": "Agrandir le terminal",
+    "collapse": "Réduire le terminal"
+  },
+  "resume": {
+    "pending": "Reprise disponible",
+    "pendingTooltip": "Cliquez pour reprendre la session Claude précédente",
+    "resumeAllSessions": "Tout reprendre"
+  },
+  "auth": {
+    "terminalTitle": "Auth : {{profileName}}",
+    "maxTerminalsReached": "Impossible d'ouvrir le terminal d'authentification : nombre maximum de terminaux atteint. Fermez d'abord un terminal."
+  },
+  "claude": {
+    "waitingForInput": "En attente de saisie"
+  },
+  "swap": {
+    "inProgress": "Changement de profil...",
+    "resumingSession": "Reprise de la session Claude...",
+    "sessionResumed": "Session reprise sous le nouveau profil",
+    "resumeFailed": "Impossible de reprendre la session. Vous pouvez en démarrer une nouvelle.",
+    "noSession": "Profil changé. Aucune session active à reprendre.",
+    "migrationFailed": "Profil changé, mais la migration de session a échoué. Démarrage d'un nouveau terminal."
+  },
+  "activity": {
+    "completed": "Terminé",
+    "otherTerminals": "Activité :"
+  },
+  "worktree": {
+    "create": "Worktree",
+    "createNew": "Nouveau worktree",
+    "existing": "Worktrees du terminal",
+    "taskWorktrees": "Worktrees de tâches",
+    "otherWorktrees": "Autres",
+    "createTitle": "Créer un worktree de terminal",
+    "createDescription": "Créez un espace de travail isolé pour ce terminal. Tout le travail se fera dans le répertoire du worktree.",
+    "name": "Nom du worktree",
+    "namePlaceholder": "ma-fonctionnalité",
+    "nameRequired": "Le nom du worktree est requis",
+    "nameInvalid": "Le nom doit commencer et se terminer par une lettre ou un chiffre",
+    "nameHelp": "Lettres minuscules, chiffres, tirets et underscores (les espaces deviennent des tirets)",
+    "associateTask": "Lier à une tâche",
+    "selectTask": "Sélectionner une tâche...",
+    "noTask": "Aucune tâche (worktree autonome)",
+    "createBranch": "Créer une branche Git",
+    "branchHelp": "Crée la branche : {{branch}}",
+    "baseBranch": "Branche de base",
+    "selectBaseBranch": "Sélectionner la branche de base...",
+    "searchBranch": "Rechercher des branches...",
+    "noBranchFound": "Aucune branche trouvée",
+    "useProjectDefault": "Utiliser la valeur par défaut du projet ({{branch}})",
+    "baseBranchHelp": "La branche à partir de laquelle créer le worktree",
+    "openInIDE": "Ouvrir dans l'IDE",
+    "maxReached": "Maximum de 12 worktrees de terminal atteint",
+    "alreadyExists": "Un worktree avec ce nom existe déjà",
+    "searchPlaceholder": "Rechercher des worktrees...",
+    "noResults": "Aucun worktree trouvé",
+    "deleteTitle": "Supprimer le worktree ?",
+    "deleteDescription": "Cela supprimera définitivement le worktree et sa branche. Toute modification non commitée sera perdue.",
+    "detached": "(détaché)",
+    "remotePushFailed": "Suivi distant non configuré",
+    "remotePushFailedDescription": "Worktree créé mais la branche n'a pas pu être poussée vers le distant. Vous devrez peut-être exécuter git push -u manuellement."
+  },
+  "remoteSession": {
+    "badge": "{{process}}"
+  },
+  "contextMenu": {
+    "copy": "Copier",
+    "paste": "Coller",
+    "selectAll": "Tout sélectionner",
+    "clearTerminal": "Effacer le terminal"
+  }
+}

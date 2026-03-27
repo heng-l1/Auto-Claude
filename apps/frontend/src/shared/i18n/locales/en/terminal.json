@@ -61,5 +61,14 @@
     "detached": "(detached)",
     "remotePushFailed": "Remote Tracking Not Set Up",
     "remotePushFailedDescription": "Worktree created but the branch could not be pushed to remote. You may need to run git push -u manually."
+  },
+  "remoteSession": {
+    "badge": "{{process}}"
+  },
+  "contextMenu": {
+    "copy": "Copy",
+    "paste": "Paste",
+    "selectAll": "Select All",
+    "clearTerminal": "Clear Terminal"
   }
 }

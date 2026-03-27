@@ -26,6 +26,10 @@ export const terminalMock = {
     console.warn('[Browser Mock] invokeClaudeInTerminal called');
   },
 
+  invokeClaudeInTerminalRemote: () => {
+    console.warn('[Browser Mock] invokeClaudeInTerminalRemote called');
+  },
+
   generateTerminalName: async () => ({
     success: true,
     data: 'Mock Terminal'
@@ -109,6 +113,7 @@ export const terminalMock = {
   onTerminalClaudeBusy: () => () => {},
   onTerminalClaudeExit: () => () => {},
   onTerminalOnboardingComplete: () => () => {},
+  onTerminalForegroundProcess: () => () => {},
   onTerminalPendingResume: () => () => {},
   onTerminalProfileChanged: () => () => {},
   onTerminalOAuthCodeNeeded: () => () => {},

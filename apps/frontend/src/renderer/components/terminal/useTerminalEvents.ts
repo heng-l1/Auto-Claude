@@ -164,4 +164,15 @@ export function useTerminalEvents({
 
     return cleanup;
   }, [terminalId]);
+
+  // Handle foreground process change (e.g., user started ssh, tmux, screen, mosh)
+  useEffect(() => {
+    const cleanup = window.electronAPI.onTerminalForegroundProcess((id, processName) => {
+      if (id === terminalId) {
+        useTerminalStore.getState().updateTerminal(terminalId, { foregroundProcess: processName });
+      }
+    });
+
+    return cleanup;
+  }, [terminalId]);
 }

@@ -27,6 +27,11 @@ vi.mock('@xterm/xterm', () => ({
     onResize: vi.fn(),
     dispose: vi.fn(),
     write: vi.fn(),
+    parser: {
+      registerOscHandler: vi.fn().mockReturnValue({ dispose: vi.fn() }),
+    },
+    selectAll: vi.fn(),
+    clear: vi.fn(),
     cols: 80,
     rows: 24,
     options: {
@@ -130,6 +135,11 @@ async function setupMockXterm(overrides: {
       onResize: vi.fn(),
       dispose: vi.fn(),
       write: vi.fn(),
+      parser: {
+        registerOscHandler: vi.fn().mockReturnValue({ dispose: vi.fn() }),
+      },
+      selectAll: vi.fn(),
+      clear: vi.fn(),
       cols: 80,
       rows: 24,
       options: {
@@ -930,6 +940,11 @@ describe('useXterm WebGL context management', () => {
         onResize: vi.fn(),
         dispose: mockDispose,
         write: vi.fn(),
+        parser: {
+          registerOscHandler: vi.fn().mockReturnValue({ dispose: vi.fn() }),
+        },
+        selectAll: vi.fn(),
+        clear: vi.fn(),
         cols: 80,
         rows: 24,
         options: {

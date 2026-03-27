@@ -111,6 +111,8 @@ export const IPC_CHANNELS = {
   TERMINAL_CLAUDE_BUSY: 'terminal:claudeBusy',  // Claude Code busy state (for visual indicator)
   TERMINAL_CLAUDE_EXIT: 'terminal:claudeExit',  // Claude Code exited (returned to shell)
   TERMINAL_ONBOARDING_COMPLETE: 'terminal:onboardingComplete',  // Claude onboarding complete (ready for input after login)
+  TERMINAL_FOREGROUND_PROCESS: 'terminal:foregroundProcess',  // Foreground process name changed (main -> renderer)
+  TERMINAL_INVOKE_CLAUDE_REMOTE: 'terminal:invokeClaudeRemote',  // Invoke Claude in a remote/multiplexer session (simple command)
   TERMINAL_PROFILE_CHANGED: 'terminal:profileChanged',  // Profile changed, terminals need refresh (main -> renderer)
 
   // Claude profile management (multi-account support)

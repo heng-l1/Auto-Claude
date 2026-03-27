@@ -50,6 +50,14 @@ export interface UseXtermReturn {
   rows: number;
   /** Whether dimensions have been measured and are ready */
   dimensionsReady: boolean;
+  /** Copy the current xterm selection to the system clipboard. Returns true if a selection existed and copy was attempted. */
+  handleCopy: () => boolean;
+  /** Paste system clipboard content into the terminal */
+  handlePaste: () => void;
+  /** Select all content in the terminal buffer */
+  selectAll: () => void;
+  /** Clear the terminal display */
+  clearTerminal: () => void;
 }
 
 export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsReady }: UseXtermOptions): UseXtermReturn {
@@ -60,11 +68,16 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
   const commandBufferRef = useRef<string>('');
   const isDisposedRef = useRef<boolean>(false);
   const isOpenedRef = useRef<boolean>(false);
+  const oscHandlerRef = useRef<{ dispose(): void } | null>(null);
   const dimensionsReadyCalledRef = useRef<boolean>(false);
   // Lazily-loaded WebGL context manager — only populated when gpuAcceleration !== 'off'
   const webglManagerRef = useRef<WebGLContextManagerType | null>(null);
   const onCommandEnterRef = useRef(onCommandEnter);
   const onResizeRef = useRef(onResize);
+  const handleCopyRef = useRef<() => boolean>(() => false);
+  const handlePasteRef = useRef<() => void>(() => {});
+  const selectAllRef = useRef<() => void>(() => {});
+  const clearTerminalRef = useRef<() => void>(() => {});
   const [dimensions, setDimensions] = useState<{ cols: number; rows: number }>({ cols: 80, rows: 24 });
 
   // Get font settings from store
@@ -172,6 +185,13 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
           console.error('[useXterm] Failed to read clipboard:', err);
         });
     };
+
+    // Store closures in refs for external access via hook return value.
+    // This allows stable useCallback wrappers to delegate to the current closures.
+    handleCopyRef.current = handleCopyToClipboard;
+    handlePasteRef.current = handlePasteFromClipboard;
+    selectAllRef.current = () => { xterm.selectAll(); };
+    clearTerminalRef.current = () => { xterm.clear(); };
 
     // Allow certain key combinations to bubble up to window-level handlers
     // This enables global shortcuts like Cmd/Ctrl+1-9 for project switching
@@ -281,6 +301,34 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
             xterm.open(terminalRef.current);
             debugLog(`[useXterm] Opened xterm for terminal: ${terminalId} (container ${rect.width}x${rect.height})`);
 
+            // Register OSC 52 clipboard handler for tmux set-clipboard support.
+            // When tmux sends clipboard content via OSC 52 (ESC ] 52 ; <target> ; <base64> ST),
+            // decode the payload and write it to the system clipboard.
+            oscHandlerRef.current = xterm.parser.registerOscHandler(52, (data: string) => {
+              const semicolonIndex = data.indexOf(';');
+              if (semicolonIndex === -1) return false;
+
+              const payload = data.slice(semicolonIndex + 1);
+
+              // Ignore clipboard query requests and empty payloads
+              if (payload === '?' || payload === '') return false;
+
+              try {
+                // Decode base64 with Unicode support via Uint8Array + TextDecoder
+                // (raw atob only handles Latin-1, not multi-byte characters)
+                const bytes = Uint8Array.from(atob(payload), (c) => c.charCodeAt(0));
+                const text = new TextDecoder().decode(bytes);
+
+                navigator.clipboard.writeText(text).catch((err) => {
+                  debugError('[useXterm] Failed to write OSC 52 clipboard data:', err);
+                });
+                return true;
+              } catch {
+                // Invalid base64 — silently ignore malformed payloads
+                return false;
+              }
+            });
+
             // WebGL acceleration: lazily load the WebGL module and acquire a context.
             // The dynamic import() ensures NO GPU code (WebGL2 probing, context creation)
             // runs unless the user has explicitly enabled GPU acceleration.
@@ -338,6 +386,11 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
                     const newCols = xtermRef.current.cols;
                     const newRows = xtermRef.current.rows;
                     setDimensions({ cols: newCols, rows: newRows });
+                    // Notify PTY of new dimensions so it doesn't keep stale sizes
+                    // (prevents tmux dotted fill pattern from mismatched PTY dimensions)
+                    if (newCols !== cols || newRows !== rows) {
+                      onResizeRef.current?.(newCols, newRows);
+                    }
                   }
                 }
               });
@@ -352,6 +405,9 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
                   const settledRows = xtermRef.current.rows;
                   if (settledCols !== cols || settledRows !== rows) {
                     setDimensions({ cols: settledCols, rows: settledRows });
+                    // Notify PTY of new dimensions so it doesn't keep stale sizes
+                    // (prevents tmux dotted fill pattern from mismatched PTY dimensions)
+                    onResizeRef.current?.(settledCols, settledRows);
                   }
                   xtermRef.current.refresh(0, xtermRef.current.rows - 1);
                 }
@@ -363,7 +419,17 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
               if (!isDisposedRef.current && fitAddonRef.current && xtermRef.current && terminalRef.current) {
                 const lateRect = terminalRef.current.getBoundingClientRect();
                 if (lateRect.width > 0 && lateRect.height > 0) {
+                  const prevLateCols = xtermRef.current.cols;
+                  const prevLateRows = xtermRef.current.rows;
                   fitAddonRef.current.fit();
+                  const lateCols = xtermRef.current.cols;
+                  const lateRows = xtermRef.current.rows;
+                  // Notify PTY of new dimensions so it doesn't keep stale sizes
+                  // (prevents tmux dotted fill pattern from mismatched PTY dimensions)
+                  if (lateCols !== prevLateCols || lateRows !== prevLateRows) {
+                    setDimensions({ cols: lateCols, rows: lateRows });
+                    onResizeRef.current?.(lateCols, lateRows);
+                  }
                   xtermRef.current.refresh(0, xtermRef.current.rows - 1);
                 }
               }
@@ -611,6 +677,22 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
     }
   }, []);
 
+  const handleCopy = useCallback((): boolean => {
+    return handleCopyRef.current();
+  }, []);
+
+  const handlePaste = useCallback((): void => {
+    handlePasteRef.current();
+  }, []);
+
+  const selectAll = useCallback((): void => {
+    selectAllRef.current();
+  }, []);
+
+  const clearTerminal = useCallback((): void => {
+    clearTerminalRef.current();
+  }, []);
+
   /**
    * Serialize the terminal buffer before disposal.
    * This preserves ANSI escape codes for colors, formatting, and the prompt.
@@ -667,6 +749,11 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
       serializeAddonRef.current.dispose();
       serializeAddonRef.current = null;
     }
+    // Dispose OSC 52 handler before xterm itself
+    if (oscHandlerRef.current) {
+      oscHandlerRef.current.dispose();
+      oscHandlerRef.current = null;
+    }
     // Note: webLinksAddon is local and will be disposed when xterm.dispose() is called
     if (xtermRef.current) {
       xtermRef.current.dispose();
@@ -683,6 +770,10 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
     writeln,
     focus,
     dispose,
+    handleCopy,
+    handlePaste,
+    selectAll,
+    clearTerminal,
     cols: dimensions.cols,
     rows: dimensions.rows,
     dimensionsReady: dimensionsReadyCalledRef.current,

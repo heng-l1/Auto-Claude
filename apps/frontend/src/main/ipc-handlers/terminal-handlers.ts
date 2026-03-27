@@ -82,6 +82,28 @@ export function registerTerminalHandlers(
     }
   );
 
+  // Invoke Claude in a remote/multiplexer session (simple command — no local path construction)
+  ipcMain.on(
+    IPC_CHANNELS.TERMINAL_INVOKE_CLAUDE_REMOTE,
+    (_, id: string) => {
+      (async () => {
+        const settings = await readSettingsFileAsync();
+        const yoloMax = settings?.yoloMaxMode === true;
+        const yolo = yoloMax || settings?.dangerouslySkipPermissions === true;
+
+        // Build simple command: just "claude" with flags
+        let cmd = 'claude';
+        if (yolo) cmd += ' --dangerously-skip-permissions';
+        if (yoloMax) cmd = `CLAUDE_CODE_EFFORT_LEVEL=max ${cmd}`;
+
+        // Write directly to PTY
+        terminalManager.write(id, cmd + '\r');
+      })().catch((error) => {
+        console.warn('[terminal-handlers] Failed to invoke Claude remote:', error);
+      });
+    }
+  );
+
   ipcMain.handle(
     IPC_CHANNELS.TERMINAL_GENERATE_NAME,
     async (_, command: string, cwd?: string): Promise<IPCResult<string>> => {

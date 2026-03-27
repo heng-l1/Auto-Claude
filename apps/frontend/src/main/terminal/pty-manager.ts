@@ -215,6 +215,27 @@ export function spawnPtyProcess(
 }
 
 /**
+ * Track debounced foreground process check timers per terminal.
+ * When PTY data arrives, we schedule a debounced check of pty.process.
+ * If the process name changes (e.g., user starts ssh, tmux, screen, mosh),
+ * we emit a TERMINAL_FOREGROUND_PROCESS event to the renderer.
+ */
+const foregroundProcessTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const FOREGROUND_PROCESS_CHECK_DEBOUNCE_MS = 2000;
+
+/**
+ * Extract the base process name from a PTY process string.
+ * pty.process may return a full path (e.g., '/usr/bin/ssh') or just a name ('ssh').
+ * Returns the basename lowercased.
+ */
+function extractProcessName(processStr: string | undefined): string | undefined {
+  if (!processStr) return undefined;
+  // Extract basename from path
+  const basename = processStr.split(/[/\\]/).pop();
+  return basename?.toLowerCase();
+}
+
+/**
  * Setup PTY event handlers for a terminal process
  */
 export function setupPtyHandlers(
@@ -237,6 +258,25 @@ export function setupPtyHandlers(
     // Append to output buffer (limit to 100KB)
     terminal.outputBuffer = (terminal.outputBuffer + data).slice(-100000);
 
+    // Debounced foreground process check: schedule a check of pty.process
+    // after data settles (avoids checking on every byte of output).
+    // When the process name changes, emit IPC event to renderer for badge display.
+    const existingTimer = foregroundProcessTimers.get(id);
+    if (existingTimer) clearTimeout(existingTimer);
+    foregroundProcessTimers.set(id, setTimeout(() => {
+      foregroundProcessTimers.delete(id);
+      if (terminal.hasExited || isShuttingDown) return;
+      try {
+        const currentProcess = extractProcessName(ptyProcess.process);
+        if (currentProcess !== terminal.foregroundProcess) {
+          terminal.foregroundProcess = currentProcess;
+          safeSendToRenderer(getWindow, IPC_CHANNELS.TERMINAL_FOREGROUND_PROCESS, id, currentProcess);
+        }
+      } catch {
+        // pty.process may throw if PTY is already dead — ignore silently
+      }
+    }, FOREGROUND_PROCESS_CHECK_DEBOUNCE_MS));
+
     // Call custom data handler. This must never crash the main process:
     // parser logic in higher layers can throw on unexpected output.
     try {
@@ -255,6 +295,12 @@ export function setupPtyHandlers(
     terminal.hasExited = true;
     // Drop any queued writes for this terminal to avoid writing to dead PTYs.
     pendingWrites.delete(id);
+    // Clear pending foreground process check timer
+    const fgTimer = foregroundProcessTimers.get(id);
+    if (fgTimer) {
+      clearTimeout(fgTimer);
+      foregroundProcessTimers.delete(id);
+    }
     debugLog('[PtyManager] Terminal exited:', id, 'code:', exitCode);
 
     // Always resolve pending exit promises, even during shutdown

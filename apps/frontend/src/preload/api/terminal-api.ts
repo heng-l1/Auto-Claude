@@ -35,6 +35,7 @@ export interface TerminalAPI {
   sendTerminalInput: (id: string, data: string) => void;
   resizeTerminal: (id: string, cols: number, rows: number) => Promise<IPCResult<{ success: boolean }>>;
   invokeClaudeInTerminal: (id: string, cwd?: string) => void;
+  invokeClaudeInTerminalRemote: (id: string) => void;
   generateTerminalName: (command: string, cwd?: string) => Promise<IPCResult<string>>;
   setTerminalTitle: (id: string, title: string) => void;
   setTerminalWorktreeConfig: (id: string, config: TerminalWorktreeConfig | undefined) => void;
@@ -95,6 +96,7 @@ export interface TerminalAPI {
   onTerminalOnboardingComplete: (
     callback: (info: { terminalId: string; profileId?: string; detectedAt: string }) => void
   ) => () => void;
+  onTerminalForegroundProcess: (callback: (id: string, processName?: string) => void) => () => void;
   onTerminalPendingResume: (callback: (id: string, sessionId?: string) => void) => () => void;
   onTerminalProfileChanged: (callback: (event: TerminalProfileChangedEvent) => void) => () => void;
 
@@ -143,6 +145,9 @@ export const createTerminalAPI = (): TerminalAPI => ({
 
   invokeClaudeInTerminal: (id: string, cwd?: string): void =>
     ipcRenderer.send(IPC_CHANNELS.TERMINAL_INVOKE_CLAUDE, id, cwd),
+
+  invokeClaudeInTerminalRemote: (id: string): void =>
+    ipcRenderer.send(IPC_CHANNELS.TERMINAL_INVOKE_CLAUDE_REMOTE, id),
 
   generateTerminalName: (command: string, cwd?: string): Promise<IPCResult<string>> =>
     ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_GENERATE_NAME, command, cwd),
@@ -402,6 +407,22 @@ export const createTerminalAPI = (): TerminalAPI => ({
     ipcRenderer.on(IPC_CHANNELS.TERMINAL_ONBOARDING_COMPLETE, handler);
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.TERMINAL_ONBOARDING_COMPLETE, handler);
+    };
+  },
+
+  onTerminalForegroundProcess: (
+    callback: (id: string, processName?: string) => void
+  ): (() => void) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      id: string,
+      processName?: string
+    ): void => {
+      callback(id, processName);
+    };
+    ipcRenderer.on(IPC_CHANNELS.TERMINAL_FOREGROUND_PROCESS, handler);
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.TERMINAL_FOREGROUND_PROCESS, handler);
     };
   },
 

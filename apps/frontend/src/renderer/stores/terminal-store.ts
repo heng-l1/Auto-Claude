@@ -138,6 +138,7 @@ export interface Terminal {
   claudeNamedOnce?: boolean;  // Whether this Claude terminal has been auto-named based on initial message (prevents repeated naming)
   prDiscussionContext?: { prNumber: number; repo: string };  // Tags this terminal as a PR discussion for memory extraction on close
   pendingClaudeInvocation?: { contextMessage: string };  // Deferred Claude invocation to execute once terminal is ready (prevents race condition)
+  foregroundProcess?: string;  // Current foreground process name (e.g., 'ssh', 'tmux', 'screen', 'mosh') for remote/multiplexer badge
 }
 
 interface TerminalLayout {
