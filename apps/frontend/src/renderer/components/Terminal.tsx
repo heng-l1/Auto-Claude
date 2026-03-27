@@ -22,6 +22,9 @@ import { stripAnsiCodes, stripPlanModeChrome } from '../../shared/utils/ansi-san
 import { terminalBufferManager } from '../lib/terminal-buffer-manager';
 import { isWindows as checkIsWindows } from '../lib/os-detection';
 
+/** Process names that indicate a remote or multiplexer session */
+const REMOTE_PROCESSES = new Set(['ssh', 'tmux', 'screen', 'mosh']);
+
 /**
  * Extract plain text from an xterm.js terminal buffer.
  * Iterates buffer lines, handles wrapped lines by concatenating them,
@@ -764,8 +767,13 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
   const handleInvokeClaude = useCallback(() => {
     setClaudeMode(id, true);
-    window.electronAPI.invokeClaudeInTerminal(id, effectiveCwd);
-  }, [id, effectiveCwd, setClaudeMode]);
+    const fg = terminal?.foregroundProcess;
+    if (fg && REMOTE_PROCESSES.has(fg)) {
+      window.electronAPI.invokeClaudeInTerminalRemote(id);
+    } else {
+      window.electronAPI.invokeClaudeInTerminal(id, effectiveCwd);
+    }
+  }, [id, effectiveCwd, setClaudeMode, terminal?.foregroundProcess]);
 
   const handleClick = useCallback(() => {
     onActivate();
@@ -1091,6 +1099,8 @@ Please confirm you're ready by saying: I'm ready to work on ${selectedTask.title
         onToggleExpand={onToggleExpand}
         pendingClaudeResume={terminal?.pendingClaudeResume}
         isClaudeIdle={showClaudeBusyIndicator && !isClaudeBusy}
+        foregroundProcess={terminal?.foregroundProcess}
+        hasActivityAlert={terminal?.hasActivityAlert}
       />
 
       <div
