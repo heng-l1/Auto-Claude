@@ -16,6 +16,7 @@ import enErrors from './locales/en/errors.json';
 
 // Import French translation resources
 import frTerminal from './locales/fr/terminal.json';
+import frSettings from './locales/fr/settings.json';
 
 export const defaultNS = 'common';
 
@@ -34,7 +35,8 @@ export const resources = {
     errors: enErrors
   },
   fr: {
-    terminal: frTerminal
+    terminal: frTerminal,
+    settings: frSettings
   }
 } as const;
 

@@ -11,8 +11,8 @@ import { TerminalTitle } from './TerminalTitle';
 import { TaskSelector } from './TaskSelector';
 import { WorktreeSelector } from './WorktreeSelector';
 
-/** Process names that indicate a remote or multiplexer session */
-const REMOTE_PROCESSES = new Set(['ssh', 'tmux', 'screen', 'mosh']);
+/** Default process names that indicate a remote or multiplexer session */
+const DEFAULT_REMOTE_PROCESSES = new Set(['ssh', 'tmux', 'screen', 'mosh']);
 
 interface TerminalHeaderProps {
   terminalId: string;
@@ -38,6 +38,10 @@ interface TerminalHeaderProps {
   onSelectWorktree?: (config: TerminalWorktreeConfig) => void;
   /** Callback to open worktree in IDE */
   onOpenInIDE?: () => void;
+  /** Current foreground process name from PTY (e.g., 'ssh', 'tmux') */
+  foregroundProcess?: string;
+  /** Merged set of default + custom remote process names */
+  remoteProcesses?: Set<string>;
   /** Drag handle listeners for terminal reordering */
   dragHandleListeners?: SyntheticListenerMap;
   /** Whether the terminal is expanded to full view */
@@ -50,8 +54,6 @@ interface TerminalHeaderProps {
   isClaudeIdle?: boolean;
   /** Whether this terminal has a pending activity alert (Claude went busy->idle while not active) */
   hasActivityAlert?: boolean;
-  /** Current foreground process name for remote/multiplexer badge */
-  foregroundProcess?: string;
 }
 
 export function TerminalHeader({
@@ -73,13 +75,14 @@ export function TerminalHeader({
   onCreateWorktree,
   onSelectWorktree,
   onOpenInIDE,
+  foregroundProcess,
+  remoteProcesses,
   dragHandleListeners,
   isExpanded,
   onToggleExpand,
   pendingClaudeResume,
   isClaudeIdle,
   hasActivityAlert,
-  foregroundProcess,
 }: TerminalHeaderProps) {
   const { t } = useTranslation(['terminal', 'common']);
   const backlogTasks = tasks.filter((t) => t.status === 'backlog');
@@ -90,6 +93,9 @@ export function TerminalHeader({
     (state) => state.terminals.filter((t) => t.pendingClaudeResume === true).length
   );
   const showResumeAllButton = pendingResumeCount >= 2;
+
+  // Use provided remoteProcesses or fall back to defaults
+  const processesToCheck = remoteProcesses || DEFAULT_REMOTE_PROCESSES;
 
   return (
     <div className="electron-no-drag group/header flex h-9 items-center justify-between border-b border-border/50 bg-card/30 px-2">
@@ -162,7 +168,7 @@ export function TerminalHeader({
             {terminalCount < 4 && <span>{t('terminal:activity.completed')}</span>}
           </span>
         )}
-        {foregroundProcess && REMOTE_PROCESSES.has(foregroundProcess) && (
+        {foregroundProcess && processesToCheck.has(foregroundProcess) && (
           <span
             className="flex items-center gap-1 text-[10px] font-medium text-blue-400 bg-blue-400/10 px-1.5 py-0.5 rounded"
             title={t('terminal:remoteSession.badge', { process: foregroundProcess })}

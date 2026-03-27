@@ -39,6 +39,9 @@ export * from './config';
 // Spell check configuration
 export * from './spellcheck';
 
+// Terminal constants
+export * from './terminal';
+
 // NOTE: agent-mcp.ts is NOT re-exported here because it imports lucide-react (a React
 // component library). Barrel-exporting it would pull React into the Electron main process
 // where React is unavailable, crashing the packaged app. Renderer files that need

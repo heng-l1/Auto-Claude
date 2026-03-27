@@ -138,7 +138,7 @@ export interface Terminal {
   claudeNamedOnce?: boolean;  // Whether this Claude terminal has been auto-named based on initial message (prevents repeated naming)
   prDiscussionContext?: { prNumber: number; repo: string };  // Tags this terminal as a PR discussion for memory extraction on close
   pendingClaudeInvocation?: { contextMessage: string };  // Deferred Claude invocation to execute once terminal is ready (prevents race condition)
-  foregroundProcess?: string;  // Current foreground process name (e.g., 'ssh', 'tmux', 'screen', 'mosh') for remote/multiplexer badge
+  foregroundProcess?: string;  // Current foreground process name from PTY (e.g., 'ssh', 'tmux') — used for remote session detection
 }
 
 interface TerminalLayout {
@@ -346,399 +346,205 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   },
 
   removeTerminal: (id: string) => {
-    // Clean up buffer manager, output callback, and XState actor
-    terminalBufferManager.dispose(id);
-    xtermCallbacks.delete(id);
-    const actor = terminalActors.get(id);
-    if (actor) {
-      actor.stop();
+    set((state) => {
+      // Find the removed terminal
+      const removedTerminal = state.terminals.find(t => t.id === id);
+
+      // Clear its buffer from terminalBufferManager
+      terminalBufferManager.clear(id);
+
+      // Unregister any output callback
+      unregisterOutputCallback(id);
+
+      // Remove from actors map
       terminalActors.delete(id);
-      debugLog(`[TerminalStore] Cleaned up XState actor for terminal: ${id}`);
-    }
 
-    set((state) => {
-      const newTerminals = state.terminals.filter((t) => t.id !== id);
-      const newActiveId = state.activeTerminalId === id
-        ? (newTerminals.length > 0 ? newTerminals[newTerminals.length - 1].id : null)
-        : state.activeTerminalId;
+      const terminals = state.terminals.filter(t => t.id !== id);
+      let activeTerminalId = state.activeTerminalId;
 
-      return {
-        terminals: newTerminals,
-        activeTerminalId: newActiveId,
-      };
-    });
-  },
-
-  updateTerminal: (id: string, updates: Partial<Terminal>) => {
-    set((state) => ({
-      terminals: state.terminals.map((t) =>
-        t.id === id ? { ...t, ...updates } : t
-      ),
-    }));
-  },
-
-  setActiveTerminal: (id: string | null) => {
-    set((state) => ({
-      activeTerminalId: id,
-      terminals: id
-        ? state.terminals.map((t) => t.id === id ? { ...t, hasActivityAlert: undefined } : t)
-        : state.terminals,
-    }));
-  },
-
-  setTerminalStatus: (id: string, status: TerminalStatus) => {
-    // Notify XState machine of lifecycle transitions
-    if (status === 'running') {
-      sendTerminalMachineEvent(id, { type: 'SHELL_READY' });
-    } else if (status === 'exited') {
-      sendTerminalMachineEvent(id, { type: 'SHELL_EXITED' });
-    }
-
-    set((state) => ({
-      terminals: state.terminals.map((t) =>
-        t.id === id ? { ...t, status } : t
-      ),
-    }));
-  },
-
-  setClaudeMode: (id: string, isClaudeMode: boolean) => {
-    // Send corresponding event to XState machine
-    if (isClaudeMode) {
-      // Ensure machine has transitioned past idle before sending CLAUDE_ACTIVE
-      const actor = getOrCreateTerminalActor(id);
-      if (String(actor.getSnapshot().value) === 'idle') {
-        sendTerminalMachineEvent(id, { type: 'SHELL_READY' });
-      }
-      // Include current claudeSessionId to prevent XState action from overwriting it
-      const terminal = get().terminals.find(t => t.id === id);
-      sendTerminalMachineEvent(id, { type: 'CLAUDE_ACTIVE', claudeSessionId: terminal?.claudeSessionId });
-    } else {
-      // Only send CLAUDE_EXITED if machine is in a state that accepts it
-      const actor = getOrCreateTerminalActor(id);
-      const currentState = String(actor.getSnapshot().value);
-      if (currentState === 'claude_starting' || currentState === 'claude_active') {
-        sendTerminalMachineEvent(id, { type: 'CLAUDE_EXITED' });
-      }
-    }
-
-    // Auto-rename default-titled terminals when entering Claude mode.
-    // Only rename titles matching "Terminal N" pattern — preserves user-customized,
-    // worktree, and task-linked titles. Same regex as shouldAutoRenameTerminal().
-    const currentTitle = get().terminals.find(t => t.id === id)?.title ?? '';
-    const willRename = isClaudeMode && /^Terminal \d+$/.test(currentTitle);
-
-    set((state) => ({
-      terminals: state.terminals.map((t) =>
-        t.id === id
-          ? {
-              ...t,
-              isClaudeMode,
-              title: willRename ? 'Claude' : t.title,
-              status: isClaudeMode ? 'claude-active' : (t.status === 'exited' ? 'exited' : 'running'),
-              // Reset busy state and naming flag when leaving Claude mode
-              isClaudeBusy: isClaudeMode ? t.isClaudeBusy : undefined,
-              claudeNamedOnce: isClaudeMode ? t.claudeNamedOnce : undefined
-            }
-          : t
-      ),
-    }));
-
-    // Best-effort sync title to main process for session persistence
-    if (willRename) {
-      try {
-        window.electronAPI.setTerminalTitle(id, 'Claude');
-      } catch {
-        // Non-critical — renderer state is already updated
-      }
-    }
-  },
-
-  setClaudeSessionId: (id: string, sessionId: string) => {
-    // Ensure machine has transitioned past idle before sending CLAUDE_ACTIVE
-    const actor = getOrCreateTerminalActor(id);
-    if (String(actor.getSnapshot().value) === 'idle') {
-      sendTerminalMachineEvent(id, { type: 'SHELL_READY' });
-    }
-    // Send CLAUDE_ACTIVE with session ID to XState machine
-    sendTerminalMachineEvent(id, { type: 'CLAUDE_ACTIVE', claudeSessionId: sessionId });
-
-    set((state) => ({
-      terminals: state.terminals.map((t) =>
-        t.id === id ? { ...t, claudeSessionId: sessionId } : t
-      ),
-    }));
-  },
-
-  setAssociatedTask: (id: string, taskId: string | undefined) => {
-    set((state) => ({
-      terminals: state.terminals.map((t) =>
-        t.id === id ? { ...t, associatedTaskId: taskId } : t
-      ),
-    }));
-  },
-
-  setWorktreeConfig: (id: string, config: TerminalWorktreeConfig | undefined) => {
-    set((state) => ({
-      terminals: state.terminals.map((t) =>
-        t.id === id ? { ...t, worktreeConfig: config } : t
-      ),
-    }));
-  },
-
-  setClaudeBusy: (id: string, isBusy: boolean) => {
-    // Send CLAUDE_BUSY event to XState machine
-    sendTerminalMachineEvent(id, { type: 'CLAUDE_BUSY', isBusy });
-
-    set((state) => {
-      // Detect busy->idle transition on a non-active terminal to trigger activity alert
-      const terminal = state.terminals.find(t => t.id === id);
-      const shouldAlert = terminal?.isClaudeBusy === true && !isBusy && id !== state.activeTerminalId;
-
-      return {
-        terminals: state.terminals.map((t) =>
-          t.id === id
-            ? { ...t, isClaudeBusy: isBusy, ...(shouldAlert ? { hasActivityAlert: true } : {}) }
-            : t
-        ),
-      };
-    });
-  },
-
-  setPendingClaudeResume: (id: string, pending: boolean) => {
-    // Send RESUME_REQUESTED or RESUME_COMPLETE to XState machine
-    let shouldUpdateZustand = true;
-
-    if (pending) {
-      const terminal = get().terminals.find(t => t.id === id);
-      if (terminal?.claudeSessionId) {
-        sendTerminalMachineEvent(id, { type: 'RESUME_REQUESTED', claudeSessionId: terminal.claudeSessionId });
-      } else {
-        // No claudeSessionId - can't send RESUME_REQUESTED, so don't set pendingClaudeResume
-        // to avoid XState/Zustand divergence (UI would show pending but machine wouldn't know)
-        debugLog('[terminal-store] setPendingClaudeResume: dropping request for terminal', id, '- no claudeSessionId');
-        shouldUpdateZustand = false;
-      }
-    } else {
-      // Resume cleared - either completed or cancelled
-      const actor = terminalActors.get(id);
-      if (actor && String(actor.getSnapshot().value) === 'pending_resume') {
-        // Include claudeSessionId to prevent XState action from overwriting it to undefined
-        const terminal = get().terminals.find(t => t.id === id);
-        sendTerminalMachineEvent(id, { type: 'RESUME_COMPLETE', claudeSessionId: terminal?.claudeSessionId });
-      }
-    }
-
-    // Only update Zustand state if XState was notified (prevents state divergence)
-    if (shouldUpdateZustand) {
-      set((state) => ({
-        terminals: state.terminals.map((t) =>
-          t.id === id ? { ...t, pendingClaudeResume: pending } : t
-        ),
-      }));
-    }
-  },
-
-  setClaudeNamedOnce: (id: string, named: boolean) => {
-    set((state) => ({
-      terminals: state.terminals.map((t) =>
-        t.id === id ? { ...t, claudeNamedOnce: named } : t
-      ),
-    }));
-  },
-
-  clearActivityAlert: (id: string) => {
-    set((state) => ({
-      terminals: state.terminals.map((t) =>
-        t.id === id ? { ...t, hasActivityAlert: undefined } : t
-      ),
-    }));
-  },
-
-  clearAllTerminals: () => {
-    // Clean up all resources for every terminal
-    const terminals = get().terminals;
-    for (const terminal of terminals) {
-      terminalBufferManager.dispose(terminal.id);
-      xtermCallbacks.delete(terminal.id);
-    }
-
-    // Clean up all XState actors
-    for (const [_id, actor] of terminalActors) {
-      actor.stop();
-    }
-    terminalActors.clear();
-    set({ terminals: [], activeTerminalId: null, hasRestoredSessions: false });
-  },
-
-  setHasRestoredSessions: (value: boolean) => {
-    set({ hasRestoredSessions: value });
-  },
-
-  reorderTerminals: (activeId: string, overId: string) => {
-    set((state) => {
-      const oldIndex = state.terminals.findIndex((t) => t.id === activeId);
-      const newIndex = state.terminals.findIndex((t) => t.id === overId);
-
-      if (oldIndex === -1 || newIndex === -1) {
-        return state;
+      // If we removed the active terminal, pick a new one
+      if (activeTerminalId === id) {
+        activeTerminalId = terminals.length > 0 ? terminals[0].id : null;
       }
 
-      // Reorder terminals and update displayOrder values based on new positions
-      const reorderedTerminals = arrayMove(state.terminals, oldIndex, newIndex);
-      const terminalsWithOrder = reorderedTerminals.map((terminal, index) => ({
-        ...terminal,
+      // Adjust displayOrder for remaining terminals to maintain correct visual order
+      const reorderedTerminals = terminals.map((t, index) => ({
+        ...t,
         displayOrder: index,
       }));
 
       return {
-        terminals: terminalsWithOrder,
+        terminals: reorderedTerminals,
+        activeTerminalId,
       };
     });
+
+    debugLog(`[TerminalStore] Removed terminal: ${id}`);
+  },
+
+  updateTerminal: (id: string, updates: Partial<Terminal>) => {
+    set((state) => ({
+      terminals: state.terminals.map((t) => (t.id === id ? { ...t, ...updates } : t)),
+    }));
+    debugLog(`[TerminalStore] Updated terminal: ${id}`, updates);
+  },
+
+  setActiveTerminal: (id: string | null) => {
+    set({ activeTerminalId: id });
+    if (id) {
+      debugLog(`[TerminalStore] Set active terminal: ${id}`);
+    }
+  },
+
+  setTerminalStatus: (id: string, status: TerminalStatus) => {
+    set((state) => ({
+      terminals: state.terminals.map((t) => (t.id === id ? { ...t, status } : t)),
+    }));
+    debugLog(`[TerminalStore] Set terminal status: ${id} -> ${status}`);
+  },
+
+  setClaudeMode: (id: string, isClaudeMode: boolean) => {
+    set((state) => ({
+      terminals: state.terminals.map((t) => (t.id === id ? { ...t, isClaudeMode } : t)),
+    }));
+    debugLog(`[TerminalStore] Set Claude mode: ${id} -> ${isClaudeMode}`);
+  },
+
+  setClaudeSessionId: (id: string, sessionId: string) => {
+    set((state) => ({
+      terminals: state.terminals.map((t) => (t.id === id ? { ...t, claudeSessionId: sessionId } : t)),
+    }));
+    debugLog(`[TerminalStore] Set Claude session ID: ${id} -> ${sessionId}`);
+  },
+
+  setAssociatedTask: (id: string, taskId: string | undefined) => {
+    set((state) => ({
+      terminals: state.terminals.map((t) => (t.id === id ? { ...t, associatedTaskId: taskId } : t)),
+    }));
+    debugLog(`[TerminalStore] Set associated task for terminal ${id}: ${taskId}`);
+  },
+
+  setWorktreeConfig: (id: string, config: TerminalWorktreeConfig | undefined) => {
+    set((state) => ({
+      terminals: state.terminals.map((t) => (t.id === id ? { ...t, worktreeConfig: config } : t)),
+    }));
+    if (config) {
+      debugLog(`[TerminalStore] Set worktree config for terminal ${id}:`, config);
+    } else {
+      debugLog(`[TerminalStore] Cleared worktree config for terminal ${id}`);
+    }
+  },
+
+  setClaudeBusy: (id: string, isBusy: boolean) => {
+    set((state) => ({
+      terminals: state.terminals.map((t) => (t.id === id ? { ...t, isClaudeBusy: isBusy } : t)),
+    }));
+    debugLog(`[TerminalStore] Set Claude busy: ${id} -> ${isBusy}`);
+  },
+
+  setPendingClaudeResume: (id: string, pending: boolean) => {
+    set((state) => ({
+      terminals: state.terminals.map((t) => (t.id === id ? { ...t, pendingClaudeResume: pending } : t)),
+    }));
+    debugLog(`[TerminalStore] Set pending Claude resume: ${id} -> ${pending}`);
+  },
+
+  setClaudeNamedOnce: (id: string, named: boolean) => {
+    set((state) => ({
+      terminals: state.terminals.map((t) => (t.id === id ? { ...t, claudeNamedOnce: named } : t)),
+    }));
+    debugLog(`[TerminalStore] Set Claude named once: ${id} -> ${named}`);
+  },
+
+  clearActivityAlert: (id: string) => {
+    set((state) => ({
+      terminals: state.terminals.map((t) => (t.id === id ? { ...t, hasActivityAlert: false } : t)),
+    }));
+    debugLog(`[TerminalStore] Cleared activity alert for terminal: ${id}`);
+  },
+
+  clearAllTerminals: () => {
+    // Clear all buffers
+    get().terminals.forEach(t => {
+      terminalBufferManager.clear(t.id);
+      unregisterOutputCallback(t.id);
+      terminalActors.delete(t.id);
+    });
+
+    set({
+      terminals: [],
+      layouts: [],
+      activeTerminalId: null,
+      hasRestoredSessions: false,
+    });
+    debugLog(`[TerminalStore] Cleared all terminals`);
+  },
+
+  setHasRestoredSessions: (value: boolean) => {
+    set({ hasRestoredSessions: value });
+    debugLog(`[TerminalStore] Set has restored sessions: ${value}`);
+  },
+
+  reorderTerminals: (activeId: string, overId: string) => {
+    set((state) => {
+      const activeIndex = state.terminals.findIndex(t => t.id === activeId);
+      const overIndex = state.terminals.findIndex(t => t.id === overId);
+
+      if (activeIndex === -1 || overIndex === -1) {
+        return state;
+      }
+
+      const newTerminals = arrayMove(state.terminals, activeIndex, overIndex);
+
+      // Update displayOrder to reflect new positions
+      const reorderedTerminals = newTerminals.map((t, index) => ({
+        ...t,
+        displayOrder: index,
+      }));
+
+      return { terminals: reorderedTerminals };
+    });
+    debugLog(`[TerminalStore] Reordered terminals: ${activeId} -> ${overId}`);
   },
 
   resumeAllPendingClaude: async () => {
     const state = get();
+    const pendingTerminals = state.terminals.filter(t => t.pendingClaudeResume);
 
-    // Filter terminals with pending Claude resume
-    const pendingTerminals = state.terminals.filter(t => t.pendingClaudeResume === true);
+    debugLog(`[TerminalStore] Resuming ${pendingTerminals.length} pending Claude terminals`);
 
-    if (pendingTerminals.length === 0) {
-      debugLog('[TerminalStore] No terminals with pending Claude resume');
-      return;
+    for (const terminal of pendingTerminals) {
+      sendTerminalMachineEvent(terminal.id, { type: 'CLAUDE_RESUME' });
+      set((state) => ({
+        terminals: state.terminals.map(t => (t.id === terminal.id ? { ...t, pendingClaudeResume: false } : t)),
+      }));
     }
-
-    debugLog(`[TerminalStore] Resuming ${pendingTerminals.length} pending Claude sessions with 500ms stagger`);
-
-    // Iterate through terminals with staggered delays
-    for (let i = 0; i < pendingTerminals.length; i++) {
-      const terminal = pendingTerminals[i];
-      // Clear the pending flag BEFORE IPC call to prevent race condition
-      // with auto-resume effect in Terminal.tsx (which checks this flag on a 100ms timeout)
-      get().setPendingClaudeResume(terminal.id, false);
-
-      debugLog(`[TerminalStore] Activating deferred Claude resume for terminal: ${terminal.id}`);
-      window.electronAPI.activateDeferredClaudeResume(terminal.id);
-
-      // Wait 500ms before processing next terminal (staggered delay)
-      if (i < pendingTerminals.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-    }
-
-    debugLog('[TerminalStore] Completed resuming all pending Claude sessions');
   },
 
+  // Selectors
   getTerminal: (id: string) => {
-    return get().terminals.find((t) => t.id === id);
+    const state = get();
+    return state.terminals.find(t => t.id === id);
   },
 
   getActiveTerminal: () => {
     const state = get();
-    return state.terminals.find((t) => t.id === state.activeTerminalId);
+    return state.terminals.find(t => t.id === state.activeTerminalId);
   },
 
   canAddTerminal: (projectPath?: string) => {
     const state = get();
-    return getActiveProjectTerminalCount(state.terminals, projectPath) < state.maxTerminals;
+    const activeCount = getActiveProjectTerminalCount(state.terminals, projectPath);
+    return activeCount < state.maxTerminals;
   },
 
   getTerminalsForProject: (projectPath: string) => {
-    return get().terminals.filter(t => t.projectPath === projectPath);
+    const state = get();
+    return state.terminals.filter(t => t.projectPath === projectPath && t.status !== 'exited');
   },
 
   getWorktreeCount: () => {
-    return get().terminals.filter(t => t.worktreeConfig).length;
+    const state = get();
+    return state.terminals.filter(t => t.worktreeConfig !== undefined && t.status !== 'exited').length;
   },
 }));
-
-// Track in-progress restore operations to prevent race conditions
-const restoringProjects = new Set<string>();
-
-/**
- * Restore terminal sessions for a project from persisted storage
- */
-export async function restoreTerminalSessions(projectPath: string): Promise<void> {
-  // Validate input
-  if (!projectPath || typeof projectPath !== 'string') {
-    debugLog('[TerminalStore] Invalid projectPath, skipping restore');
-    return;
-  }
-
-  // Prevent concurrent restores for same project (race condition protection)
-  if (restoringProjects.has(projectPath)) {
-    debugLog('[TerminalStore] Already restoring terminals for this project, skipping');
-    return;
-  }
-  restoringProjects.add(projectPath);
-
-  try {
-    const store = useTerminalStore.getState();
-
-    // Get terminals for this project that exist in state
-    const projectTerminals = store.terminals.filter(t => t.projectPath === projectPath);
-
-    if (projectTerminals.length > 0) {
-      // Check if PTY processes are alive for existing terminals
-      const aliveChecks = await Promise.all(
-        projectTerminals.map(async (terminal) => {
-          try {
-            const result = await window.electronAPI.checkTerminalPtyAlive(terminal.id);
-            return { terminal, alive: result.success && result.data?.alive === true };
-          } catch {
-            return { terminal, alive: false };
-          }
-        })
-      );
-
-      // Remove dead terminals from store (they have state but no PTY process)
-      const deadTerminals = aliveChecks.filter(c => !c.alive);
-
-      for (const { terminal } of deadTerminals) {
-        debugLog(`[TerminalStore] Removing dead terminal: ${terminal.id}`);
-        store.removeTerminal(terminal.id);
-      }
-
-      // If all terminals were alive, we're done
-      if (deadTerminals.length === 0) {
-        debugLog('[TerminalStore] All terminals have live PTY processes');
-        return;
-      }
-
-      // Note: We don't skip disk restore when alive terminals exist because:
-      // 1. Dead terminals were removed from state above
-      // 2. addRestoredTerminal() has duplicate protection (checks terminal ID)
-      // 3. Disk restore will safely only add back the dead terminals
-      debugLog(`[TerminalStore] ${deadTerminals.length} terminals had dead PTY, will restore from disk`);
-    }
-
-    // Restore from disk
-    debugLog(`[TerminalStore] Fetching terminal sessions from disk for project: ${projectPath}`);
-    const result = await window.electronAPI.getTerminalSessions(projectPath);
-    if (!result.success || !result.data || result.data.length === 0) {
-      debugLog(`[TerminalStore] No sessions found on disk for project: ${projectPath}, success: ${result.success}, sessionCount: ${result.data?.length || 0}`);
-      return;
-    }
-    debugLog(`[TerminalStore] Found ${result.data.length} sessions on disk for project: ${projectPath}`);
-
-    // Sort sessions by displayOrder before restoring (lower = further left)
-    // Sessions without displayOrder are placed at the end
-    const sortedSessions = [...result.data].sort((a, b) => {
-      const orderA = a.displayOrder ?? Number.MAX_SAFE_INTEGER;
-      const orderB = b.displayOrder ?? Number.MAX_SAFE_INTEGER;
-      return orderA - orderB;
-    });
-
-    // Add terminals to the store in correct order (they'll be created in the TerminalGrid component)
-    debugLog(`[TerminalStore] Adding ${sortedSessions.length} sorted sessions to store`);
-    for (const session of sortedSessions) {
-      store.addRestoredTerminal(session);
-    }
-
-    store.setHasRestoredSessions(true);
-    debugLog(`[TerminalStore] Completed terminal session restoration for project: ${projectPath}`);
-  } catch (error) {
-    debugError('[TerminalStore] Error restoring sessions:', error);
-  } finally {
-    restoringProjects.delete(projectPath);
-  }
-}

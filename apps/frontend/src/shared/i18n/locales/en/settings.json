@@ -286,6 +286,11 @@
       "label": "Auto-name Claude terminals",
       "description": "Use AI to generate a descriptive name for Claude terminals based on your first message"
     },
+    "remoteProcesses": {
+      "label": "Custom remote processes",
+      "description": "Add process names for SSH wrappers or remote tools that should be detected as remote sessions (comma-separated)",
+      "placeholder": "e.g. autossh, sshpass, rdev"
+    },
     "yoloMode": {
       "label": "YOLO Mode",
       "description": "Start Claude with --dangerously-skip-permissions flag, bypassing all safety prompts. Use with extreme caution.",

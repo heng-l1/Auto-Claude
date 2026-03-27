@@ -321,6 +321,8 @@ export interface AppSettings {
   sentryEnabled?: boolean;
   // Auto-name Claude terminals based on initial message (only triggers once per session)
   autoNameClaudeTerminals?: boolean;
+  /** Custom process names to detect as remote sessions (merged with defaults) */
+  customRemoteProcesses?: string[];
   // Track which version warnings have been shown (e.g., ["2.7.5"])
   seenVersionWarnings?: string[];
   // Sidebar collapsed state (icons only when true)

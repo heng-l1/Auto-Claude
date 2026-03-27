@@ -390,6 +390,33 @@ export function DevToolsSettings({ settings, onSettingsChange }: DevToolsSetting
           </div>
         </div>
 
+        {/* Custom Remote Processes */}
+        <div className="space-y-3 pt-2 border-t border-border">
+          <div className="space-y-0.5">
+            <Label htmlFor="custom-remote-processes" className="text-sm font-medium">
+              {t('devtools.remoteProcesses.label', 'Custom remote processes')}
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              {t('devtools.remoteProcesses.description', 'Add process names for SSH wrappers or remote tools that should be detected as remote sessions (comma-separated)')}
+            </p>
+          </div>
+          <Input
+            id="custom-remote-processes"
+            value={(settings.customRemoteProcesses || []).join(', ')}
+            onChange={(e) => {
+              const parsed = e.target.value
+                .split(',')
+                .map((s) => s.trim().toLowerCase())
+                .filter(Boolean);
+              onSettingsChange({
+                ...settings,
+                customRemoteProcesses: parsed.length ? parsed : undefined
+              });
+            }}
+            placeholder={t('devtools.remoteProcesses.placeholder', 'e.g. autossh, sshpass, rdev')}
+          />
+        </div>
+
         {/* YOLO Mode Toggle */}
         <div className="space-y-3 rounded-md border border-amber-500/30 bg-amber-500/5 p-4">
           <div className="flex items-center justify-between">
