@@ -34,9 +34,14 @@ jobs:
       - name: Validate lock file is in sync
         run: |
           cd apps/backend
-          uv pip compile --dry-run --quiet requirements.txt -o requirements.lock --generate-hashes --universal --python-version 3.11
-          if [ $? -ne 0 ]; then
-            echo "::error::Lock file is out of sync with requirements.txt. Run 'npm run lockfile:sync' and commit the changes."
+          uv pip compile requirements.txt --generate-hashes --universal --python-version 3.11 --output-file /tmp/requirements-check.lock
+          # Compare non-comment lines (uv embeds timestamps and paths in comments)
+          grep -v '^#' requirements.lock | grep -v '^$' > /tmp/existing.stripped
+          grep -v '^#' /tmp/requirements-check.lock | grep -v '^$' > /tmp/check.stripped
+          if ! diff -q /tmp/existing.stripped /tmp/check.stripped > /dev/null 2>&1; then
+            echo "::error::Lock file is out of sync with requirements.txt."
+            echo "::error::Run: uv pip compile requirements.txt --generate-hashes --universal --python-version 3.11 --output-file requirements.lock"
+            diff /tmp/existing.stripped /tmp/check.stripped || true
             exit 1
           fi
           echo "Lock file is in sync with requirements.txt"
