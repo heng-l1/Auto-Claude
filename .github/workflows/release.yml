@@ -40,7 +40,7 @@ jobs:
             exit 1
           fi
           # Verify all requirements.txt entries have corresponding pins in the lock file
-          uv pip compile requirements.txt --generate-hashes --universal --python-version 3.11 --output-file /dev/null
+          uv pip compile requirements.txt --generate-hashes --universal --python-version 3.11 --output-file /tmp/requirements-check.lock
           echo "Lock file validation passed"
 
   build-macos:
