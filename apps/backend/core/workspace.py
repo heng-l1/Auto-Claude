@@ -312,7 +312,13 @@ def merge_existing_build(
 
                     if had_conflicts or ai_assisted or direct_copy or git_merge_used:
                         # AI resolved conflicts, assisted with merges, git merge was used, or direct copy was used
-                        # Changes are already written and staged - no need for additional git merge
+                        # Changes are already written and staged - commit unless no_commit
+                        if not no_commit:
+                            run_git(
+                                ["commit", "-m", f"Merge auto-claude/{spec_name}"],
+                                cwd=project_dir,
+                            )
+
                         _print_merge_success(
                             no_commit, stats, spec_name=spec_name, keep_worktree=True
                         )
