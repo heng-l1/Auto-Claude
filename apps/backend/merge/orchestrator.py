@@ -27,6 +27,7 @@ from .ai_resolver import AIResolver, create_claude_resolver
 from .auto_merger import AutoMerger
 from .conflict_detector import ConflictDetector
 from .conflict_resolver import ConflictResolver
+from .export_validator import validate_exports
 from .file_evolution import FileEvolutionTracker
 from .git_utils import find_worktree, get_file_from_branch
 from .merge_pipeline import MergePipeline
@@ -412,6 +413,11 @@ class MergeOrchestrator:
                 },
             )
 
+            # Validate that no exports were silently lost
+            self._validate_exports_for_report(
+                report, modifications, target_branch
+            )
+
             report.success = report.stats.files_failed == 0
 
             _emit(
@@ -609,6 +615,11 @@ class MergeOrchestrator:
                     "conflicts_found": report.stats.conflicts_detected,
                     "conflicts_resolved": report.stats.conflicts_auto_resolved,
                 },
+            )
+
+            # Validate that no exports were silently lost
+            self._validate_exports_for_multi_task_report(
+                report, file_tasks, target_branch
             )
 
             report.success = report.stats.files_failed == 0
@@ -916,3 +927,92 @@ class MergeOrchestrator:
         report_path = self.reports_dir / f"{name}_{timestamp}.json"
         report.save(report_path)
         logger.info(f"Saved merge report to {report_path}")
+
+    # ------------------------------------------------------------------
+    # Export validation helpers
+    # ------------------------------------------------------------------
+
+    def _get_baseline_for_validation(
+        self, file_path: str, target_branch: str
+    ) -> str | None:
+        """Get baseline content for export validation."""
+        baseline = self.evolution_tracker.get_baseline_content(file_path)
+        if baseline is None:
+            baseline = get_file_from_branch(
+                self.project_dir, file_path, target_branch
+            )
+        return baseline
+
+    def _validate_exports_for_report(
+        self,
+        report: MergeReport,
+        modifications: list,
+        target_branch: str,
+    ) -> None:
+        """Run export validation for single-task merge results.
+
+        For each successfully merged file, compares baseline exports
+        against merged content and attaches warnings to the result.
+        """
+        for file_path, snapshot in modifications:
+            result = report.file_results.get(file_path)
+            if not result or not result.merged_content or not result.success:
+                continue
+
+            baseline = self._get_baseline_for_validation(file_path, target_branch)
+            if not baseline:
+                continue
+
+            warnings = validate_exports(
+                baseline_content=baseline,
+                merged_content=result.merged_content,
+                file_path=file_path,
+                task_snapshots=[snapshot],
+            )
+            if warnings:
+                result.warnings.extend(warnings)
+                debug_warning(
+                    MODULE,
+                    f"Export validation warnings for {file_path}",
+                    warnings=warnings,
+                )
+
+    def _validate_exports_for_multi_task_report(
+        self,
+        report: MergeReport,
+        file_tasks: dict,
+        target_branch: str,
+    ) -> None:
+        """Run export validation for multi-task merge results.
+
+        For each successfully merged file, compares baseline exports
+        against merged content and attaches warnings to the result.
+        """
+        for file_path in file_tasks:
+            result = report.file_results.get(file_path)
+            if not result or not result.merged_content or not result.success:
+                continue
+
+            baseline = self._get_baseline_for_validation(file_path, target_branch)
+            if not baseline:
+                continue
+
+            # Gather all task snapshots that touched this file
+            evolution = self.evolution_tracker.get_file_evolution(file_path)
+            snapshots = []
+            if evolution:
+                snapshots = list(evolution.task_snapshots)
+
+            warnings = validate_exports(
+                baseline_content=baseline,
+                merged_content=result.merged_content,
+                file_path=file_path,
+                task_snapshots=snapshots,
+            )
+            if warnings:
+                result.warnings.extend(warnings)
+                debug_warning(
+                    MODULE,
+                    f"Export validation warnings for {file_path}",
+                    warnings=warnings,
+                )

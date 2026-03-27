@@ -1772,8 +1772,7 @@ def _resolve_git_conflicts_with_ai(
                     target_path.unlink()
                     run_git(["add", target_file_path], cwd=project_dir)
             else:
-                # Modified without path change - simple copy
-                # Check if binary file to use correct read/write method
+                # Modified file - need proper merge to preserve changes from both sides
                 target_path = project_dir / target_file_path
                 target_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -1791,11 +1790,87 @@ def _resolve_git_conflicts_with_ai(
                                 f"Merged binary with path mapping: {file_path} -> {target_file_path}",
                             )
                 else:
-                    content = _get_file_content_from_ref(
+                    worktree_content = _get_file_content_from_ref(
                         project_dir, spec_branch, file_path
                     )
-                    if content is not None:
-                        target_path.write_text(content, encoding="utf-8")
+                    if worktree_content is None:
+                        continue
+
+                    # Get main branch content so we don't silently discard
+                    # changes that main made (e.g. new exports added after
+                    # the task branched off).
+                    main_content = _get_file_content_from_ref(
+                        project_dir, base_branch, target_file_path
+                    )
+                    base_content = None
+                    if merge_base:
+                        base_content = _get_file_content_from_ref(
+                            project_dir, merge_base, file_path
+                        )
+
+                    # If main hasn't changed from base, the spec branch is
+                    # the only side with edits — safe to copy directly.
+                    # If main changed too, do a proper 3-way merge so
+                    # nothing is silently dropped.
+                    if main_content and main_content != base_content:
+                        merge_ok, merged = _git_merge_file(
+                            project_dir,
+                            base_content or "",
+                            main_content,
+                            worktree_content,
+                        )
+                        if merge_ok and merged is not None:
+                            target_path.write_text(merged, encoding="utf-8")
+                            run_git(["add", target_file_path], cwd=project_dir)
+                            resolved_files.append(target_file_path)
+                            auto_merged_count += 1
+                            debug(
+                                MODULE,
+                                f"  {file_path}: git 3-way merged (non-conflicting)",
+                            )
+                        else:
+                            # git merge-file had conflicts — send to AI
+                            ai_task = ParallelMergeTask(
+                                file_path=target_file_path,
+                                main_content=main_content,
+                                worktree_content=worktree_content,
+                                base_content=base_content,
+                                spec_name=spec_name,
+                                project_dir=project_dir,
+                            )
+                            ai_result = asyncio.run(
+                                _run_parallel_merges(
+                                    tasks=[ai_task],
+                                    project_dir=project_dir,
+                                    max_concurrent=1,
+                                )
+                            )
+                            if ai_result and ai_result[0].success:
+                                target_path.write_text(
+                                    ai_result[0].merged_content, encoding="utf-8"
+                                )
+                                run_git(["add", target_file_path], cwd=project_dir)
+                                resolved_files.append(target_file_path)
+                                ai_merged_count += 1
+                                debug(
+                                    MODULE,
+                                    f"  {file_path}: AI-merged (non-conflicting, both sides changed)",
+                                )
+                            else:
+                                # AI merge failed — fall back to spec branch copy
+                                # so we don't block the whole merge
+                                debug_warning(
+                                    MODULE,
+                                    f"  {file_path}: AI merge failed, falling back to spec branch copy",
+                                )
+                                target_path.write_text(
+                                    worktree_content, encoding="utf-8"
+                                )
+                                run_git(["add", target_file_path], cwd=project_dir)
+                                resolved_files.append(target_file_path)
+                    else:
+                        # Main unchanged from base — spec branch is sole author
+                        target_path.write_text(worktree_content, encoding="utf-8")
                         run_git(["add", target_file_path], cwd=project_dir)
                         resolved_files.append(target_file_path)
                         if target_file_path != file_path:
@@ -1980,6 +2055,62 @@ def _try_simple_3way_merge(
     # Both changed differently from base - need AI merge
     # We could try a line-by-line merge here, but for safety let's use AI
     return False, None
+
+
+def _git_merge_file(
+    project_dir: Path,
+    base: str,
+    ours: str,
+    theirs: str,
+) -> tuple[bool, str | None]:
+    """
+    Run a proper 3-way merge using git merge-file.
+
+    Unlike _try_simple_3way_merge which only handles trivial cases (one side
+    unchanged), this calls git's actual merge machinery so non-overlapping
+    changes from both sides are combined correctly.
+
+    Returns:
+        (success, merged_content) — success is True when the merge is clean.
+    """
+    import tempfile
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            base_file = tmp / "base"
+            ours_file = tmp / "ours"
+            theirs_file = tmp / "theirs"
+
+            base_file.write_text(base, encoding="utf-8")
+            ours_file.write_text(ours, encoding="utf-8")
+            theirs_file.write_text(theirs, encoding="utf-8")
+
+            # git merge-file -p writes merged result to stdout.
+            # Exit code 0 = clean merge, >0 = conflicts.
+            result = run_git(
+                [
+                    "merge-file",
+                    "-p",
+                    str(ours_file),
+                    str(base_file),
+                    str(theirs_file),
+                ],
+                cwd=project_dir,
+            )
+
+            if result.returncode == 0:
+                return True, result.stdout
+            else:
+                debug_warning(
+                    MODULE,
+                    "git merge-file returned conflicts",
+                    returncode=result.returncode,
+                )
+                return False, None
+    except Exception as e:
+        debug_warning(MODULE, f"git merge-file failed: {e}")
+        return False, None
 
 
 def _build_merge_prompt(

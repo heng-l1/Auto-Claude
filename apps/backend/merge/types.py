@@ -545,6 +545,7 @@ class MergeResult:
     tokens_used: int = 0
     explanation: str = ""
     error: str | None = None
+    warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -558,6 +559,7 @@ class MergeResult:
             "tokens_used": self.tokens_used,
             "explanation": self.explanation,
             "error": self.error,
+            "warnings": self.warnings,
         }
 
     @property
