@@ -188,6 +188,7 @@ DEFAULT_IGNORE_PATTERNS = [
     r"pnpm-lock\.yaml$",
     r"Cargo\.lock$",
     r"poetry\.lock$",
+    r"requirements\.lock$",
 ]
 
 # Binary file extensions to skip
