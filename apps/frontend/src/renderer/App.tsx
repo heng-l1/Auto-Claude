@@ -213,11 +213,12 @@ export function App() {
   const settings = useSettingsStore((state) => state.settings);
   const settingsLoading = useSettingsStore((state) => state.isLoading);
 
-  // API Profile state
-  const profiles = useSettingsStore((state) => state.profiles);
-
-  // Claude Profile state (OAuth)
-  const claudeProfiles = useClaudeProfileStore((state) => state.profiles);
+  // Derived boolean selectors for onboarding effect — avoids re-renders from
+  // full array references that create new objects on every store update.
+  const hasAPIProfiles = useSettingsStore((state) => state.profiles.length > 0);
+  const hasOAuthConfigured = useClaudeProfileStore((state) =>
+    state.profiles.some(p => p.oauthToken || (p.isDefault && p.configDir))
+  );
 
   // UI State
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -367,13 +368,7 @@ export function App() {
   // First-run detection - show onboarding wizard if not completed
   // Only check AFTER settings have been loaded from disk to avoid race condition
   useEffect(() => {
-    // Check if either auth method is configured
-    // API profiles: if profiles exist, auth is configured (user has gone through setup)
-    const hasAPIProfileConfigured = profiles.length > 0;
-    const hasOAuthConfigured = claudeProfiles.some(p =>
-      p.oauthToken || (p.isDefault && p.configDir)
-    );
-    const hasAnyAuth = hasAPIProfileConfigured || hasOAuthConfigured;
+    const hasAnyAuth = hasAPIProfiles || hasOAuthConfigured;
 
     // Only show wizard if onboarding not completed AND no auth is configured
     if (settingsHaveLoaded &&
@@ -381,7 +376,7 @@ export function App() {
         !hasAnyAuth) {
       setIsOnboardingWizardOpen(true);
     }
-  }, [settingsHaveLoaded, settings.onboardingCompleted, profiles, claudeProfiles]);
+  }, [settingsHaveLoaded, settings.onboardingCompleted, hasAPIProfiles, hasOAuthConfigured]);
 
   // Version 2.7.5 warning - show once to notify users about reauthentication requirement
   useEffect(() => {
