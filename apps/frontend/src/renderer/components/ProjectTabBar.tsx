@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -80,6 +80,64 @@ export function ProjectTabBar({
       visualIndexMap.set(entry.projectId, visualTabIndex++);
     }
   }
+
+  // Scroll container ref for horizontal scrolling
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Scroll shadow state
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  // Update scroll shadow state
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const updateScrollState = () => {
+      setCanScrollLeft(container.scrollLeft > 0);
+      setCanScrollRight(
+        container.scrollLeft < container.scrollWidth - container.clientWidth - 1
+      );
+    };
+
+    updateScrollState();
+    container.addEventListener('scroll', updateScrollState);
+    const resizeObserver = new ResizeObserver(updateScrollState);
+    resizeObserver.observe(container);
+
+    return () => {
+      container.removeEventListener('scroll', updateScrollState);
+      resizeObserver.disconnect();
+    };
+  }, [tabLayout]);
+
+  // Convert vertical wheel scroll to horizontal for the tab container
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (e.deltaY !== 0) {
+        e.preventDefault();
+        container.scrollLeft += e.deltaY;
+      }
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => container.removeEventListener('wheel', handleWheel);
+  }, []);
+
+  // Auto-scroll active tab into view
+  useEffect(() => {
+    if (!activeProjectId) return;
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const tabElement = container.querySelector(`[data-tab-id="${activeProjectId}"]`);
+    if (tabElement) {
+      tabElement.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    }
+  }, [activeProjectId]);
 
   // Keyboard shortcuts for tab navigation
   useEffect(() => {
@@ -188,44 +246,58 @@ export function ProjectTabBar({
       'overflow-hidden',
       className
     )}>
-      <div className="flex items-center flex-1 min-w-0 overflow-x-auto scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
-        {tabLayout.map((entry) => {
-          if (entry.type === 'group') {
-            const colorConfig = TAB_GROUP_COLORS.find(c => c.id === entry.group.color);
-            return (
-              <div
-                key={`group:${entry.group.id}`}
-                className={cn(
-                  'flex items-center min-w-0',
-                  colorConfig?.bg,
-                  'border-b-2',
-                  colorConfig?.border
-                )}
-                style={{ flexGrow: entry.projectIds.length, flexShrink: 1 }}
-              >
-                <SortableTabGroupChip
-                  group={entry.group}
-                  tabCount={entry.projectIds.length}
-                  onToggleCollapsed={toggleTabGroupCollapsed}
-                  onRename={renameTabGroup}
-                  onSetColor={(groupId, color) => storeSetTabGroupColor(groupId, color as TabGroupColor)}
-                  onUngroup={removeTabGroup}
-                  onCloseGroup={closeTabGroup}
-                />
-                {!entry.group.collapsed && entry.projectIds.map((projectId) => {
-                  const project = projectMap.get(projectId);
-                  if (!project) return null;
-                  return renderTab(project, entry.group);
-                })}
-              </div>
-            );
-          }
+      <div className="relative flex-1 min-w-0">
+        {canScrollLeft && (
+          <div className="absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-background to-transparent z-10 pointer-events-none" />
+        )}
+        <div
+          ref={scrollContainerRef}
+          className="flex items-center overflow-x-auto scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent"
+        >
+          {tabLayout.map((entry) => {
+            if (entry.type === 'group') {
+              const colorConfig = TAB_GROUP_COLORS.find(c => c.id === entry.group.color);
+              return (
+                <div
+                  key={`group:${entry.group.id}`}
+                  className={cn(
+                    'flex items-center min-w-0 overflow-hidden',
+                    colorConfig?.bg,
+                    'border-b-2',
+                    colorConfig?.border
+                  )}
+                  style={{
+                    flexGrow: entry.group.collapsed ? 0 : entry.projectIds.length,
+                    flexShrink: 0,
+                  }}
+                >
+                  <SortableTabGroupChip
+                    group={entry.group}
+                    tabCount={entry.projectIds.length}
+                    onToggleCollapsed={toggleTabGroupCollapsed}
+                    onRename={renameTabGroup}
+                    onSetColor={(groupId, color) => storeSetTabGroupColor(groupId, color as TabGroupColor)}
+                    onUngroup={removeTabGroup}
+                    onCloseGroup={closeTabGroup}
+                  />
+                  {!entry.group.collapsed && entry.projectIds.map((projectId) => {
+                    const project = projectMap.get(projectId);
+                    if (!project) return null;
+                    return renderTab(project, entry.group);
+                  })}
+                </div>
+              );
+            }
 
-          // Standalone tab (not in any group)
-          const project = projectMap.get(entry.projectId);
-          if (!project) return null;
-          return renderTab(project);
-        })}
+            // Standalone tab (not in any group)
+            const project = projectMap.get(entry.projectId);
+            if (!project) return null;
+            return renderTab(project);
+          })}
+        </div>
+        {canScrollRight && (
+          <div className="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-background to-transparent z-10 pointer-events-none" />
+        )}
       </div>
 
       <div className="flex items-center gap-2 px-2 py-1 flex-shrink-0 border-l border-border">

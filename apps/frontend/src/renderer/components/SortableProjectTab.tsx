@@ -184,10 +184,10 @@ export function SortableProjectTab({
         <div
           ref={setNodeRef}
           style={style}
+          data-tab-id={project.id}
           className={cn(
             'group relative flex items-center min-w-0',
-            'flex-1 max-w-[200px]',
-            isActive ? 'min-w-[60px]' : 'min-w-[48px]',
+            'flex-shrink-0 w-[160px]',
             'border-r border-border last:border-r-0',
             'touch-none transition-all duration-200',
             isDragging && 'opacity-60 scale-[0.98] shadow-lg',
@@ -402,39 +402,44 @@ export function SortableProjectTab({
             )}
           </>
         )}
+
         {hasGroupMenuItems && <ContextMenuSeparator />}
-        <ContextMenuItem
-          onClick={() => {
-            setIsEditing(true);
-            setEditValue(displayName);
-          }}
-        >
-          {t('projectTab.renameTab')}
-        </ContextMenuItem>
-        {canClose && (
-          <ContextMenuItem
-            onClick={(e) => onClose(e as unknown as React.MouseEvent)}
-          >
-            {t('projectTab.closeTab')}
-          </ContextMenuItem>
-        )}
-        <ContextMenuSeparator />
-        <ContextMenuLabel>{t('projectTab.setColor')}</ContextMenuLabel>
-        {TAB_COLORS.map((color) => (
-          <ContextMenuItem
-            key={color.id}
-            onClick={() => onColorChange?.(color.id)}
-          >
-            <span className={cn('w-3 h-3 rounded-full inline-block mr-2', color.swatch)} />
-            {t(color.labelKey)}
-          </ContextMenuItem>
-        ))}
-        {project.settings?.tabColor && (
+
+        {onColorChange && (
           <>
-            <ContextMenuSeparator />
-            <ContextMenuItem onClick={() => onColorChange?.(undefined)}>
-              {t('projectTab.removeColor')}
-            </ContextMenuItem>
+            <ContextMenuLabel>{t('projectTab.tabColor')}</ContextMenuLabel>
+            <div className="grid grid-cols-4 gap-1 px-2 py-1">
+              {TAB_COLORS.map((color) => (
+                <button
+                  key={color.id}
+                  className={cn(
+                    'w-6 h-6 rounded border-2 transition-all',
+                    project.settings?.tabColor === color.id
+                      ? 'border-foreground scale-110'
+                      : 'border-transparent hover:scale-105'
+                  )}
+                  style={{ backgroundColor: color.hex }}
+                  onClick={() => onColorChange(color.id)}
+                  title={color.label}
+                  aria-label={`${t('projectTab.tabColor')}: ${color.label}`}
+                />
+              ))}
+              <button
+                className={cn(
+                  'w-6 h-6 rounded border-2 transition-all flex items-center justify-center',
+                  !project.settings?.tabColor
+                    ? 'border-foreground scale-110'
+                    : 'border-border hover:scale-105'
+                )}
+                onClick={() => onColorChange(undefined)}
+                title={t('projectTab.resetColor')}
+                aria-label={t('projectTab.resetColor')}
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </>
         )}
       </ContextMenuContent>
