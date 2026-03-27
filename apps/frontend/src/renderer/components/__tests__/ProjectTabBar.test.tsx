@@ -23,6 +23,7 @@ function createTestProject(overrides: Partial<Project> = {}): Project {
         onTaskComplete: true,
         onTaskFailed: true,
         onReviewNeeded: true,
+        onPRReviewComplete: true,
         sound: false
       },
       graphitiMcpEnabled: false
