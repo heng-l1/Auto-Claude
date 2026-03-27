@@ -38,6 +38,7 @@ import {
 } from "./utils/subprocess-runner";
 import { getPRStatusPoller } from "../../services/pr-status-poller";
 import { PRReviewStateManager } from "../../pr-review-state-manager";
+import { notificationService } from "../../notification-service";
 import { safeBreadcrumb, safeCaptureException } from "../../sentry";
 import { sanitizeForSentry } from "../../../shared/utils/sentry-privacy";
 import type {
@@ -2143,6 +2144,7 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
           stateManager.handleComplete(projectId, prNumber, result);
           sendComplete(result);
           prReviewStateManager?.handleComplete(projectId, prNumber, result);
+          notificationService.notifyPRReviewComplete(prNumber, projectId);
         } finally {
           // Clean up in case we exit before runPRReview was called (e.g., cancelled during CI wait)
           // runPRReview also has its own cleanup, but delete is idempotent
@@ -3236,6 +3238,7 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
             stateManager.handleComplete(projectId, prNumber, result.data!);
             sendComplete(result.data!);
             prReviewStateManager?.handleComplete(projectId, prNumber, result.data!);
+            notificationService.notifyPRReviewComplete(prNumber, projectId);
           } finally {
             // Always clean up registry, whether we exit normally or via error
             runningReviews.delete(reviewKey);
