@@ -28,13 +28,13 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install pip-tools
-        run: pip install pip-tools
+      - name: Install uv
+        run: pip install uv
 
       - name: Validate lock file is in sync
         run: |
           cd apps/backend
-          pip-compile --dry-run --quiet requirements.txt -o requirements.lock --generate-hashes
+          uv pip compile --dry-run --quiet requirements.txt -o requirements.lock --generate-hashes --universal --python-version 3.11
           if [ $? -ne 0 ]; then
             echo "::error::Lock file is out of sync with requirements.txt. Run 'npm run lockfile:sync' and commit the changes."
             exit 1

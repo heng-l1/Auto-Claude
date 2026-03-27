@@ -13,6 +13,9 @@ tomli>=2.0.0; python_version < "3.11"
 # Used on Linux to store OAuth tokens in gnome-keyring/kwallet
 secretstorage>=3.3.3; sys_platform == "linux"
 
+# Windows terminal color support (transitive dep of click, explicit for cross-platform lock file)
+colorama>=0.4.6; sys_platform == "win32"
+
 # Memory Integration - LadybugDB (embedded graph database)
 # Requires Python 3.12+ (no Docker required)
 real_ladybug>=0.13.0; python_version >= "3.12"

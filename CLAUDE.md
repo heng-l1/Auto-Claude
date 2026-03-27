@@ -173,7 +173,7 @@ Graph-based semantic memory in `integrations/graphiti/`. Configured through the 
 1. **After modifying `requirements.txt`** (adding/removing/updating dependencies):
    ```bash
    cd apps/backend
-   uv pip compile requirements.txt --generate-hashes --output-file requirements.lock
+   uv pip compile requirements.txt --generate-hashes --universal --python-version 3.11 --output-file requirements.lock
    ```
 
 2. **When to regenerate `requirements.lock`:**
