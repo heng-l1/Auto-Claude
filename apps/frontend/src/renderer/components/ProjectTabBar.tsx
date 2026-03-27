@@ -267,7 +267,6 @@ export function ProjectTabBar({
                     colorConfig?.border
                   )}
                   style={{
-                    flexGrow: entry.group.collapsed ? 0 : entry.projectIds.length,
                     flexShrink: 0,
                   }}
                 >
