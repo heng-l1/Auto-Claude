@@ -200,6 +200,21 @@ export function GeneralSettings({
                 />
               </div>
               <div className="flex items-center justify-between">
+                <Label className="font-normal text-foreground">On PR Review Complete</Label>
+                <Switch
+                  checked={settings.notifications.onPRReviewComplete}
+                  onCheckedChange={(checked) =>
+                    setSettings({
+                      ...settings,
+                      notifications: {
+                        ...settings.notifications,
+                        onPRReviewComplete: checked
+                      }
+                    })
+                  }
+                />
+              </div>
+              <div className="flex items-center justify-between">
                 <Label className="font-normal text-foreground">Sound</Label>
                 <Switch
                   checked={settings.notifications.sound}

@@ -558,6 +558,7 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
     { key: 'onTaskComplete', labelKey: 'notifications.onTaskComplete', descriptionKey: 'notifications.onTaskCompleteDescription' },
     { key: 'onTaskFailed', labelKey: 'notifications.onTaskFailed', descriptionKey: 'notifications.onTaskFailedDescription' },
     { key: 'onReviewNeeded', labelKey: 'notifications.onReviewNeeded', descriptionKey: 'notifications.onReviewNeededDescription' },
+    { key: 'onPRReviewComplete', labelKey: 'notifications.onPRReviewComplete', descriptionKey: 'notifications.onPRReviewCompleteDescription' },
     { key: 'sound', labelKey: 'notifications.sound', descriptionKey: 'notifications.soundDescription' }
   ];
 
