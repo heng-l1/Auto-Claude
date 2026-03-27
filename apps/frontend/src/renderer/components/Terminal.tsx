@@ -160,15 +160,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const resizeSequenceRef = useRef<number>(0);
   // Track post-creation dimension check timeout for cleanup
   const postCreationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Concurrency guard for reactive worktree sync polling
-  // Prevents overlapping getWorktreeStatus IPC calls when the effect fires while a check is in-flight
-  const isCheckingWorktreeRef = useRef(false);
 
   // Worktree dialog state
   const [showWorktreeDialog, setShowWorktreeDialog] = useState(false);
-
-  // Context menu state
-  const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
 
   // Terminal store
   const terminal = useTerminalStore((state) => state.terminals.find((t) => t.id === id));
@@ -189,18 +183,15 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     [settings?.customRemoteProcesses]
   );
 
+  // Context menu state
+  const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
+
   // Toast for user feedback
   const { toast } = useToast();
 
   const associatedTask = terminal?.associatedTaskId
     ? tasks.find((t) => t.id === terminal.associatedTaskId)
     : undefined;
-
-  // Derive primitive variables from associatedTask for stable useEffect deps.
-  // Using object properties directly (e.g., associatedTask?.specId) in deps would cause
-  // the effect to re-run on every render since the task object reference may change.
-  const associatedTaskSpecId = associatedTask?.specId;
-  const associatedTaskTitle = associatedTask?.title;
 
   // Setup drop zone for file drag-and-drop
   const { setNodeRef: setDropRef, isOver } = useDroppable({
@@ -331,177 +322,721 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         const now = Date.now();
         if (now - autoCorrectionWindowStartRef.current >= AUTO_CORRECTION_WINDOW_MS) {
           // Log warning if previous window had excessive corrections
-          if (autoCorrectionCountRef.current > AUTO_CORRECTION_WARNING_THRESHOLD) {
+          if (autoCorrectionCountRef.current >= AUTO_CORRECTION_WARNING_THRESHOLD) {
             debugLog(
-              `[Terminal ${id}] Auto-correction frequency warning: ${autoCorrectionCountRef.current} ` +
-              `corrections in the previous ${AUTO_CORRECTION_WINDOW_MS}ms window`
+              `[Terminal ${id}] AUTO-CORRECTION WARNING: ${autoCorrectionCountRef.current} corrections ` +
+              `in last minute - this may indicate a persistent sync issue`
             );
           }
-          // Reset window
-          autoCorrectionWindowStartRef.current = now;
+          // Reset the window
           autoCorrectionCountRef.current = 0;
+          autoCorrectionWindowStartRef.current = now;
         }
-
-        // Perform auto-correction
-        debugLog(`[Terminal ${id}] Auto-correcting PTY dimensions from (${ptyDims.cols}, ${ptyDims.rows}) to (${xtermCols}, ${xtermRows})`);
-        resizePtyWithTracking(xtermCols, xtermRows, 'auto-correction');
-        lastAutoCorrectionTimeRef.current = now;
         autoCorrectionCountRef.current++;
+
+        debugLog(`[Terminal ${id}] AUTO-CORRECTING (#${autoCorrectionCountRef.current}): resizing PTY to ${xtermCols}x${xtermRows}`);
+        lastAutoCorrectionTimeRef.current = Date.now();
+        resizePtyWithTracking(xtermCols, xtermRows, 'AUTO-CORRECTION');
       }
     }
   }, [id, resizePtyWithTracking]);
 
-  /**
-   * Setup xterm.js instance and initialize PTY connection.
-   * This hook initializes the terminal UI, sets up event handlers, and creates the PTY process.
-   */
+  // Initialize xterm with command tracking
   const {
+    terminalRef,
     xtermRef,
-    xtermInstanceRef,
-    handleResize: handleXtermResize,
+    fit,
+    write: _write,  // Output now handled by useGlobalTerminalListeners
+    writeln,
+    focus,
+    dispose,
+    handleCopy,
+    handlePaste,
+    selectAll,
+    clearTerminal,
+    cols,
+    rows,
   } = useXterm({
-    id,
+    terminalId: id,
+    onCommandEnter: handleCommandEnter,
+    onResize: (cols, rows, force) => {
+      // PTY dimension sync validation:
+      // 1. Only resize if PTY is created
+      // 2. Validate dimensions are within acceptable range
+      // 3. Skip if dimensions haven't changed (prevents redundant IPC calls)
+      //    Unless force=true (from refit-all after view switch), which bypasses
+      //    the same-dimension guard to trigger SIGWINCH for TUI redraw
+      if (!isCreatedRef.current) {
+        return;
+      }
+
+      // Validate dimensions are within acceptable range
+      if (cols < MIN_COLS || rows < MIN_ROWS) {
+        return;
+      }
+
+      // Skip redundant resize calls if dimensions haven't changed
+      // When force is true (refit-all), bypass this guard to trigger SIGWINCH
+      if (!force) {
+        const lastDims = lastPtyDimensionsRef.current;
+        if (lastDims && lastDims.cols === cols && lastDims.rows === rows) {
+          return;
+        }
+      }
+
+      // Use helper to resize PTY with proper tracking and race condition prevention
+      resizePtyWithTracking(cols, rows, force ? 'onResize (refit-all forced)' : 'onResize');
+    },
     onDimensionsReady: handleDimensionsReady,
-    onCheckDimensionMismatch: checkDimensionMismatch,
   });
 
-  /**
-   * Create and manage PTY process.
-   * Handles subprocess spawning, IPC communication, output piping, and error handling.
-   */
-  const {
-    isCreating,
-    isConnecting,
-    pendingClaudeResume,
-    ptyVersion,
-  } = usePtyProcess({
-    id,
+  // Expose fit method to parent components via ref
+  // This allows external triggering of terminal resize (e.g., after drag-drop reorder)
+  useImperativeHandle(ref, () => ({
+    fit,
+  }), [fit]);
+
+  // Use ready dimensions for PTY creation (wait until xterm has measured)
+  // This prevents creating PTY with default 80x24 when container is smaller
+  const ptyDimensions = useMemo(() => {
+    if (readyDimensions) {
+      debugLog(`[Terminal ${id}] ptyDimensions memo: using readyDimensions cols=${readyDimensions.cols}, rows=${readyDimensions.rows}`);
+      return readyDimensions;
+    }
+    // Wait for actual measurement via onDimensionsReady callback
+    // Do NOT use current cols/rows as they may be initial defaults (80x24)
+    debugLog(`[Terminal ${id}] ptyDimensions memo: readyDimensions is null, returning null (skipCreation will be true)`);
+    return null;
+  }, [readyDimensions, id]);
+
+  // Create PTY process - only when we have valid dimensions
+  const { prepareForRecreate, resetForRecreate } = usePtyProcess({
+    terminalId: id,
     cwd: effectiveCwd,
     projectPath,
-    readyDimensions,
+    cols: ptyDimensions?.cols ?? 80,
+    rows: ptyDimensions?.rows ?? 24,
+    // Only allow PTY creation when dimensions are ready
+    skipCreation: !ptyDimensions,
+    // Pass recreation ref to coordinate with deliberate terminal destruction/recreation
     isRecreatingRef,
-    pendingWorktreeConfigRef,
-    pendingTaskSwitchRef,
-    isCreatedRef,
-    hasAttemptedAutoResumeRef,
-    isActive,
-    onSetClaudeMode: setClaudeMode,
-  });
+    onCreated: () => {
+      isCreatedRef.current = true;
+      // ALWAYS force PTY resize on creation/remount
+      // This ensures PTY matches xterm even if PTY existed before remount (expand/minimize)
+      // The root cause of text alignment issues is that when terminal remounts:
+      // 1. PTY persists with old dimensions (e.g., 80x20)
+      // 2. New xterm measures new container (e.g., 160x40)
+      // 3. Without this force resize, PTY never gets updated
+      // Read current dimensions from xterm ref to avoid stale closure values
+      const currentCols = xtermRef.current?.cols;
+      const currentRows = xtermRef.current?.rows;
+      if (currentCols !== undefined && currentRows !== undefined && currentCols >= MIN_COLS && currentRows >= MIN_ROWS) {
+        debugLog(`[Terminal ${id}] PTY created - forcing PTY resize to match xterm: cols=${currentCols}, rows=${currentRows}`);
+        // Use helper to resize PTY with proper tracking and race condition prevention
+        resizePtyWithTracking(currentCols, currentRows, 'PTY creation');
 
-  /**
-   * Setup event handlers for xterm instance.
-   * Pipes PTY output to terminal, handles input, and manages Claude mode transitions.
-   */
-  const { isInClaudeMode } = useTerminalEvents({
-    id,
-    xtermInstanceRef,
-    remoteProcesses,
-    onCommandEnter: handleCommandEnter,
-    onClose,
-  });
-
-  // Auto-resume when terminal becomes active and Claude is available
-  useEffect(() => {
-    // Skip if:
-    // - Terminal isn't active
-    // - Already attempted auto-resume (prevent duplicate calls)
-    // - PTY isn't ready yet
-    // - Claude isn't available
-    if (!isActive || hasAttemptedAutoResumeRef.current || !pendingClaudeResume) {
-      return;
-    }
-
-    hasAttemptedAutoResumeRef.current = true;
-    window.electronAPI.resumeTerminal(id);
-  }, [isActive, pendingClaudeResume, id]);
-
-  // Handle expansion state changes to trigger PTY resize
-  useEffect(() => {
-    // Only trigger resize if isExpanded actually changed (not on initial mount)
-    if (prevIsExpandedRef.current === undefined) {
-      prevIsExpandedRef.current = isExpanded;
-      return;
-    }
-
-    if (prevIsExpandedRef.current !== isExpanded) {
-      prevIsExpandedRef.current = isExpanded;
-      // Trigger resize through handleXtermResize to properly measure new dimensions
-      if (xtermInstanceRef.current) {
-        // Schedule resize after DOM layout is updated
-        setTimeout(() => {
-          handleXtermResize();
-        }, 0);
+        // Schedule initial dimension mismatch check after PTY creation
+        // This helps detect if xterm dimensions drifted during PTY setup
+        // Read fresh dimensions inside the timeout to avoid stale closure
+        // Store timeout ID for cleanup on unmount
+        postCreationTimeoutRef.current = setTimeout(() => {
+          const freshCols = xtermRef.current?.cols;
+          const freshRows = xtermRef.current?.rows;
+          if (freshCols !== undefined && freshRows !== undefined) {
+            checkDimensionMismatch(freshCols, freshRows, 'post-PTY creation');
+          }
+        }, DIMENSION_MISMATCH_GRACE_PERIOD_MS + 100);
+      } else {
+        debugLog(`[Terminal ${id}] PTY created - no valid dimensions available for tracking (cols=${currentCols}, rows=${currentRows})`);
       }
-    }
-  }, [isExpanded, handleXtermResize, xtermInstanceRef]);
-
-  // Worktree config effect - sync worktree config changes back to store
-  useEffect(() => {
-    if (!id) return;
-
-    // Poll for worktree status changes and sync to store
-    const interval = setInterval(async () => {
-      // Prevent overlapping requests
-      if (isCheckingWorktreeRef.current) return;
-      isCheckingWorktreeRef.current = true;
-
-      try {
-        const status = await window.electronAPI.getWorktreeStatus(id);
-        if (status.config) {
-          setWorktreeConfig(id, status.config);
+      // If there's a pending worktree config from a recreation attempt,
+      // sync it to main process now that the terminal exists.
+      // This fixes the race condition where IPC calls happen before terminal creation.
+      if (pendingWorktreeConfigRef.current) {
+        const config = pendingWorktreeConfigRef.current;
+        try {
+          window.electronAPI.setTerminalWorktreeConfig(id, config);
+          window.electronAPI.setTerminalTitle(id, config.name);
+        } catch (error) {
+          console.error('Failed to sync worktree config after PTY creation:', error);
         }
-      } catch (error) {
-        debugLog(`[Terminal ${id}] Error checking worktree status: ${error}`);
-      } finally {
-        isCheckingWorktreeRef.current = false;
+        pendingWorktreeConfigRef.current = null;
       }
-    }, 5000); // Poll every 5 seconds
+      // If there's a pending task switch from a worktree-based task selection,
+      // override the terminal title (which applyWorktreeConfig set to config.name/specId)
+      // with the human-readable task title, and inject the context message after the shell prompt.
+      if (pendingTaskSwitchRef.current) {
+        const { title, contextMessage } = pendingTaskSwitchRef.current;
+        pendingTaskSwitchRef.current = null;
+        // Use getState() to avoid stale closures in this async callback
+        useTerminalStore.getState().updateTerminal(id, { title });
+        window.electronAPI.setTerminalTitle(id, title);
+        // Inject context message after a delay to let the shell prompt appear.
+        // Windows ConPTY is slower than Unix PTY, so it needs a longer grace period.
+        setTimeout(() => {
+          window.electronAPI.sendTerminalInput(id, contextMessage + '\r');
+        }, platformIsWindows ? 500 : 300);
+      }
+      // If there's a pending Claude invocation from "Discuss in Terminal",
+      // execute it now that the PTY process exists.
+      // This fixes the race condition where invokeClaudeInTerminal was called
+      // before the terminal existed in main process.
+      const currentTerminal = useTerminalStore.getState().terminals.find(t => t.id === id);
+      if (currentTerminal?.pendingClaudeInvocation) {
+        const { contextMessage } = currentTerminal.pendingClaudeInvocation;
+        useTerminalStore.getState().updateTerminal(id, { pendingClaudeInvocation: undefined });
+        window.electronAPI.invokeClaudeInTerminal(id, effectiveCwd);
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            window.electronAPI.sendTerminalInput(id, contextMessage + '\r');
+          }
+        }, 3000);
+      }
+    },
+    onError: (error) => {
+      // Clear pending config on error to prevent stale config from being applied
+      // if PTY is recreated later (fixes potential race condition on failed recreation)
+      pendingWorktreeConfigRef.current = null;
+      // Clear pending task switch to prevent ghost state from a failed worktree switch
+      pendingTaskSwitchRef.current = null;
+      // Clear pending Claude invocation on error to prevent stale state
+      useTerminalStore.getState().updateTerminal(id, { pendingClaudeInvocation: undefined });
+      writeln(`\r\n\x1b[31mError: ${error}\x1b[0m`);
+    },
+  });
+
+  // Monitor for dimension mismatches between xterm and PTY
+  // This effect runs when xterm dimensions change and checks for mismatches
+  // after the grace period to help diagnose text alignment issues
+  // Auto-correction is enabled to automatically fix any detected mismatches
+  useEffect(() => {
+    // Only check if PTY has been created
+    if (!isCreatedRef.current) {
+      return;
+    }
+
+    // Schedule a mismatch check after the grace period
+    // This allows time for the PTY resize to be acknowledged
+    // Enable auto-correct to automatically fix any detected mismatches
+    const timeoutId = setTimeout(() => {
+      checkDimensionMismatch(cols, rows, 'periodic dimension sync check', true);
+    }, DIMENSION_MISMATCH_GRACE_PERIOD_MS + 100);
+
+    return () => clearTimeout(timeoutId);
+  }, [cols, rows, checkDimensionMismatch]);
+
+  // Handle terminal events (output is now handled globally via useGlobalTerminalListeners)
+  useTerminalEvents({
+    terminalId: id,
+    // Pass recreation ref to skip auto-removal during deliberate terminal recreation
+    isRecreatingRef,
+    onExit: (exitCode) => {
+      isCreatedRef.current = false;
+      writeln(`\r\n\x1b[90mProcess exited with code ${exitCode}\x1b[0m`);
+    },
+  });
+
+  // Focus terminal when it becomes active
+  // Delay focus by 150ms to ensure performInitialFit (RAF + xterm.open() + fit) completes first.
+  // Without this delay, focus() can fire before the terminal is fully fitted, causing display issues.
+  // 150ms is chosen to be safely after fit completes but under the 200ms ResizeObserver debounce threshold.
+  useEffect(() => {
+    if (isActive) {
+      const timer = setTimeout(() => {
+        focus();
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [isActive, focus]);
+
+  // Refit terminal when expansion state changes
+  // Uses transitionend event listener and RAF-based retry logic instead of fixed timeout
+  // for more reliable resizing after CSS transitions complete
+  useEffect(() => {
+    // Detect if this is an actual expansion state change vs initial mount
+    // Only force PTY resize on actual state changes to avoid resizing with invalid dimensions on mount
+    const isFirstMount = prevIsExpandedRef.current === undefined;
+    const expansionStateChanged = !isFirstMount && prevIsExpandedRef.current !== isExpanded;
+    debugLog(`[Terminal ${id}] Expansion effect: isExpanded=${isExpanded}, isFirstMount=${isFirstMount}, expansionStateChanged=${expansionStateChanged}, prevIsExpanded=${prevIsExpandedRef.current}`);
+    prevIsExpandedRef.current = isExpanded;
+
+    // RAF fallback for test environments where requestAnimationFrame may not be defined
+    const raf = typeof requestAnimationFrame !== 'undefined'
+      ? requestAnimationFrame
+      : (cb: FrameRequestCallback) => setTimeout(() => cb(Date.now()), 0) as unknown as number;
+
+    const cancelRaf = typeof cancelAnimationFrame !== 'undefined'
+      ? cancelAnimationFrame
+      : (id: number) => clearTimeout(id);
+
+    let rafId: number | null = null;
+    let retryTimeoutId: ReturnType<typeof setTimeout> | null = null;
+    let fallbackTimeoutId: ReturnType<typeof setTimeout> | null = null;
+    let isCleanedUp = false;
+    let fitSucceeded = false;
+    let retryCount = 0;
+    const MAX_RETRIES = 5;
+    const RETRY_DELAY_MS = 50;
+    const FALLBACK_TIMEOUT_MS = 300;
+
+    // Perform fit with RAF and retry logic, following the pattern from useXterm.ts performInitialFit
+    const performFit = () => {
+      if (isCleanedUp) return;
+
+      // Cancel any existing RAF to prevent multiple concurrent fit attempts
+      if (rafId !== null) {
+        cancelRaf(rafId);
+        rafId = null;
+      }
+
+      rafId = raf(() => {
+        if (isCleanedUp) return;
+
+        // fit() returns boolean indicating success (true if container had valid dimensions)
+        // biome-ignore lint/suspicious/noFocusedTests: fit() is xterm FitAddon method, not a test
+        const success = fit();
+        debugLog(`[Terminal ${id}] performFit: fit returned success=${success}, expansionStateChanged=${expansionStateChanged}, isCreatedRef=${isCreatedRef.current}`);
+
+        if (success) {
+          fitSucceeded = true;
+          // Force repaint after expansion fit to prevent stale/garbled display.
+          // Same pattern as resize handler and drag-drop refit in useXterm.ts.
+          xtermRef.current?.refresh(0, (xtermRef.current?.rows ?? 1) - 1);
+          // Force PTY resize only on actual expansion state changes (not initial mount)
+          // This ensures PTY stays in sync even when xterm.onResize() doesn't fire
+          // Read fresh dimensions from xterm ref after fit() to avoid stale closure values
+          const freshCols = xtermRef.current?.cols;
+          const freshRows = xtermRef.current?.rows;
+          if (expansionStateChanged && isCreatedRef.current && freshCols !== undefined && freshRows !== undefined && freshCols >= MIN_COLS && freshRows >= MIN_ROWS) {
+            debugLog(`[Terminal ${id}] performFit: Forcing PTY resize to cols=${freshCols}, rows=${freshRows}`);
+            // Use helper to resize PTY with proper tracking and race condition prevention
+            resizePtyWithTracking(freshCols, freshRows, 'performFit');
+          }
+        } else if (retryCount < MAX_RETRIES) {
+          // Container not ready yet, retry after a short delay
+          retryCount++;
+          retryTimeoutId = setTimeout(performFit, RETRY_DELAY_MS);
+        }
+      });
+    };
+
+    // Get terminal container element for transition listening
+    const container = terminalRef.current;
+
+    // Handler for transitionend event - fits terminal after CSS transition completes
+    const handleTransitionEnd = (e: TransitionEvent) => {
+      // Only react to relevant transitions (height, width, flex changes)
+      const relevantProps = ['height', 'width', 'flex', 'max-height', 'max-width'];
+      if (relevantProps.some(prop => e.propertyName.includes(prop))) {
+        // Reset retry count and success flag for new transition
+        retryCount = 0;
+        fitSucceeded = false;
+        performFit();
+      }
+    };
+
+    // Listen for transitionend on the terminal container and its parent
+    // (expansion may trigger transitions on either element)
+    if (container) {
+      container.addEventListener('transitionend', handleTransitionEnd);
+      container.parentElement?.addEventListener('transitionend', handleTransitionEnd);
+    }
+
+    // Start the fit process immediately with RAF-based retry
+    // This handles cases where expansion is instant (no CSS transition)
+    performFit();
+
+    // Fallback timeout to ensure fit happens even if transitionend doesn't fire
+    // This is a safety net for edge cases
+    fallbackTimeoutId = setTimeout(() => {
+      if (!isCleanedUp && !fitSucceeded) {
+        retryCount = 0;
+        performFit();
+      }
+    }, FALLBACK_TIMEOUT_MS);
 
     return () => {
-      clearInterval(interval);
-    };
-  }, [id, setWorktreeConfig]);
+      isCleanedUp = true;
 
-  // Cleanup effects
+      // Clean up RAF
+      if (rafId !== null) {
+        cancelRaf(rafId);
+      }
+
+      // Clean up retry timeout
+      if (retryTimeoutId !== null) {
+        clearTimeout(retryTimeoutId);
+      }
+
+      // Clean up fallback timeout
+      if (fallbackTimeoutId !== null) {
+        clearTimeout(fallbackTimeoutId);
+      }
+
+      // Remove event listeners
+      if (container) {
+        container.removeEventListener('transitionend', handleTransitionEnd);
+        container.parentElement?.removeEventListener('transitionend', handleTransitionEnd);
+      }
+    };
+  }, [isExpanded, fit, id, resizePtyWithTracking, terminalRef.current, xtermRef.current?.cols, // Force repaint after expansion fit to prevent stale/garbled display.
+          // Same pattern as resize handler and drag-drop refit in useXterm.ts.
+          xtermRef.current?.refresh, xtermRef.current?.rows]);
+
+  // Trigger deferred Claude resume when terminal becomes active
+  // This ensures Claude sessions are only resumed when the user actually views the terminal,
+  // preventing all terminals from resuming simultaneously on app startup (which can crash the app)
   useEffect(() => {
+    // Reset resume attempt tracking when terminal is no longer pending
+    if (!terminal?.pendingClaudeResume) {
+      hasAttemptedAutoResumeRef.current = false;
+      return;
+    }
+
+    // Only attempt auto-resume once, even if the effect runs multiple times
+    if (hasAttemptedAutoResumeRef.current) {
+      return;
+    }
+
+    // Check if both conditions are met for auto-resume
+    if (isActive && terminal?.pendingClaudeResume) {
+      // Defer the resume slightly to ensure all React state updates have propagated
+      // This fixes the race condition where isActive and pendingClaudeResume might update
+      // at different times during the restoration flow
+      const timer = setTimeout(() => {
+        if (!isMountedRef.current) return;
+
+        // Mark that we've attempted resume INSIDE the callback to prevent duplicates
+        // This ensures we only mark as attempted if the timeout actually fires
+        // (prevents race condition where effect re-runs before timeout executes)
+        if (hasAttemptedAutoResumeRef.current) return;
+        hasAttemptedAutoResumeRef.current = true;
+
+        // Double-check conditions before resuming (state might have changed)
+        const currentTerminal = useTerminalStore.getState().terminals.find((t) => t.id === id);
+        if (currentTerminal?.pendingClaudeResume) {
+          // Clear the pending flag and trigger the actual resume
+          useTerminalStore.getState().setPendingClaudeResume(id, false);
+          window.electronAPI.activateDeferredClaudeResume(id);
+        }
+      }, 100); // Small delay to let React finish batched updates
+
+      return () => clearTimeout(timer);
+    }
+  }, [isActive, id, terminal?.pendingClaudeResume]);
+
+  // Handle keyboard shortcuts for this terminal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle if this terminal is active
+      if (!isActive) return;
+
+      // Cmd/Ctrl+W to close terminal
+      if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+
+      // Cmd/Ctrl+Shift+E to toggle expand/collapse
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'e') {
+        e.preventDefault();
+        e.stopPropagation();
+        onToggleExpand?.();
+      }
+    };
+
+    // Use capture phase to get the event before xterm
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [isActive, onClose, onToggleExpand]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+
     return () => {
       isMountedRef.current = false;
+      cleanupAutoNaming();
 
-      // Clean up auto-naming listener
-      cleanupAutoNaming?.();
-
-      // Clear post-creation timeout
+      // Clear post-creation dimension check timeout to prevent operations on unmounted component
       if (postCreationTimeoutRef.current !== null) {
         clearTimeout(postCreationTimeoutRef.current);
+        postCreationTimeoutRef.current = null;
       }
+
+      // Dispose synchronously on unmount to prevent race conditions
+      // where a new terminal mounts before the old one is cleaned up.
+      // The previous 100ms delay created a window where both terminals existed.
+      dispose();
+      isCreatedRef.current = false;
     };
-  }, [cleanupAutoNaming]);
+  }, [dispose, cleanupAutoNaming]);
 
-  // Expose fit method via ref
-  useImperativeHandle(ref, () => ({
-    fit: () => {
-      handleXtermResize();
-    },
-  }), [handleXtermResize]);
+  const handleInvokeClaude = useCallback(() => {
+    setClaudeMode(id, true);
+    const fg = terminal?.foregroundProcess;
+    if (fg && remoteProcesses.has(fg)) {
+      window.electronAPI.invokeClaudeInTerminalRemote(id);
+    } else {
+      window.electronAPI.invokeClaudeInTerminal(id, effectiveCwd);
+    }
+  }, [id, effectiveCwd, setClaudeMode, terminal?.foregroundProcess, remoteProcesses]);
 
-  // Attach resize observer to container
-  useEffect(() => {
-    if (!xtermRef.current) return;
+  const handleClick = useCallback(() => {
+    onActivate();
+    focus();
+  }, [onActivate, focus]);
 
-    const container = xtermRef.current;
-    const observer = new ResizeObserver(() => {
-      // Debounce resize checks
-      if (xtermInstanceRef.current) {
-        handleXtermResize();
+  const handleTitleChange = useCallback((newTitle: string) => {
+    updateTerminal(id, { title: newTitle });
+    // Sync to main process so title persists across hot reloads
+    window.electronAPI.setTerminalTitle(id, newTitle);
+  }, [id, updateTerminal]);
+
+  // Wrap onNewTaskClick to include recent terminal context as initial description.
+  // Uses a four-tier fallback strategy:
+  //   Tier 1: Read Claude's last response from session JSONL (best quality)
+  //   Tier 1.5: Read plan .md file directly from disk (cleanest plan source)
+  //   Tier 2: Extract plain text from xterm buffer (correct spacing, plan chrome stripped)
+  //   Tier 3: Strip ANSI from raw PTY buffer (legacy fallback, plan chrome stripped)
+  const handleNewTaskClick = useCallback(async () => {
+    if (!onNewTaskClick) return;
+    const maxChars = 8000;
+
+    // Tier 1: Try to extract Claude's last response from session JSONL
+    const terminalState = useTerminalStore.getState().terminals.find((t) => t.id === id);
+    const claudeSessionId = terminalState?.claudeSessionId;
+    if (claudeSessionId && projectPath) {
+      try {
+        const result = await window.electronAPI.getClaudeLastResponse(projectPath, claudeSessionId);
+        if (result.success && result.data) {
+          onNewTaskClick(result.data, id);
+          return;
+        }
+      } catch {
+        // Tier 1 failed, fall through to tier 2
       }
-    });
+    }
 
-    observer.observe(container);
+    // Tier 1.5: Read plan .md file directly from disk (cleanest source)
+    // Plan mode displays the file path in a "ctrl-g to edit in VS Code · ~/.claude..." line.
+    // If we find it, read the file directly — bypasses all session/JSONL/UI chrome issues.
+    if (xtermRef.current) {
+      const planFilePath = extractPlanFilePathFromXterm(xtermRef.current);
+      if (planFilePath) {
+        try {
+          const result = await window.electronAPI.readFile(planFilePath);
+          if (result.success && result.data) {
+            const content = result.data.trim();
+            const truncated = content.length > maxChars ? content.slice(0, maxChars) : content;
+            onNewTaskClick(truncated, id);
+            return;
+          }
+        } catch {
+          // Tier 1.5 failed (file not found, permission error, etc.), fall through to tier 2
+        }
+      }
+    }
 
-    return () => {
-      observer.disconnect();
-    };
-  }, [handleXtermResize, xtermRef, xtermInstanceRef]);
+    // Tier 2: Extract plain text from xterm buffer (preserves spacing)
+    if (xtermRef.current) {
+      const text = stripPlanModeChrome(stripAnsiCodes(extractPlainTextFromXterm(xtermRef.current, maxChars)));
+      if (text) {
+        onNewTaskClick(text, id);
+        return;
+      }
+    }
+
+    // Tier 3: Strip ANSI from raw PTY buffer (legacy fallback)
+    const rawBuffer = terminalBufferManager.get(id);
+    if (!rawBuffer) {
+      onNewTaskClick(undefined, id);
+      return;
+    }
+    const cleaned = stripPlanModeChrome(stripAnsiCodes(rawBuffer).trim());
+    const recent = cleaned.length > maxChars ? cleaned.slice(-maxChars) : cleaned;
+    onNewTaskClick(recent || undefined, id);
+  }, [onNewTaskClick, id, projectPath, xtermRef.current]);
+
+  // Worktree handlers
+  const handleCreateWorktree = useCallback(() => {
+    setShowWorktreeDialog(true);
+  }, []);
+
+
+  const applyWorktreeConfig = useCallback(async (config: TerminalWorktreeConfig) => {
+    // IMPORTANT: Set isRecreatingRef BEFORE destruction to signal deliberate recreation
+    // This prevents exit handlers from triggering auto-removal during controlled recreation
+    isRecreatingRef.current = true;
+
+    // Store pending config to be synced after PTY creation succeeds
+    // This fixes race condition where IPC calls happen before terminal exists in main process
+    pendingWorktreeConfigRef.current = config;
+
+    // Set isCreatingRef BEFORE updating the store to prevent race condition
+    // This prevents the PTY effect from running before destroyTerminal completes
+    prepareForRecreate();
+
+    // Update terminal store with worktree config
+    setWorktreeConfig(id, config);
+    // Try to sync to main process (may be ignored if terminal doesn't exist yet)
+    // The onCreated callback will re-sync using pendingWorktreeConfigRef
+    window.electronAPI.setTerminalWorktreeConfig(id, config);
+
+    // Update terminal title and cwd to worktree path
+    updateTerminal(id, { title: config.name, cwd: config.worktreePath });
+    // Try to sync to main process (may be ignored if terminal doesn't exist yet)
+    window.electronAPI.setTerminalTitle(id, config.name);
+
+    // Destroy current PTY - a new one will be created in the worktree directory
+    if (isCreatedRef.current) {
+      await window.electronAPI.destroyTerminal(id);
+      isCreatedRef.current = false;
+    }
+
+    // Reset PTY dimension tracking for new terminal
+    // This ensures the new PTY will receive initial dimensions correctly
+    lastPtyDimensionsRef.current = null;
+
+    // Reset refs to allow recreation - effect will now trigger with new cwd
+    resetForRecreate();
+  }, [id, setWorktreeConfig, updateTerminal, prepareForRecreate, resetForRecreate]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: terminal?.worktreeConfig?.worktreePath is intentionally read from closure — stale value is acceptable
+  const handleTaskSelect = useCallback(async (taskId: string) => {
+    const selectedTask = tasks.find((t) => t.id === taskId);
+    if (!selectedTask) return;
+
+    // 1) Set immediate UI feedback (task association, title)
+    setAssociatedTask(id, taskId);
+    updateTerminal(id, { title: selectedTask.title });
+    window.electronAPI.setTerminalTitle(id, selectedTask.title);
+
+    // 2) Build context message
+    const contextMessage = `I'm working on: ${selectedTask.title}
+
+Description:
+${selectedTask.description}
+
+Please confirm you're ready by saying: I'm ready to work on ${selectedTask.title} - Context is loaded.`;
+
+    // 3) Check useWorktree metadata opt-out — skip worktree lookup entirely
+    if (selectedTask.metadata?.useWorktree === false) {
+      window.electronAPI.sendTerminalInput(id, contextMessage + '\r');
+      return;
+    }
+
+    // 4) Call getWorktreeStatus to check for existing worktree
+    try {
+      const result = await window.electronAPI.getWorktreeStatus(taskId);
+
+      if (result.success && result.data?.exists && result.data.worktreePath) {
+        // 5) Skip PTY recreation if terminal is already at this worktree path
+        // terminal?.worktreeConfig?.worktreePath is intentionally read from closure
+        // (not in deps) — stale value is acceptable, worst case = unnecessary safe recreation
+        if (terminal?.worktreeConfig?.worktreePath === result.data.worktreePath) {
+          window.electronAPI.sendTerminalInput(id, contextMessage + '\r');
+          return;
+        }
+
+        // Build TerminalWorktreeConfig with config.name = specId (for worktree badge)
+        const config: TerminalWorktreeConfig = {
+          name: selectedTask.specId,
+          worktreePath: result.data.worktreePath,
+          branchName: result.data.branch ?? '',
+          baseBranch: result.data.baseBranch ?? '',
+          hasGitBranch: !!result.data.branch,
+          taskId: taskId,
+          createdAt: new Date().toISOString(),
+          terminalId: id,
+        };
+
+        // Set pending task switch data BEFORE applyWorktreeConfig so that onCreated
+        // can override the title (from specId to human-readable) and inject context
+        pendingTaskSwitchRef.current = { contextMessage, title: selectedTask.title };
+
+        await applyWorktreeConfig(config);
+        return;
+      }
+    } catch {
+      // getWorktreeStatus failed — fall through to context-only injection
+    }
+
+    // 6) Fall through: no worktree or error — just inject context message
+    window.electronAPI.sendTerminalInput(id, contextMessage + '\r');
+  }, [id, tasks, setAssociatedTask, updateTerminal, applyWorktreeConfig]);
+
+  const handleClearTask = useCallback(async () => {
+    setAssociatedTask(id, undefined);
+    updateTerminal(id, { title: 'Claude' });
+    // Sync to main process so title persists across hot reloads
+    window.electronAPI.setTerminalTitle(id, 'Claude');
+
+    // Revert task-linked worktrees to the project root.
+    // Use getState() to avoid stale closure issues with worktreeConfig.
+    // Only revert worktrees that have taskId set (manually created worktrees are untouched).
+    const currentConfig = useTerminalStore.getState().terminals.find((t) => t.id === id)?.worktreeConfig;
+    if (currentConfig?.taskId && projectPath) {
+      // Follow the same PTY recreation pattern as applyWorktreeConfig
+      isRecreatingRef.current = true;
+
+      // Clear any pending refs to prevent stale state from being applied after recreation
+      pendingWorktreeConfigRef.current = null;
+      pendingTaskSwitchRef.current = null;
+
+      prepareForRecreate();
+
+      // Clear worktree config in store and main process
+      setWorktreeConfig(id, undefined);
+      window.electronAPI.setTerminalWorktreeConfig(id, undefined);
+
+      // Update cwd to project root
+      updateTerminal(id, { cwd: projectPath });
+
+      // Destroy current PTY - a new one will be created at the project root
+      if (isCreatedRef.current) {
+        await window.electronAPI.destroyTerminal(id);
+        isCreatedRef.current = false;
+      }
+
+      // Reset PTY dimension tracking for new terminal
+      lastPtyDimensionsRef.current = null;
+
+      // Reset refs to allow recreation - effect will now trigger with project root cwd
+      resetForRecreate();
+    }
+  }, [id, projectPath, setAssociatedTask, updateTerminal, setWorktreeConfig, prepareForRecreate, resetForRecreate]);
+
+  const handleWorktreeCreated = useCallback(async (config: TerminalWorktreeConfig) => {
+    await applyWorktreeConfig(config);
+  }, [applyWorktreeConfig]);
+
+  const handleSelectWorktree = useCallback(async (config: TerminalWorktreeConfig) => {
+    await applyWorktreeConfig(config);
+  }, [applyWorktreeConfig]);
+
+  const handleOpenInIDE = useCallback(async () => {
+    const worktreePath = terminal?.worktreeConfig?.worktreePath;
+    if (!worktreePath) return;
+
+    const preferredIDE = settings.preferredIDE || 'vscode';
+    try {
+      await window.electronAPI.worktreeOpenInIDE(
+        worktreePath,
+        preferredIDE,
+        settings.customIDEPath
+      );
+    } catch (err) {
+      console.error('Failed to open in IDE:', err);
+      toast({
+        title: 'Failed to open IDE',
+        description: err instanceof Error ? err.message : 'Could not launch IDE',
+        variant: 'destructive',
+      });
+    }
+  }, [terminal?.worktreeConfig?.worktreePath, settings.preferredIDE, settings.customIDEPath, toast]);
 
   // Handle context menu
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
@@ -509,62 +1044,100 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     setContextMenuPos({ x: e.clientX, y: e.clientY });
   }, []);
 
+  // Get backlog tasks for worktree dialog
+  const backlogTasks = tasks.filter((t) => t.status === 'backlog');
+
+  // Determine border color based on Claude busy state
+  // Red (busy) = Claude is actively processing
+  // Green (idle) = Claude is ready for input
+  const isClaudeBusy = terminal?.isClaudeBusy;
+  const showClaudeBusyIndicator = terminal?.isClaudeMode && isClaudeBusy !== undefined;
+
   return (
     <div
       ref={setDropRef}
       className={cn(
-        'terminal-container relative flex flex-col bg-black rounded-lg overflow-hidden',
-        isDragging && 'opacity-50',
-        isActive && 'ring-2 ring-blue-500'
+        'flex h-full flex-col rounded-lg border bg-[#0B0B0F] overflow-hidden transition-colors duration-150 relative',
+        // Default border states
+        isActive ? 'border-primary ring-1 ring-primary/20' : 'border-border',
+        // File drop overlay
+        showFileDropOverlay && 'ring-2 ring-info border-info',
+        // Claude busy state indicator (subtle colored border when in Claude mode)
+        showClaudeBusyIndicator && isClaudeBusy && 'border-red-500/60 ring-1 ring-red-500/20',
+        showClaudeBusyIndicator && !isClaudeBusy && 'terminal-idle-glow'
       )}
+      onClick={handleClick}
       onContextMenu={handleContextMenu}
+      onDragOver={handleNativeDragOver}
+      onDragLeave={handleNativeDragLeave}
+      onDrop={handleNativeDrop}
     >
-      <TerminalHeader
-        id={id}
-        terminal={terminal}
-        isActive={isActive}
-        onActivate={onActivate}
-        onClose={onClose}
-        onToggleExpand={onToggleExpand}
-        isExpanded={isExpanded}
-        isInClaudeMode={isInClaudeMode}
-        isCreating={isCreating}
-        isConnecting={isConnecting}
-        associatedTask={associatedTask}
-        tasks={tasks}
-        terminalCount={terminalCount}
-        dragHandleListeners={dragHandleListeners}
-        onNewTaskClick={onNewTaskClick}
-        onShowWorktreeDialog={() => setShowWorktreeDialog(true)}
-      />
-
-      <div ref={xtermRef} className='flex-1 overflow-hidden' />
-
       {showFileDropOverlay && (
-        <div className='absolute inset-0 bg-blue-500 bg-opacity-20 border-2 border-dashed border-blue-500 rounded-lg pointer-events-none flex items-center justify-center'>
-          <FileDown className='w-8 h-8 text-blue-500' />
+        <div className="absolute inset-0 bg-info/10 z-10 flex items-center justify-center pointer-events-none">
+          <div className="flex items-center gap-2 bg-info/90 text-info-foreground px-3 py-2 rounded-md">
+            <FileDown className="h-4 w-4" />
+            <span className="text-sm font-medium">Drop to insert path</span>
+          </div>
         </div>
       )}
 
-      {showWorktreeDialog && (
+      <TerminalHeader
+        terminalId={id}
+        title={terminal?.title || 'Terminal'}
+        status={terminal?.status || 'idle'}
+        isClaudeMode={terminal?.isClaudeMode || false}
+        tasks={tasks}
+        associatedTask={associatedTask}
+        onClose={onClose}
+        onInvokeClaude={handleInvokeClaude}
+        onTitleChange={handleTitleChange}
+        onTaskSelect={handleTaskSelect}
+        onClearTask={handleClearTask}
+        onNewTaskClick={handleNewTaskClick}
+        terminalCount={terminalCount}
+        worktreeConfig={terminal?.worktreeConfig}
+        projectPath={projectPath}
+        onCreateWorktree={handleCreateWorktree}
+        onSelectWorktree={handleSelectWorktree}
+        onOpenInIDE={handleOpenInIDE}
+        dragHandleListeners={dragHandleListeners}
+        isExpanded={isExpanded}
+        onToggleExpand={onToggleExpand}
+        pendingClaudeResume={terminal?.pendingClaudeResume}
+        isClaudeIdle={showClaudeBusyIndicator && !isClaudeBusy}
+        foregroundProcess={terminal?.foregroundProcess}
+        remoteProcesses={remoteProcesses}
+        hasActivityAlert={terminal?.hasActivityAlert}
+      />
+
+      <div
+        ref={terminalRef}
+        className="flex-1 p-1"
+        style={{ minHeight: 0 }}
+      />
+
+      {/* Worktree creation dialog */}
+      {projectPath && (
         <CreateWorktreeDialog
+          open={showWorktreeDialog}
+          onOpenChange={setShowWorktreeDialog}
           terminalId={id}
           projectPath={projectPath}
-          currentCwd={effectiveCwd}
-          onClose={() => setShowWorktreeDialog(false)}
+          backlogTasks={backlogTasks}
+          onWorktreeCreated={handleWorktreeCreated}
         />
       )}
 
-      {contextMenuPos && (
-        <TerminalContextMenu
-          x={contextMenuPos.x}
-          y={contextMenuPos.y}
-          terminalId={id}
-          onClose={() => setContextMenuPos(null)}
-        />
-      )}
+      {/* Context menu */}
+      <TerminalContextMenu
+        position={contextMenuPos}
+        onClose={() => setContextMenuPos(null)}
+        hasSelection={!!xtermRef.current?.hasSelection()}
+        onCopy={handleCopy}
+        onPaste={handlePaste}
+        onSelectAll={selectAll}
+        onClear={clearTerminal}
+      />
     </div>
   );
 });
-
-Terminal.displayName = 'Terminal';
