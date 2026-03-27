@@ -335,8 +335,12 @@ export function useTaskDetail({ task }: UseTaskDetailOptions) {
       // Process merge preview result if fulfilled
       if (previewResult.status === 'fulfilled') {
         const result = previewResult.value;
-        if (result.success && result.data?.preview) {
+        if (result.success && result.data?.success && result.data?.preview) {
           setMergePreview(result.data.preview);
+        } else if (result.success && result.data?.preview && !result.data?.success) {
+          // Backend returned an error (e.g., exception during conflict check)
+          // but IPC succeeded — don't set a misleading "Ready to merge" preview
+          errors.push(`Merge preview: ${result.data?.message || 'Preview failed'}`);
         } else if (!result.success && result.error) {
           errors.push(`Merge preview: ${result.error}`);
         }

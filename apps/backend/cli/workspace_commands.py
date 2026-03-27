@@ -197,7 +197,7 @@ def _detect_worktree_base_branch(
 
     # Strategy 2: Find which branch has the closest merge-base
     # Check common branches: develop, main, master
-    spec_branch = _get_spec_branch(spec_name)
+    spec_branch = _get_spec_branch(spec_name, project_dir=project_dir)
     candidate_branches = ["develop", "main", "master"]
 
     best_branch = None
@@ -369,7 +369,7 @@ except ImportError:
 MODULE = "cli.workspace_commands"
 
 
-def _get_spec_branch(spec_name: str) -> str:
+def _get_spec_branch(spec_name: str, project_dir: Path | None = None) -> str:
     """Get the branch name for a spec, using the shared get_branch_prefix() utility.
 
     Delegates to core.git_executable.get_branch_prefix() which implements the full
@@ -378,11 +378,13 @@ def _get_spec_branch(spec_name: str) -> str:
 
     Args:
         spec_name: The spec/task name (e.g., 'my-feature')
+        project_dir: Project directory for git config lookup. Important when the
+                     process cwd differs from the project (e.g., bundled Electron builds).
 
     Returns:
         Branch name like '{prefix}/{spec_name}' (e.g., 'auto-claude/my-feature' or 'user/my-feature')
     """
-    prefix = get_branch_prefix()
+    prefix = get_branch_prefix(project_dir=project_dir)
     return f"{prefix}/{spec_name}"
 
 
@@ -751,7 +753,7 @@ def _check_git_merge_conflicts(
 
     debug(MODULE, "Checking for git-level merge conflicts (non-destructive)...")
 
-    spec_branch = _get_spec_branch(spec_name)
+    spec_branch = _get_spec_branch(spec_name, project_dir=project_dir)
     result = {
         "has_conflicts": False,
         "conflicting_files": [],

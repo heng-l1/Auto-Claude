@@ -242,6 +242,9 @@ export function WorkspaceStatus({
   const hasGitConflicts = mergePreview?.gitConflicts?.hasConflicts;
   const hasUncommittedChanges = mergePreview?.uncommittedChanges?.hasChanges;
   const uncommittedCount = mergePreview?.uncommittedChanges?.count || 0;
+  // Safety: if gitConflicts is null/undefined, the preview data is incomplete (backend error)
+  // Don't show "Ready to merge" — treat as unknown state requiring re-check
+  const isPreviewIncomplete = mergePreview != null && mergePreview.gitConflicts == null;
   const hasAIConflicts = mergePreview && mergePreview.conflicts.length > 0;
 
   // Conflict scenario detection for better UX messaging
@@ -433,14 +436,21 @@ export function WorkspaceStatus({
         {mergePreview && !isAlreadyMerged && !isSuperseded && (
           <div className={cn(
             "flex items-center justify-between p-2.5 rounded-lg border",
-            hasGitConflicts || isBranchBehind || hasPathMappedMerges
+            isPreviewIncomplete
               ? "bg-warning/10 border-warning/20"
-              : !hasAIConflicts
-                ? "bg-success/10 border-success/20"
-                : "bg-warning/10 border-warning/20"
+              : hasGitConflicts || isBranchBehind || hasPathMappedMerges
+                ? "bg-warning/10 border-warning/20"
+                : !hasAIConflicts
+                  ? "bg-success/10 border-success/20"
+                  : "bg-warning/10 border-warning/20"
           )}>
             <div className="flex items-center gap-2">
-              {hasGitConflicts ? (
+              {isPreviewIncomplete ? (
+                <>
+                  <AlertTriangle className="h-4 w-4 text-warning" />
+                  <span className="text-sm font-medium text-warning">Conflict check incomplete — click refresh to retry</span>
+                </>
+              ) : hasGitConflicts ? (
                 <>
                   <AlertTriangle className="h-4 w-4 text-warning" />
                   <div>

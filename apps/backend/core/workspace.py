@@ -134,7 +134,7 @@ from merge.progress import MergeProgressCallback, MergeProgressStage, emit_progr
 MODULE = "workspace"
 
 
-def _get_spec_branch(spec_name: str) -> str:
+def _get_spec_branch(spec_name: str, project_dir: Path | None = None) -> str:
     """Get the branch name for a spec, using the shared get_branch_prefix() utility.
 
     Delegates to core.git_executable.get_branch_prefix() which implements the full
@@ -143,11 +143,13 @@ def _get_spec_branch(spec_name: str) -> str:
 
     Args:
         spec_name: The spec/task name (e.g., 'my-feature')
+        project_dir: Project directory for git config lookup. Important when the
+                     process cwd differs from the project (e.g., bundled Electron builds).
 
     Returns:
         Branch name like '{prefix}/{spec_name}' (e.g., 'auto-claude/my-feature' or 'user/my-feature')
     """
-    prefix = get_branch_prefix()
+    prefix = get_branch_prefix(project_dir=project_dir)
     return f"{prefix}/{spec_name}"
 
 
@@ -244,7 +246,7 @@ def merge_existing_build(
         else None
     )
 
-    spec_branch = _get_spec_branch(spec_name)
+    spec_branch = _get_spec_branch(spec_name, project_dir=project_dir)
 
     # Don't merge a branch into itself
     if current_branch == spec_branch:
@@ -691,7 +693,7 @@ def _try_smart_merge_inner(
             print(muted("  Branches diverged but no conflicts detected"))
             print(muted("  Using git merge to combine changes..."))
 
-            spec_branch = _get_spec_branch(spec_name)
+            spec_branch = _get_spec_branch(spec_name, project_dir=project_dir)
 
             # Use git merge --no-commit to combine changes from both branches
             # Since merge-tree confirmed no conflicts, this should succeed cleanly
@@ -971,7 +973,7 @@ def _rebase_spec_branch(
         True if rebase succeeded cleanly or branch was already up-to-date,
         False if rebase failed (worktree lock, conflicts, or other errors)
     """
-    spec_branch = _get_spec_branch(spec_name)
+    spec_branch = _get_spec_branch(spec_name, project_dir=project_dir)
 
     debug(
         MODULE,
@@ -1128,7 +1130,7 @@ def _check_git_conflicts(project_dir: Path, spec_name: str) -> dict:
     Returns:
         Dict with has_conflicts, conflicting_files, etc.
     """
-    spec_branch = _get_spec_branch(spec_name)
+    spec_branch = _get_spec_branch(spec_name, project_dir=project_dir)
     result = {
         "has_conflicts": False,
         "conflicting_files": [],
@@ -1332,7 +1334,7 @@ def _resolve_git_conflicts_with_ai(
 
     conflicting_files = git_conflicts.get("conflicting_files", [])
     base_branch = git_conflicts.get("base_branch", "main")
-    spec_branch = git_conflicts.get("spec_branch", _get_spec_branch(spec_name))
+    spec_branch = git_conflicts.get("spec_branch", _get_spec_branch(spec_name, project_dir=project_dir))
 
     debug_detailed(
         MODULE,
