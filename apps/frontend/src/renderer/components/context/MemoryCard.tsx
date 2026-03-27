@@ -18,6 +18,17 @@ import { memoryTypeIcons, memoryTypeColors, memoryTypeLabels } from './constants
 import { formatDate } from './utils';
 import { PRReviewCard } from './PRReviewCard';
 
+/** Convert any value to a safe renderable string to prevent React Error #31 */
+function safeString(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value !== 'object') return String(value);
+  const obj = value as Record<string, unknown>;
+  for (const key of ['text', 'message', 'description', 'name', 'pattern', 'gotcha', 'title', 'value']) {
+    if (typeof obj[key] === 'string') return obj[key] as string;
+  }
+  return JSON.stringify(value);
+}
+
 interface MemoryCardProps {
   memory: MemoryEpisode;
 }
@@ -207,7 +218,7 @@ export function MemoryCard({ memory }: MemoryCardProps) {
                 <SectionHeader icon={CheckCircle2} title="What Worked" count={parsed.what_worked.length} />
                 <ul className="space-y-0.5">
                   {parsed.what_worked.map((item, idx) => (
-                    <ListItem key={idx} variant="success">{item}</ListItem>
+                    <ListItem key={idx} variant="success">{safeString(item)}</ListItem>
                   ))}
                 </ul>
               </div>
@@ -219,7 +230,7 @@ export function MemoryCard({ memory }: MemoryCardProps) {
                 <SectionHeader icon={XCircle} title="What Failed" count={parsed.what_failed.length} />
                 <ul className="space-y-0.5">
                   {parsed.what_failed.map((item, idx) => (
-                    <ListItem key={idx} variant="error">{item}</ListItem>
+                    <ListItem key={idx} variant="error">{safeString(item)}</ListItem>
                   ))}
                 </ul>
               </div>
@@ -234,16 +245,16 @@ export function MemoryCard({ memory }: MemoryCardProps) {
                 />
                 <div className="pl-4 space-y-2">
                   <p className="text-sm text-foreground">
-                    {parsed.discoveries.approach_outcome.approach_used}
+                    {safeString(parsed.discoveries.approach_outcome.approach_used)}
                   </p>
                   {parsed.discoveries.approach_outcome.why_it_worked && (
                     <p className="text-sm text-success">
-                      {parsed.discoveries.approach_outcome.why_it_worked}
+                      {safeString(parsed.discoveries.approach_outcome.why_it_worked)}
                     </p>
                   )}
                   {parsed.discoveries.approach_outcome.why_it_failed && (
                     <p className="text-sm text-destructive">
-                      {parsed.discoveries.approach_outcome.why_it_failed}
+                      {safeString(parsed.discoveries.approach_outcome.why_it_failed)}
                     </p>
                   )}
                 </div>
@@ -261,10 +272,10 @@ export function MemoryCard({ memory }: MemoryCardProps) {
                 />
                 <ul className="space-y-0.5">
                   {parsed.recommendations_for_next_session?.map((item, idx) => (
-                    <ListItem key={`rec-${idx}`}>{item}</ListItem>
+                    <ListItem key={`rec-${idx}`}>{safeString(item)}</ListItem>
                   ))}
                   {parsed.discoveries?.recommendations?.map((item, idx) => (
-                    <ListItem key={`disc-rec-${idx}`}>{item}</ListItem>
+                    <ListItem key={`disc-rec-${idx}`}>{safeString(item)}</ListItem>
                   ))}
                 </ul>
               </div>
@@ -278,7 +289,7 @@ export function MemoryCard({ memory }: MemoryCardProps) {
                   {parsed.discoveries.patterns_discovered.map((pattern, idx) => {
                     const text = typeof pattern === 'string'
                       ? pattern
-                      : (pattern?.pattern || pattern?.applies_to || JSON.stringify(pattern));
+                      : (pattern?.pattern || pattern?.applies_to || safeString(pattern));
                     return text ? (
                       <Badge key={idx} variant="secondary" className="text-xs">
                         {text}
@@ -297,7 +308,7 @@ export function MemoryCard({ memory }: MemoryCardProps) {
                   {parsed.discoveries.gotchas_discovered.map((gotcha, idx) => {
                     const text = typeof gotcha === 'string'
                       ? gotcha
-                      : (gotcha?.gotcha || JSON.stringify(gotcha));
+                      : (gotcha?.gotcha || safeString(gotcha));
                     return text ? (
                       <ListItem key={idx} variant="error">{text}</ListItem>
                     ) : null;
@@ -313,7 +324,7 @@ export function MemoryCard({ memory }: MemoryCardProps) {
                 <div className="flex flex-wrap gap-1.5 pl-4">
                   {parsed.discoveries.changed_files.map((file, idx) => (
                     <Badge key={idx} variant="outline" className="text-xs font-mono">
-                      {file}
+                      {safeString(file)}
                     </Badge>
                   ))}
                 </div>
@@ -351,7 +362,7 @@ export function MemoryCard({ memory }: MemoryCardProps) {
                 <div className="flex flex-wrap gap-1.5 pl-4">
                   {parsed.subtasks_completed.map((task, idx) => (
                     <Badge key={idx} variant="secondary" className="text-xs font-mono">
-                      {task}
+                      {safeString(task)}
                     </Badge>
                   ))}
                 </div>
