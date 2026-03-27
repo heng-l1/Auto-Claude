@@ -4,15 +4,13 @@ import type { SyntheticListenerMap } from '@dnd-kit/core/dist/hooks/utilities';
 import type { Task, TerminalWorktreeConfig } from '../../../shared/types';
 import type { TerminalStatus } from '../../stores/terminal-store';
 import { useTerminalStore } from '../../stores/terminal-store';
+import { DEFAULT_REMOTE_PROCESSES } from '../../../shared/constants/terminal';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
 import { STATUS_COLORS } from './types';
 import { TerminalTitle } from './TerminalTitle';
 import { TaskSelector } from './TaskSelector';
 import { WorktreeSelector } from './WorktreeSelector';
-
-/** Default process names that indicate a remote or multiplexer session */
-const DEFAULT_REMOTE_PROCESSES = new Set(['ssh', 'tmux', 'screen', 'mosh']);
 
 interface TerminalHeaderProps {
   terminalId: string;

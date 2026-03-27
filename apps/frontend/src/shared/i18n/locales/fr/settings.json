@@ -3,7 +3,7 @@
     "remoteProcesses": {
       "label": "Processus distants personnalisés",
       "description": "Ajoutez des noms de processus pour les wrappers SSH ou outils distants à détecter comme sessions distantes (séparés par des virgules)",
-      "placeholder": "ex. autossh, sshpass, rdev"
+      "placeholder": "ex. autossh, sshpass"
     }
   }
 }

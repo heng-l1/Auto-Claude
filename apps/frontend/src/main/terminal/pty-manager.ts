@@ -6,9 +6,11 @@
 import * as pty from '@lydell/node-pty';
 import * as os from 'os';
 import { existsSync } from 'fs';
+import { execFile } from 'child_process';
 import type { TerminalProcess, WindowGetter, WindowsShellType } from './types';
 import { isWindows, getWindowsShellPaths } from '../platform';
 import { IPC_CHANNELS } from '../../shared/constants';
+import { DEFAULT_REMOTE_PROCESSES } from '../../shared/constants/terminal';
 import { safeSendToRenderer } from '../ipc-handlers/utils';
 import { getClaudeProfileManager } from '../claude-profile-manager';
 import { readSettingsFile } from '../settings-utils';
@@ -236,6 +238,83 @@ function extractProcessName(processStr: string | undefined): string | undefined 
 }
 
 /**
+ * Build the remote process set from defaults + user settings.
+ * Cached for 10 seconds to avoid reading settings on every check.
+ */
+let cachedRemoteProcessSet: Set<string> | undefined;
+let remoteProcessSetCacheTime = 0;
+const REMOTE_PROCESS_SET_CACHE_TTL_MS = 10000;
+
+function getRemoteProcessSet(): Set<string> {
+  const now = Date.now();
+  if (cachedRemoteProcessSet && now - remoteProcessSetCacheTime < REMOTE_PROCESS_SET_CACHE_TTL_MS) {
+    return cachedRemoteProcessSet;
+  }
+  const merged = new Set(DEFAULT_REMOTE_PROCESSES);
+  try {
+    const settings = readSettingsFile();
+    const custom = settings?.customRemoteProcesses;
+    if (Array.isArray(custom)) {
+      for (const p of custom) {
+        if (typeof p === 'string') {
+          const trimmed = p.trim().toLowerCase();
+          if (trimmed) merged.add(trimmed);
+        }
+      }
+    }
+  } catch {
+    // Settings read failed — use defaults only
+  }
+  cachedRemoteProcessSet = merged;
+  remoteProcessSetCacheTime = now;
+  return merged;
+}
+
+/**
+ * Get all descendant process names under a given PID by walking the process tree.
+ * Uses `ps` on macOS/Linux. Returns an empty array on Windows or on error.
+ */
+function getDescendantProcessNames(rootPid: number): Promise<string[]> {
+  if (isWindows()) return Promise.resolve([]);
+  return new Promise((resolve) => {
+    execFile('ps', ['-ax', '-o', 'pid=,ppid=,comm='], { timeout: 2000 }, (err, stdout) => {
+      if (err || !stdout) {
+        resolve([]);
+        return;
+      }
+      // Parse ps output into entries
+      const children = new Map<number, Array<{ pid: number; comm: string }>>();
+      for (const line of stdout.split('\n')) {
+        const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/);
+        if (!match) continue;
+        const pid = parseInt(match[1], 10);
+        const ppid = parseInt(match[2], 10);
+        const comm = match[3].trim();
+        if (!children.has(ppid)) children.set(ppid, []);
+        children.get(ppid)!.push({ pid, comm });
+      }
+      // BFS from rootPid to collect all descendant process names
+      const names: string[] = [];
+      const queue = [rootPid];
+      const visited = new Set<number>();
+      while (queue.length > 0) {
+        const current = queue.shift()!;
+        if (visited.has(current)) continue;
+        visited.add(current);
+        const kids = children.get(current);
+        if (!kids) continue;
+        for (const kid of kids) {
+          const basename = kid.comm.split(/[/\\]/).pop()?.toLowerCase();
+          if (basename) names.push(basename);
+          queue.push(kid.pid);
+        }
+      }
+      resolve(names);
+    });
+  });
+}
+
+/**
  * Setup PTY event handlers for a terminal process
  */
 export function setupPtyHandlers(
@@ -263,14 +342,31 @@ export function setupPtyHandlers(
     // When the process name changes, emit IPC event to renderer for badge display.
     const existingTimer = foregroundProcessTimers.get(id);
     if (existingTimer) clearTimeout(existingTimer);
-    foregroundProcessTimers.set(id, setTimeout(() => {
+    foregroundProcessTimers.set(id, setTimeout(async () => {
       foregroundProcessTimers.delete(id);
       if (terminal.hasExited || isShuttingDown) return;
       try {
-        const currentProcess = extractProcessName(ptyProcess.process);
-        if (currentProcess !== terminal.foregroundProcess) {
-          terminal.foregroundProcess = currentProcess;
-          safeSendToRenderer(getWindow, IPC_CHANNELS.TERMINAL_FOREGROUND_PROCESS, id, currentProcess);
+        let detectedProcess = extractProcessName(ptyProcess.process);
+        const remoteSet = getRemoteProcessSet();
+
+        // If the foreground process isn't already a recognized remote process,
+        // scan the process tree for tools like rdev that wrap ssh/kubectl/etc.
+        // pty.process only returns the immediate foreground process name, which
+        // may be an interpreter (e.g., "python3") or the wrapped binary rather
+        // than the CLI command the user actually typed.
+        if (!detectedProcess || !remoteSet.has(detectedProcess)) {
+          try {
+            const treeNames = await getDescendantProcessNames(ptyProcess.pid);
+            const match = treeNames.find(name => remoteSet.has(name));
+            if (match) detectedProcess = match;
+          } catch {
+            // Tree scan failed — use foreground process only
+          }
+        }
+
+        if (detectedProcess !== terminal.foregroundProcess) {
+          terminal.foregroundProcess = detectedProcess;
+          safeSendToRenderer(getWindow, IPC_CHANNELS.TERMINAL_FOREGROUND_PROCESS, id, detectedProcess);
         }
       } catch {
         // pty.process may throw if PTY is already dead — ignore silently

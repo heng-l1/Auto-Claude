@@ -413,7 +413,7 @@ export function DevToolsSettings({ settings, onSettingsChange }: DevToolsSetting
                 customRemoteProcesses: parsed.length ? parsed : undefined
               });
             }}
-            placeholder={t('devtools.remoteProcesses.placeholder', 'e.g. autossh, sshpass, rdev')}
+            placeholder={t('devtools.remoteProcesses.placeholder', 'e.g. autossh, sshpass')}
           />
         </div>
 

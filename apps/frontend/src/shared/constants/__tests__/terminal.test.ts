@@ -13,12 +13,12 @@ describe('buildRemoteProcessSet', () => {
   });
 
   it('merges custom entries with defaults', () => {
-    const result = buildRemoteProcessSet(['rdev', 'autossh']);
+    const result = buildRemoteProcessSet(['mytool', 'autossh']);
     expect(result.has('ssh')).toBe(true);
     expect(result.has('mosh')).toBe(true);
     expect(result.has('tmux')).toBe(true);
     expect(result.has('screen')).toBe(true);
-    expect(result.has('rdev')).toBe(true);
+    expect(result.has('mytool')).toBe(true);
     expect(result.has('autossh')).toBe(true);
     expect(result.size).toBe(6);
   });

@@ -289,7 +289,7 @@
     "remoteProcesses": {
       "label": "Custom remote processes",
       "description": "Add process names for SSH wrappers or remote tools that should be detected as remote sessions (comma-separated)",
-      "placeholder": "e.g. autossh, sshpass, rdev"
+      "placeholder": "e.g. autossh, sshpass"
     },
     "yoloMode": {
       "label": "YOLO Mode",
