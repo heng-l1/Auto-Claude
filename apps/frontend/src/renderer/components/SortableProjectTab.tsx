@@ -407,21 +407,21 @@ export function SortableProjectTab({
 
         {onColorChange && (
           <>
-            <ContextMenuLabel>{t('projectTab.tabColor')}</ContextMenuLabel>
+            <ContextMenuLabel>{t('projectTab.setColor')}</ContextMenuLabel>
             <div className="grid grid-cols-4 gap-1 px-2 py-1">
               {TAB_COLORS.map((color) => (
                 <button
                   key={color.id}
                   className={cn(
                     'w-6 h-6 rounded border-2 transition-all',
+                    color.swatch,
                     project.settings?.tabColor === color.id
                       ? 'border-foreground scale-110'
                       : 'border-transparent hover:scale-105'
                   )}
-                  style={{ backgroundColor: color.hex }}
                   onClick={() => onColorChange(color.id)}
-                  title={color.label}
-                  aria-label={`${t('projectTab.tabColor')}: ${color.label}`}
+                  title={t(color.labelKey)}
+                  aria-label={`${t('projectTab.setColor')}: ${t(color.labelKey)}`}
                 />
               ))}
               <button
@@ -432,8 +432,8 @@ export function SortableProjectTab({
                     : 'border-border hover:scale-105'
                 )}
                 onClick={() => onColorChange(undefined)}
-                title={t('projectTab.resetColor')}
-                aria-label={t('projectTab.resetColor')}
+                title={t('projectTab.removeColor')}
+                aria-label={t('projectTab.removeColor')}
               >
                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
