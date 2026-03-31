@@ -488,7 +488,8 @@ export function AccountSettings({ settings, onSettingsChange, isOpen }: AccountS
     setAuthTerminal(null);
     setAuthenticatingProfileId(null);
     await loadClaudeProfiles();
-  }, [loadClaudeProfiles]);
+    await loadProfileUsageData(true);
+  }, [loadClaudeProfiles, loadProfileUsageData]);
 
   const handleAuthTerminalError = useCallback(() => {
     // Don't auto-close on error
