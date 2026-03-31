@@ -1052,7 +1052,10 @@ export function handleOnboardingComplete(
   }
 
   // Check if output shows Claude Code welcome screen (onboarding complete indicators)
-  if (!OutputParser.isOnboardingCompleteOutput(data)) {
+  // Fallback: also trigger on idle prompt (">") — when Claude shows only the prompt
+  // without welcome text after login. Safe because awaitingOnboardingComplete is only
+  // true during the login flow, preventing false triggers during normal terminal use.
+  if (!OutputParser.isOnboardingCompleteOutput(data) && !OutputParser.isClaudeIdleOutput(data)) {
     return;
   }
 
