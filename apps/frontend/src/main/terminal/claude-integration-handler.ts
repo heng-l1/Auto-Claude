@@ -878,6 +878,12 @@ export function handleOAuthToken(
       profile.isAuthenticated = true;
       profileManager.saveProfile(profile);
 
+      // Clear auth failed flag early so "Needs re-auth" disappears before onboarding completes
+      const usageMonitor = getUsageMonitor();
+      if (usageMonitor) {
+        usageMonitor.clearAuthFailedProfile(profileId);
+      }
+
       console.warn('[ClaudeIntegration] Profile credentials verified via Keychain (not caching token):', profileId);
 
       // Set flag to watch for Claude's ready state (onboarding complete)
@@ -959,6 +965,12 @@ export function handleOAuthToken(
       updateProfileSubscriptionMetadata(profile, profile.configDir);
       profile.isAuthenticated = true;
       profileManager.saveProfile(profile);
+
+      // Clear auth failed flag early so "Needs re-auth" disappears before onboarding completes
+      const usageMonitorFallback = getUsageMonitor();
+      if (usageMonitorFallback) {
+        usageMonitorFallback.clearAuthFailedProfile(profileId);
+      }
 
       // Clear keychain cache so next getCredentialsFromKeychain() fetches fresh token
       clearKeychainCache(profile.configDir);
