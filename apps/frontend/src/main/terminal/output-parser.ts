@@ -243,6 +243,7 @@ const ONBOARDING_COMPLETE_PATTERNS = [
   /Welcome back\s+\w+/i,            // "Welcome back André!" or similar
   /Claude Code v\d+\.\d+/i,         // "Claude Code v2.1.12" version header
   /Claude\s+(Max|Pro|Team|Enterprise)/i,  // Subscription tier indicator
+  /\?\s+for shortcuts/i,            // "? for shortcuts" hint shown when Claude Code is ready
 ];
 
 /**
@@ -266,7 +267,8 @@ export function isClaudeIdleOutput(data: string): boolean {
  * This detects the welcome screen that appears after successful login/onboarding
  */
 export function isOnboardingCompleteOutput(data: string): boolean {
-  return ONBOARDING_COMPLETE_PATTERNS.some(pattern => pattern.test(data));
+  const cleanData = stripAnsi(data);
+  return ONBOARDING_COMPLETE_PATTERNS.some(pattern => pattern.test(cleanData));
 }
 
 /**
