@@ -32,7 +32,9 @@ export type TaskEvent =
   | { type: 'USER_RESUMED' }
   | { type: 'MARK_DONE' }
   | { type: 'CREATE_PR' }
-  | { type: 'PR_CREATED'; prUrl: string };
+  | { type: 'PR_CREATED'; prUrl: string }
+  | { type: 'SUBTASK_REVIEW_NEEDED'; subtaskId: string; completedCount: number; totalCount: number }
+  | { type: 'SUBTASK_APPROVED' };
 
 export const taskMachine = createMachine(
   {
@@ -96,7 +98,16 @@ export const taskMachine = createMachine(
           ALL_SUBTASKS_DONE: 'qa_review',
           // Fallback: if QA_PASSED arrives while still in coding (missed QA_STARTED), go to human_review
           QA_PASSED: { target: 'human_review', actions: 'setReviewReasonCompleted' },
+          // Per-subtask review gate: pause for human review after each subtask
+          SUBTASK_REVIEW_NEEDED: { target: 'subtask_review', actions: 'setReviewReasonSubtaskReview' },
           CODING_FAILED: { target: 'error', actions: ['setReviewReasonErrors', 'setError'] },
+          USER_STOPPED: { target: 'human_review', actions: 'setReviewReasonStopped' },
+          PROCESS_EXITED: { target: 'error', guard: 'unexpectedExit', actions: 'setReviewReasonErrors' }
+        }
+      },
+      subtask_review: {
+        on: {
+          SUBTASK_APPROVED: { target: 'coding', actions: 'clearReviewReason' },
           USER_STOPPED: { target: 'human_review', actions: 'setReviewReasonStopped' },
           PROCESS_EXITED: { target: 'error', guard: 'unexpectedExit', actions: 'setReviewReasonErrors' }
         }
@@ -163,6 +174,7 @@ export const taskMachine = createMachine(
     },
     actions: {
       setReviewReasonPlan: assign({ reviewReason: () => 'plan_review' }),
+      setReviewReasonSubtaskReview: assign({ reviewReason: () => 'subtask_review' }),
       setReviewReasonCompleted: assign({ reviewReason: () => 'completed' }),
       setReviewReasonStopped: assign({ reviewReason: () => 'stopped' }),
       setReviewReasonQaRejected: assign({ reviewReason: () => 'qa_rejected' }),

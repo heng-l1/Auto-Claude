@@ -62,6 +62,7 @@ export interface TaskAPI {
   // Workspace Management (for human review)
   getWorktreeStatus: (taskId: string) => Promise<IPCResult<import('../../shared/types').WorktreeStatus>>;
   getWorktreeDiff: (taskId: string) => Promise<IPCResult<import('../../shared/types').WorktreeDiff>>;
+  getWorktreeSubtaskDiffs: (taskId: string) => Promise<IPCResult<import('../../shared/types').SubtaskDiff[]>>;
   mergeWorktree: (taskId: string, options?: { noCommit?: boolean }) => Promise<IPCResult<import('../../shared/types').WorktreeMergeResult>>;
   mergeWorktreePreview: (taskId: string) => Promise<IPCResult<import('../../shared/types').WorktreeMergeResult>>;
   discardWorktree: (taskId: string, skipStatusChange?: boolean) => Promise<IPCResult<import('../../shared/types').WorktreeDiscardResult>>;
@@ -165,6 +166,9 @@ export const createTaskAPI = (): TaskAPI => ({
 
   getWorktreeDiff: (taskId: string): Promise<IPCResult<import('../../shared/types').WorktreeDiff>> =>
     ipcRenderer.invoke(IPC_CHANNELS.TASK_WORKTREE_DIFF, taskId),
+
+  getWorktreeSubtaskDiffs: (taskId: string): Promise<IPCResult<import('../../shared/types').SubtaskDiff[]>> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TASK_WORKTREE_SUBTASK_DIFFS, taskId),
 
   mergeWorktree: (taskId: string, options?: { noCommit?: boolean }): Promise<IPCResult<import('../../shared/types').WorktreeMergeResult>> =>
     ipcRenderer.invoke(IPC_CHANNELS.TASK_WORKTREE_MERGE, taskId, options),

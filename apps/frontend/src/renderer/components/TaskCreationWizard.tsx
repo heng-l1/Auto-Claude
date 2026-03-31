@@ -132,8 +132,9 @@ export function TaskCreationWizard({
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [referencedFiles, setReferencedFiles] = useState<ReferencedFile[]>([]);
 
-  // Review setting
+  // Review settings
   const [requireReviewBeforeCoding, setRequireReviewBeforeCoding] = useState(false);
+  const [requireReviewPerSubtask, setRequireReviewPerSubtask] = useState(false);
 
   // Fast mode
   const [fastMode, setFastMode] = useState(false);
@@ -183,6 +184,7 @@ export function TaskCreationWizard({
         setImages(draft.images);
         setReferencedFiles(draft.referencedFiles ?? []);
         setRequireReviewBeforeCoding(draft.requireReviewBeforeCoding ?? false);
+        setRequireReviewPerSubtask(draft.requireReviewPerSubtask ?? false);
         setFastMode(draft.fastMode ?? false);
         setIsDraftRestored(true);
 
@@ -207,6 +209,7 @@ export function TaskCreationWizard({
         setImages([]);
         setReferencedFiles([]);
         setRequireReviewBeforeCoding(false);
+        setRequireReviewPerSubtask(false);
         setFastMode(false);
         setBaseBranch(PROJECT_DEFAULT_BRANCH);
         setUseWorktree(true);
@@ -285,9 +288,10 @@ export function TaskCreationWizard({
     images,
     referencedFiles,
     requireReviewBeforeCoding,
+    requireReviewPerSubtask,
     fastMode,
     savedAt: new Date()
-  }), [projectId, title, description, category, priority, complexity, impact, profileId, model, thinkingLevel, phaseModels, phaseThinking, phaseUltrathink, images, referencedFiles, requireReviewBeforeCoding, fastMode]);
+  }), [projectId, title, description, category, priority, complexity, impact, profileId, model, thinkingLevel, phaseModels, phaseThinking, phaseUltrathink, images, referencedFiles, requireReviewBeforeCoding, requireReviewPerSubtask, fastMode]);
 
   /**
    * Detect @ mention being typed and show autocomplete
@@ -459,6 +463,7 @@ export function TaskCreationWizard({
       if (images.length > 0) metadata.attachedImages = images;
       if (allReferencedFiles.length > 0) metadata.referencedFiles = allReferencedFiles;
       if (requireReviewBeforeCoding) metadata.requireReviewBeforeCoding = true;
+      if (requireReviewPerSubtask) metadata.requireReviewPerSubtask = true;
       // Always include baseBranch - resolve PROJECT_DEFAULT_BRANCH to actual branch name
       // This ensures the backend always knows which branch to use for worktree creation
       if (baseBranch === PROJECT_DEFAULT_BRANCH) {
@@ -506,6 +511,7 @@ export function TaskCreationWizard({
     setImages([]);
     setReferencedFiles([]);
     setRequireReviewBeforeCoding(false);
+    setRequireReviewPerSubtask(false);
     setFastMode(false);
     setBaseBranch(PROJECT_DEFAULT_BRANCH);
     setUseWorktree(true);
@@ -691,6 +697,8 @@ export function TaskCreationWizard({
           onImagesChange={setImages}
           requireReviewBeforeCoding={requireReviewBeforeCoding}
           onRequireReviewChange={setRequireReviewBeforeCoding}
+          requireReviewPerSubtask={requireReviewPerSubtask}
+          onRequireReviewPerSubtaskChange={setRequireReviewPerSubtask}
           fastMode={fastMode}
           onFastModeChange={setFastMode}
           showFastModeToggle={showFastModeToggle}

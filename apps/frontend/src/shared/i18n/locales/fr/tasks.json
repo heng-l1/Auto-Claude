@@ -1,0 +1,9 @@
+{
+  "form": {
+    "requireReviewPerSubtaskLabel": "Examiner chaque sous-t\u00e2che avant de continuer",
+    "requireReviewPerSubtaskDescription": "Mettre en pause apr\u00e8s chaque sous-t\u00e2che pour examiner les modifications avant de passer \u00e0 la suivante."
+  },
+  "reviewReason": {
+    "subtaskReview": "Examen de sous-t\u00e2che"
+  }
+}

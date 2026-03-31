@@ -39,7 +39,8 @@
     "hasErrors": "Has Errors",
     "qaIssues": "QA Issues",
     "approvePlan": "Approve Plan",
-    "stopped": "Stopped"
+    "stopped": "Stopped",
+    "subtaskReview": "Subtask Review"
   },
   "tooltips": {
     "archiveTask": "Archive task",
@@ -269,6 +270,8 @@
     "classificationOptional": "Classification (optional)",
     "requireReviewLabel": "Require human review before coding",
     "requireReviewDescription": "When enabled, you'll be prompted to review the spec and implementation plan before the coding phase begins. This allows you to approve, request changes, or provide feedback.",
+    "requireReviewPerSubtaskLabel": "Review each subtask before continuing",
+    "requireReviewPerSubtaskDescription": "Pause after each subtask completes so you can review changes before the next subtask starts.",
     "fastModeLabel": "Fast Mode",
     "fastModeDescription": "Same Opus 4.6 model with faster output. Higher cost per token.",
     "fastModeNotice": "Requires \"extra usage\" enabled on your Claude subscription.",

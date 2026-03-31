@@ -8,6 +8,7 @@
  * - Agent profile selector
  * - Classification fields (collapsible)
  * - Review requirement checkbox
+ * - Per-subtask review requirement checkbox
  */
 import { useRef, useState, useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -89,6 +90,10 @@ interface TaskFormFieldsProps {
   requireReviewBeforeCoding: boolean;
   onRequireReviewChange: (require: boolean) => void;
 
+  // Per-subtask review requirement
+  requireReviewPerSubtask: boolean;
+  onRequireReviewPerSubtaskChange: (require: boolean) => void;
+
   // Fast mode
   fastMode?: boolean;
   onFastModeChange?: (value: boolean) => void;
@@ -145,6 +150,8 @@ export function TaskFormFields({
   onImagesChange,
   requireReviewBeforeCoding,
   onRequireReviewChange,
+  requireReviewPerSubtask,
+  onRequireReviewPerSubtaskChange,
   fastMode = false,
   onFastModeChange,
   showFastModeToggle = false,
@@ -544,6 +551,28 @@ export function TaskFormFields({
             </Label>
             <p className="text-xs text-muted-foreground">
               {t('tasks:form.requireReviewDescription')}
+            </p>
+          </div>
+        </div>
+
+        {/* Per-Subtask Review Requirement Toggle */}
+        <div className="flex items-start gap-3 p-4 rounded-lg border border-border bg-muted/30">
+          <Checkbox
+            id={`${prefix}require-review-per-subtask`}
+            checked={requireReviewPerSubtask}
+            onCheckedChange={(checked) => onRequireReviewPerSubtaskChange(checked === true)}
+            disabled={disabled}
+            className="mt-0.5"
+          />
+          <div className="flex-1 space-y-1">
+            <Label
+              htmlFor={`${prefix}require-review-per-subtask`}
+              className="text-sm font-medium text-foreground cursor-pointer"
+            >
+              {t('tasks:form.requireReviewPerSubtaskLabel')}
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              {t('tasks:form.requireReviewPerSubtaskDescription')}
             </p>
           </div>
         </div>

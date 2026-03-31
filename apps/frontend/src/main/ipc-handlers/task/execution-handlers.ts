@@ -222,6 +222,10 @@ export function registerTaskExecutionHandlers(
         // XState says plan_review - send PLAN_APPROVED
         console.warn('[TASK_START] XState: plan_review -> coding via PLAN_APPROVED');
         taskStateManager.handleUiEvent(taskId, { type: 'PLAN_APPROVED' }, task, project);
+      } else if (currentXState === 'subtask_review') {
+        // XState says subtask_review - send SUBTASK_APPROVED to resume coding
+        console.warn('[TASK_START] XState: subtask_review -> coding via SUBTASK_APPROVED');
+        taskStateManager.handleUiEvent(taskId, { type: 'SUBTASK_APPROVED' }, task, project);
       } else if (currentXState === 'error' && !planHasSubtasks) {
         // FIX (#1562): Task crashed during planning (no subtasks yet).
         // Uses planHasSubtasks from implementation_plan.json (more reliable than task.subtasks.length).
@@ -240,6 +244,10 @@ export function registerTaskExecutionHandlers(
         // No XState actor - fallback to task data (e.g., after app restart)
         console.warn('[TASK_START] No XState actor, task data: plan_review -> coding via PLAN_APPROVED');
         taskStateManager.handleUiEvent(taskId, { type: 'PLAN_APPROVED' }, task, project);
+      } else if (task.status === 'human_review' && task.reviewReason === 'subtask_review') {
+        // No XState actor - fallback to task data for subtask review (e.g., after app restart)
+        console.warn('[TASK_START] No XState actor, task data: subtask_review -> coding via SUBTASK_APPROVED');
+        taskStateManager.handleUiEvent(taskId, { type: 'SUBTASK_APPROVED' }, task, project);
       } else if (task.status === 'error' && !planHasSubtasks) {
         // FIX (#1562): No XState actor, task crashed during planning (no subtasks).
         // Uses planHasSubtasks from implementation_plan.json (more reliable than task.subtasks.length).

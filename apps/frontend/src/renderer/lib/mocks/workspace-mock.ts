@@ -18,6 +18,11 @@ export const workspaceMock = {
     }
   }),
 
+  getWorktreeSubtaskDiffs: async () => ({
+    success: true,
+    data: []
+  }),
+
   mergeWorktree: async () => ({
     success: true,
     data: {

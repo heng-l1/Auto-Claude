@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useProjectStore } from '../../../stores/project-store';
 import { useSettingsStore } from '../../../stores/settings-store';
 import { checkTaskRunning, isIncompleteHumanReview, getTaskProgress, useTaskStore, loadTasks, hasRecentActivity } from '../../../stores/task-store';
-import type { Task, TaskLogs, TaskLogPhase, WorktreeStatus, WorktreeDiff, MergeConflict, MergeStats, GitConflictInfo, ImageAttachment } from '../../../../shared/types';
+import type { Task, TaskLogs, TaskLogPhase, WorktreeStatus, WorktreeDiff, SubtaskDiff, MergeConflict, MergeStats, GitConflictInfo, ImageAttachment } from '../../../../shared/types';
 
 /**
  * Validates task subtasks structure to prevent infinite loops during resume.
@@ -66,6 +66,7 @@ export function useTaskDetail({ task }: UseTaskDetailOptions) {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [worktreeStatus, setWorktreeStatus] = useState<WorktreeStatus | null>(null);
   const [worktreeDiff, setWorktreeDiff] = useState<WorktreeDiff | null>(null);
+  const [subtaskDiffs, setSubtaskDiffs] = useState<SubtaskDiff[]>([]);
   const [isLoadingWorktree, setIsLoadingWorktree] = useState(false);
   const [isMerging, setIsMerging] = useState(false);
   const [isDiscarding, setIsDiscarding] = useState(false);
@@ -174,7 +175,7 @@ export function useTaskDetail({ task }: UseTaskDetailOptions) {
         logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
       }
     }
-  }, [activeTab, isUserScrolledUp, logOrder]);
+  }, [activeTab, isUserScrolledUp, logOrder, phaseLogs]);
 
   // Reset scroll state when switching to logs tab
   useEffect(() => {
@@ -196,13 +197,17 @@ export function useTaskDetail({ task }: UseTaskDetailOptions) {
 
       Promise.all([
         window.electronAPI.getWorktreeStatus(task.id),
-        window.electronAPI.getWorktreeDiff(task.id)
-      ]).then(([statusResult, diffResult]) => {
+        window.electronAPI.getWorktreeDiff(task.id),
+        window.electronAPI.getWorktreeSubtaskDiffs(task.id)
+      ]).then(([statusResult, diffResult, subtaskDiffsResult]) => {
         if (statusResult.success && statusResult.data) {
           setWorktreeStatus(statusResult.data);
         }
         if (diffResult.success && diffResult.data) {
           setWorktreeDiff(diffResult.data);
+        }
+        if (subtaskDiffsResult.success && subtaskDiffsResult.data) {
+          setSubtaskDiffs(subtaskDiffsResult.data);
         }
       }).catch((err) => {
         console.error('Failed to load worktree info:', err);
@@ -212,6 +217,7 @@ export function useTaskDetail({ task }: UseTaskDetailOptions) {
     } else {
       setWorktreeStatus(null);
       setWorktreeDiff(null);
+      setSubtaskDiffs([]);
     }
   }, [task.id, needsReview]);
 
@@ -335,12 +341,8 @@ export function useTaskDetail({ task }: UseTaskDetailOptions) {
       // Process merge preview result if fulfilled
       if (previewResult.status === 'fulfilled') {
         const result = previewResult.value;
-        if (result.success && result.data?.success && result.data?.preview) {
+        if (result.success && result.data?.preview) {
           setMergePreview(result.data.preview);
-        } else if (result.success && result.data?.preview && !result.data?.success) {
-          // Backend returned an error (e.g., exception during conflict check)
-          // but IPC succeeded — don't set a misleading "Ready to merge" preview
-          errors.push(`Merge preview: ${result.data?.message || 'Preview failed'}`);
         } else if (!result.success && result.error) {
           errors.push(`Merge preview: ${result.error}`);
         }
@@ -377,215 +379,252 @@ export function useTaskDetail({ task }: UseTaskDetailOptions) {
 
   // Handle "Review Again" - clears staged state and reloads worktree info
   const handleReviewAgain = useCallback(async () => {
-    // Clear staged success state if it was set in this session
     setStagedSuccess(null);
     setStagedProjectPath(undefined);
     setSuggestedCommitMessage(undefined);
-
-    // Reset merge preview to force re-check
+    setStageOnly(false);
+    setShowDiscardDialog(false);
     setMergePreview(null);
     hasLoadedPreviewRef.current = null;
 
-    // Reset workspace error state
-    setWorkspaceError(null);
-
-    // Reload worktree status
+    // Reload both worktree and merge preview
     setIsLoadingWorktree(true);
+    setIsLoadingPreview(true);
+
     try {
-      const [statusResult, diffResult] = await Promise.all([
+      const [statusResult, diffResult, subtaskDiffsResult, previewResult] = await Promise.all([
         window.electronAPI.getWorktreeStatus(task.id),
-        window.electronAPI.getWorktreeDiff(task.id)
+        window.electronAPI.getWorktreeDiff(task.id),
+        window.electronAPI.getWorktreeSubtaskDiffs(task.id),
+        window.electronAPI.mergeWorktreePreview(task.id)
       ]);
+
       if (statusResult.success && statusResult.data) {
         setWorktreeStatus(statusResult.data);
       }
       if (diffResult.success && diffResult.data) {
         setWorktreeDiff(diffResult.data);
       }
-
-      // Reload task data from store to reflect cleared staged state
-      // (clearStagedState IPC already invalidated the cache)
-      if (selectedProject) {
-        await loadTasks(selectedProject.id);
+      if (subtaskDiffsResult.success && subtaskDiffsResult.data) {
+        setSubtaskDiffs(subtaskDiffsResult.data);
+      }
+      if (previewResult.success && previewResult.data?.preview) {
+        setMergePreview(previewResult.data.preview);
+        hasLoadedPreviewRef.current = task.id;
       }
     } catch (err) {
-      console.error('Failed to reload worktree info:', err);
+      console.error('[useTaskDetail] Failed to reload review data:', err);
+      setWorkspaceError('Failed to reload review data. Please try again.');
     } finally {
       setIsLoadingWorktree(false);
+      setIsLoadingPreview(false);
     }
-  }, [task.id, selectedProject]);
+  }, [task.id]);
 
-  // NOTE: Merge preview is NO LONGER auto-loaded on modal open.
-  // User must click "Check for Conflicts" button to trigger the expensive preview operation.
-  // This improves modal open performance significantly (avoids 1-30+ second Python subprocess).
+  // State for staged worktree merge (stores result of mergeWorktree API call)
+  const [stagedWorktree, setStagedWorktree] = useState<{
+    projectPath: string;
+    commitMessage: string;
+  } | null>(null);
 
-  /**
-   * Reloads implementation plan for an incomplete task to ensure subtasks are properly loaded.
-   * This prevents the "Task Incomplete" infinite loop when resuming stuck tasks.
-   */
-  const reloadPlanForIncompleteTask = useCallback(async (): Promise<boolean> => {
-    if (!selectedProject) {
-      console.error('[reloadPlanForIncompleteTask] No selected project');
-      return false;
-    }
+  // Merge worktree - stages the merge without committing
+  const handleMergeWorktree = useCallback(async (stageOnlyMode: boolean) => {
+    setIsMerging(true);
+    setWorkspaceError(null);
 
-    // Only reload if task is incomplete and subtasks are invalid
-    if (!isIncomplete) {
-      return true; // Not incomplete, no reload needed
-    }
-
-    // Check if subtasks are valid
-    if (validateTaskSubtasks(task)) {
-      console.log('[reloadPlanForIncompleteTask] Subtasks are valid, no reload needed');
-      return true; // Subtasks are valid, proceed
-    }
-
-    console.warn('[reloadPlanForIncompleteTask] Task has invalid subtasks, reloading plan:', {
-      taskId: task.id,
-      specId: task.specId,
-      subtaskCount: task.subtasks?.length || 0
-    });
-
-    setIsLoadingPlan(true);
     try {
-      // Reload tasks from the project to get fresh implementation plan
-      const result = await window.electronAPI.getTasks(selectedProject.id);
+      const result = await window.electronAPI.mergeWorktree(task.id, stageOnlyMode);
 
-      if (!result.success || !result.data) {
-        console.error('[reloadPlanForIncompleteTask] Failed to reload tasks:', result.error);
-        return false;
+      if (result.success && result.data) {
+        setStagedSuccess(`Changes ${stageOnlyMode ? 'staged' : 'merged'} successfully`);
+        setStagedProjectPath(result.data.projectPath);
+        setSuggestedCommitMessage(result.data.commitMessage);
+
+        // Store the merge result for commit
+        setStagedWorktree({
+          projectPath: result.data.projectPath,
+          commitMessage: result.data.commitMessage
+        });
+
+        // Only clear merge preview if full merge (not stage-only)
+        if (!stageOnlyMode) {
+          setMergePreview(null);
+          hasLoadedPreviewRef.current = null;
+        }
+      } else {
+        setWorkspaceError(result.error || 'Failed to merge worktree');
       }
-
-      // Find the updated task in the result
-      const updatedTask = result.data.find(t => t.id === task.id || t.specId === task.specId);
-      if (!updatedTask) {
-        console.error('[reloadPlanForIncompleteTask] Task not found in reloaded tasks');
-        return false;
-      }
-
-      // Validate the reloaded subtasks
-      if (!validateTaskSubtasks(updatedTask)) {
-        console.error('[reloadPlanForIncompleteTask] Reloaded task still has invalid subtasks');
-        return false;
-      }
-
-      console.log('[reloadPlanForIncompleteTask] Successfully reloaded plan with valid subtasks:', {
-        taskId: task.id,
-        subtaskCount: updatedTask.subtasks?.length ?? 0
-      });
-
-      // FIX (PR Review): Update the Zustand store with the reloaded task data
-      // Without this, the UI continues to display stale/invalid subtasks
-      const store = useTaskStore.getState();
-      store.updateTask(task.id, {
-        subtasks: updatedTask.subtasks,
-        title: updatedTask.title,
-        description: updatedTask.description,
-        metadata: updatedTask.metadata,
-        updatedAt: new Date()
-      });
-
-      return true;
     } catch (err) {
-      console.error('[reloadPlanForIncompleteTask] Error reloading plan:', err);
-      return false;
+      console.error('[useTaskDetail] Failed to merge worktree:', err);
+      setWorkspaceError('An error occurred while merging the worktree');
     } finally {
-      setIsLoadingPlan(false);
+      setIsMerging(false);
     }
-  }, [selectedProject, task, isIncomplete]);
+  }, [task.id]);
+
+  // Commit staged worktree
+  const commitStagedWorktree = useCallback(async (customMessage?: string) => {
+    if (!stagedWorktree) {
+      setWorkspaceError('No staged merge found');
+      return;
+    }
+
+    setIsMerging(true);
+    setWorkspaceError(null);
+
+    try {
+      const message = customMessage || stagedWorktree.commitMessage;
+      const result = await window.electronAPI.commitWorktreeMerge(task.id, message);
+
+      if (result.success) {
+        setStagedSuccess('Merge committed successfully');
+        setStagedWorktree(null);
+        setSuggestedCommitMessage(undefined);
+
+        // Reload task and close dialogs after commit
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        await loadTasks();
+      } else {
+        setWorkspaceError(result.error || 'Failed to commit merge');
+      }
+    } catch (err) {
+      console.error('[useTaskDetail] Failed to commit merge:', err);
+      setWorkspaceError('An error occurred while committing the merge');
+    } finally {
+      setIsMerging(false);
+    }
+  }, [task.id, stagedWorktree]);
+
+  // Discard worktree changes
+  const handleDiscardWorktree = useCallback(async () => {
+    setIsDiscarding(true);
+    setWorkspaceError(null);
+
+    try {
+      const result = await window.electronAPI.discardWorktreeChanges(task.id);
+
+      if (result.success) {
+        setShowDiscardDialog(false);
+        setStagedSuccess('Changes discarded successfully');
+        setMergePreview(null);
+        hasLoadedPreviewRef.current = null;
+
+        // Reload worktree status
+        setIsLoadingWorktree(true);
+        const statusResult = await window.electronAPI.getWorktreeStatus(task.id);
+        if (statusResult.success && statusResult.data) {
+          setWorktreeStatus(statusResult.data);
+        }
+        setIsLoadingWorktree(false);
+      } else {
+        setWorkspaceError(result.error || 'Failed to discard changes');
+      }
+    } catch (err) {
+      console.error('[useTaskDetail] Failed to discard worktree changes:', err);
+      setWorkspaceError('An error occurred while discarding changes');
+    } finally {
+      setIsDiscarding(false);
+    }
+  }, [task.id]);
+
+  // Delete task
+  const deleteTask = useCallback(async () => {
+    setIsDeleting(true);
+    setDeleteError(null);
+
+    try {
+      const result = await window.electronAPI.deleteTask(task.id);
+
+      if (result.success) {
+        // Task deleted successfully - UI will handle removal via task store subscription
+        setShowDeleteDialog(false);
+      } else {
+        setDeleteError(result.error || 'Failed to delete task');
+      }
+    } catch (err) {
+      console.error('[useTaskDetail] Failed to delete task:', err);
+      setDeleteError('An error occurred while deleting the task');
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [task.id]);
 
   return {
     // State
     feedback,
+    setFeedback,
     feedbackImages,
     isSubmitting,
+    setIsSubmitting,
     activeTab,
+    setActiveTab,
     isUserScrolledUp,
     isStuck,
     isRecovering,
+    setIsRecovering,
     hasCheckedRunning,
     showDeleteDialog,
+    setShowDeleteDialog,
     isDeleting,
     deleteError,
     worktreeChangesInfo,
     isCheckingChanges,
     isEditDialogOpen,
+    setIsEditDialogOpen,
     worktreeStatus,
     worktreeDiff,
+    subtaskDiffs,
     isLoadingWorktree,
     isMerging,
     isDiscarding,
     showDiscardDialog,
+    setShowDiscardDialog,
     workspaceError,
     showDiffDialog,
+    setShowDiffDialog,
     stageOnly,
+    setStageOnly,
     stagedSuccess,
+    setStagedSuccess,
     stagedProjectPath,
     suggestedCommitMessage,
+    setSuggestedCommitMessage,
     phaseLogs,
     isLoadingLogs,
     expandedPhases,
+    isLoadingPlan,
     logsEndRef,
     logsContainerRef,
-    selectedProject,
+    mergePreview,
+    isLoadingPreview,
+    showConflictDialog,
+    setShowConflictDialog,
+    showPRDialog,
+    setShowPRDialog,
+    isCreatingPR,
+    setIsCreatingPR,
+
+    // Computed
     isRunning,
+    isActiveTask,
     needsReview,
     executionPhase,
     hasActiveExecution,
     isIncomplete,
     taskProgress,
-    mergePreview,
-    isLoadingPreview,
-    showConflictDialog,
-    showPRDialog,
-    isCreatingPR,
-    isLoadingPlan,
 
-    // Setters
-    setFeedback,
-    setFeedbackImages,
-    setIsSubmitting,
-    setActiveTab,
-    setIsUserScrolledUp,
-    setIsStuck,
-    setIsRecovering,
-    setHasCheckedRunning,
-    setShowDeleteDialog,
-    setIsDeleting,
-    setDeleteError,
-    setWorktreeChangesInfo,
-    setIsCheckingChanges,
-    setIsEditDialogOpen,
-    setWorktreeStatus,
-    setWorktreeDiff,
-    setIsLoadingWorktree,
-    setIsMerging,
-    setIsDiscarding,
-    setShowDiscardDialog,
-    setWorkspaceError,
-    setShowDiffDialog,
-    setStageOnly,
-    setStagedSuccess,
-    setStagedProjectPath,
-    setSuggestedCommitMessage,
-    setPhaseLogs,
-    setIsLoadingLogs,
-    setExpandedPhases,
-    setMergePreview,
-    setIsLoadingPreview,
-    setShowConflictDialog,
-    setShowPRDialog,
-    setIsCreatingPR,
-
-    // Handlers
+    // Methods
     handleLogsScroll,
     togglePhase,
-    loadMergePreview,
     addFeedbackImage,
     addFeedbackImages,
     removeFeedbackImage,
     clearFeedbackImages,
+    loadMergePreview,
     handleReviewAgain,
-    reloadPlanForIncompleteTask,
+    handleMergeWorktree,
+    commitStagedWorktree,
+    handleDiscardWorktree,
+    deleteTask
   };
 }

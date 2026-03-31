@@ -1,4 +1,4 @@
-import { AlertCircle, GitMerge, Loader2, Check, RotateCcw, Play } from 'lucide-react';
+import { AlertCircle, GitMerge, Loader2, Check, RotateCcw, Play, SkipForward } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../../ui/button';
@@ -42,6 +42,10 @@ export function NoWorkspaceMessage({ task, onClose }: NoWorkspaceMessageProps) {
     task?.status === 'human_review' &&
     task.reviewReason === 'plan_review';
 
+  const isSubtaskReview =
+    task?.status === 'human_review' &&
+    task.reviewReason === 'subtask_review';
+
   const handleMarkDone = async () => {
     if (!task) return;
 
@@ -82,12 +86,18 @@ export function NoWorkspaceMessage({ task, onClose }: NoWorkspaceMessageProps) {
     <div className="rounded-xl border border-border bg-secondary/30 p-4">
       <h3 className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
         <AlertCircle className="h-4 w-4 text-muted-foreground" />
-        {isPlanReview ? 'Human Review Required' : 'No Workspace Found'}
+        {isPlanReview
+          ? 'Human Review Required'
+          : isSubtaskReview
+            ? t('tasks:reviewReason.subtaskReview')
+            : 'No Workspace Found'}
       </h3>
       <p className="text-sm text-muted-foreground mb-3">
         {isPlanReview
           ? 'Human review required prior to coding. Review your spec.md for any necessary changes.'
-          : 'No isolated workspace was found for this task. The changes may have been made directly in your project.'}
+          : isSubtaskReview
+            ? t('tasks:form.requireReviewPerSubtaskDescription')
+            : 'No isolated workspace was found for this task. The changes may have been made directly in your project.'}
       </p>
 
       {/* Allow marking as done */}
@@ -108,6 +118,26 @@ export function NoWorkspaceMessage({ task, onClose }: NoWorkspaceMessageProps) {
             <>
               <Play className="h-4 w-4 mr-2" />
               Proceed to Coding
+            </>
+          )}
+        </Button>
+      ) : isSubtaskReview ? (
+        <Button
+          onClick={handleProceedToCoding}
+          disabled={isProceeding}
+          size="sm"
+          variant="default"
+          className="w-full"
+        >
+          {isProceeding ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Updating...
+            </>
+          ) : (
+            <>
+              <SkipForward className="h-4 w-4 mr-2" />
+              Continue to Next Subtask
             </>
           )}
         </Button>

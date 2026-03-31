@@ -1,6 +1,6 @@
 import { ipcMain, BrowserWindow, shell, app } from 'electron';
 import { IPC_CHANNELS, AUTO_BUILD_PATHS, DEFAULT_APP_SETTINGS, DEFAULT_FEATURE_MODELS, DEFAULT_FEATURE_THINKING, MODEL_ID_MAP, THINKING_BUDGET_MAP, getSpecsDir } from '../../../shared/constants';
-import type { IPCResult, WorktreeStatus, WorktreeDiff, WorktreeDiffFile, WorktreeMergeResult, WorktreeDiscardResult, WorktreeListResult, WorktreeListItem, WorktreeCreatePROptions, WorktreeCreatePRResult, SupportedIDE, SupportedTerminal, AppSettings } from '../../../shared/types';
+import type { IPCResult, WorktreeStatus, WorktreeDiff, WorktreeDiffFile, SubtaskDiff, WorktreeMergeResult, WorktreeDiscardResult, WorktreeListResult, WorktreeListItem, WorktreeCreatePROptions, WorktreeCreatePRResult, SupportedIDE, SupportedTerminal, AppSettings } from '../../../shared/types';
 import path from 'path';
 import { minimatch } from 'minimatch';
 import { existsSync, readdirSync, statSync, readFileSync, promises as fsPromises } from 'fs';
@@ -2046,6 +2046,216 @@ export function registerWorktreeHandlers(
         return {
           success: false,
           error: error instanceof Error ? error.message : 'Failed to get worktree diff'
+        };
+      }
+    }
+  );
+
+  /**
+   * Get per-subtask diffs for a task's worktree.
+   * Reads build_commits.json to find which commits belong to which subtask,
+   * then computes a git diff for each subtask's commit range.
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.TASK_WORKTREE_SUBTASK_DIFFS,
+    async (_, taskId: string): Promise<IPCResult<SubtaskDiff[]>> => {
+      try {
+        const { task, project } = findTaskAndProject(taskId);
+        if (!task || !project) {
+          return { success: false, error: 'Task not found' };
+        }
+
+        const worktreePath = findTaskWorktree(project.path, task.specId);
+        if (!worktreePath) {
+          return { success: false, error: 'No worktree found for this task' };
+        }
+
+        // Read build_commits.json — try main project spec dir first, fallback to worktree
+        const specDir = path.join(project.path, '.auto-claude', 'specs', task.specId);
+        const worktreeSpecDir = path.join(worktreePath, '.auto-claude', 'specs', task.specId);
+
+        let buildCommitsPath = path.join(specDir, 'memory', 'build_commits.json');
+        if (!existsSync(buildCommitsPath)) {
+          buildCommitsPath = path.join(worktreeSpecDir, 'memory', 'build_commits.json');
+        }
+        if (!existsSync(buildCommitsPath)) {
+          return { success: true, data: [] }; // No commit tracking available
+        }
+
+        let buildCommits: { commits: Array<{ hash: string; subtask_id: string; timestamp: string }>; last_good_commit?: string };
+        try {
+          buildCommits = JSON.parse(readFileSync(buildCommitsPath, 'utf-8'));
+        } catch {
+          return { success: true, data: [] };
+        }
+
+        if (!buildCommits.commits || buildCommits.commits.length === 0) {
+          return { success: true, data: [] };
+        }
+
+        // Read implementation plan for subtask descriptions
+        let planPath = path.join(specDir, 'implementation_plan.json');
+        if (!existsSync(planPath)) {
+          planPath = path.join(worktreeSpecDir, 'implementation_plan.json');
+        }
+
+        const subtaskDescriptionMap = new Map<string, string>();
+        if (existsSync(planPath)) {
+          try {
+            const plan = JSON.parse(readFileSync(planPath, 'utf-8'));
+            if (plan.phases && Array.isArray(plan.phases)) {
+              for (const phase of plan.phases) {
+                if (phase.subtasks && Array.isArray(phase.subtasks)) {
+                  for (const st of phase.subtasks) {
+                    if (st.id && st.description) {
+                      subtaskDescriptionMap.set(st.id, st.description);
+                    }
+                  }
+                }
+              }
+            }
+          } catch {
+            // Non-fatal: proceed without descriptions
+          }
+        }
+
+        // Group commits by subtask_id, preserving order of first appearance
+        const subtaskOrder: string[] = [];
+        const subtaskCommits = new Map<string, Array<{ hash: string; timestamp: string }>>();
+        for (const commit of buildCommits.commits) {
+          if (!subtaskCommits.has(commit.subtask_id)) {
+            subtaskOrder.push(commit.subtask_id);
+            subtaskCommits.set(commit.subtask_id, []);
+          }
+          subtaskCommits.get(commit.subtask_id)!.push({ hash: commit.hash, timestamp: commit.timestamp });
+        }
+
+        const baseBranch = getEffectiveBaseBranch(project.path, task.specId, project.settings?.mainBranch);
+
+        // Build per-subtask diffs
+        const result: SubtaskDiff[] = [];
+        let previousEnd: string = baseBranch; // Start from base branch for first subtask
+
+        for (const subtaskId of subtaskOrder) {
+          const commits = subtaskCommits.get(subtaskId)!;
+          const lastCommit = commits[commits.length - 1];
+
+          // Verify the commit exists in the worktree
+          try {
+            execFileSync(getToolPath('git'), ['cat-file', '-t', lastCommit.hash], {
+              cwd: worktreePath,
+              encoding: 'utf-8',
+              stdio: ['pipe', 'pipe', 'pipe']
+            });
+          } catch {
+            // Commit not reachable; skip this subtask
+            previousEnd = lastCommit.hash;
+            continue;
+          }
+
+          // Compute diff: previousEnd..lastCommit.hash
+          const diffRange = `${previousEnd}..${lastCommit.hash}`;
+          const files: WorktreeDiffFile[] = [];
+
+          try {
+            // Get file stats (numstat + name-status)
+            const numstat = execFileSync(getToolPath('git'), ['diff', '--numstat', diffRange], {
+              cwd: worktreePath, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe']
+            }).trim();
+
+            const nameStatus = execFileSync(getToolPath('git'), ['diff', '--name-status', diffRange], {
+              cwd: worktreePath, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe']
+            }).trim();
+
+            // Parse name-status
+            const statusMap: Record<string, 'added' | 'modified' | 'deleted' | 'renamed'> = {};
+            const oldPathMap: Record<string, string> = {};
+            nameStatus.split('\n').filter(Boolean).forEach((line: string) => {
+              const [status, ...pathParts] = line.split('\t');
+              const filePath = pathParts.join('\t');
+              switch (status[0]) {
+                case 'A': statusMap[filePath] = 'added'; break;
+                case 'M': statusMap[filePath] = 'modified'; break;
+                case 'D': statusMap[filePath] = 'deleted'; break;
+                case 'R': {
+                  const newPath = pathParts[1] || filePath;
+                  statusMap[newPath] = 'renamed';
+                  if (pathParts[0] && pathParts[1] && pathParts[0] !== pathParts[1]) {
+                    oldPathMap[newPath] = pathParts[0];
+                  }
+                  break;
+                }
+                default: statusMap[filePath] = 'modified';
+              }
+            });
+
+            // Parse numstat
+            numstat.split('\n').filter(Boolean).forEach((line: string) => {
+              const [adds, dels, filePath] = line.split('\t');
+              const file: WorktreeDiffFile = {
+                path: filePath,
+                status: statusMap[filePath] || 'modified',
+                additions: parseInt(adds, 10) || 0,
+                deletions: parseInt(dels, 10) || 0
+              };
+              if (oldPathMap[filePath]) {
+                file.oldPath = oldPathMap[filePath];
+              }
+              files.push(file);
+            });
+
+            // Get full unified diff and attach per-file patches
+            let fullPatch = '';
+            try {
+              fullPatch = execFileSync(getToolPath('git'), ['diff', diffRange], {
+                cwd: worktreePath, encoding: 'utf-8',
+                maxBuffer: 10 * 1024 * 1024,
+                stdio: ['pipe', 'pipe', 'pipe']
+              }).trim();
+
+              if (fullPatch) {
+                const patchMap = parseUnifiedDiffIntoFiles(fullPatch);
+                for (const file of files) {
+                  const patchEntry = patchMap.get(file.path);
+                  if (patchEntry) {
+                    file.patch = patchEntry.patch;
+                    file.truncated = patchEntry.truncated;
+                    if (patchEntry.oldPath && !file.oldPath) {
+                      file.oldPath = patchEntry.oldPath;
+                    }
+                  }
+                }
+              }
+            } catch {
+              // Fall back to file list without patches
+            }
+
+            const totalAdditions = files.reduce((sum, f) => sum + f.additions, 0);
+            const totalDeletions = files.reduce((sum, f) => sum + f.deletions, 0);
+            const summary = `${files.length} files changed, ${totalAdditions} insertions(+), ${totalDeletions} deletions(-)`;
+
+            if (files.length > 0) {
+              result.push({
+                subtaskId,
+                subtaskDescription: subtaskDescriptionMap.get(subtaskId) || subtaskId,
+                commitHash: lastCommit.hash,
+                timestamp: lastCommit.timestamp,
+                diff: { files, summary, patch: fullPatch || undefined }
+              });
+            }
+          } catch (diffError) {
+            console.error(`Error computing diff for subtask ${subtaskId}:`, diffError);
+          }
+
+          previousEnd = lastCommit.hash;
+        }
+
+        return { success: true, data: result };
+      } catch (error) {
+        console.error('Failed to get subtask diffs:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to get subtask diffs'
         };
       }
     }

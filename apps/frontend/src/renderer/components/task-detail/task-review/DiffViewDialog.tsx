@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Eye, MessageSquare } from 'lucide-react';
+import { Eye, MessageSquare, Layers } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -13,24 +13,35 @@ import { Badge } from '../../ui/badge';
 import { DiffFileTree } from './DiffFileTree';
 import { DiffCodeViewer } from './DiffCodeViewer';
 import { ResizablePanels } from '../../ui/resizable-panels';
-import type { WorktreeDiff, ReviewComment } from '../../../../shared/types';
+import type { WorktreeDiff, SubtaskDiff, ReviewComment } from '../../../../shared/types';
 import '../../../styles/diff-viewer.css';
 
 interface DiffViewDialogProps {
   open: boolean;
   worktreeDiff: WorktreeDiff | null;
+  subtaskDiffs?: SubtaskDiff[];
   onOpenChange: (open: boolean) => void;
   onRequestChanges?: (feedback: string) => void;
+}
+
+/** Truncate a subtask description for display in a tab */
+function truncateDescription(desc: string, maxLen: number = 40): string {
+  if (desc.length <= maxLen) return desc;
+  return `${desc.slice(0, maxLen)}…`;
 }
 
 /**
  * Full-screen PR-style diff viewer dialog.
  * Replaces the original AlertDialog with a two-panel layout:
  * left sidebar file tree + right-panel code diff viewer with inline commenting.
+ *
+ * Now supports per-subtask diff tabs: "Overall" shows the full diff, and each
+ * subtask tab shows only that subtask's changes (commit range).
  */
 export function DiffViewDialog({
   open,
   worktreeDiff,
+  subtaskDiffs,
   onOpenChange,
   onRequestChanges,
 }: DiffViewDialogProps) {
@@ -41,9 +52,23 @@ export function DiffViewDialog({
   const [comments, setComments] = useState<Map<string, ReviewComment[]>>(
     new Map()
   );
+  // Active diff tab: 'overall' or a subtask ID
+  const [activeDiffTab, setActiveDiffTab] = useState<string>('overall');
 
-  const files = worktreeDiff?.files ?? [];
+  // Determine which diff to display based on active tab
+  const activeDiff = useMemo(() => {
+    if (activeDiffTab === 'overall') {
+      return worktreeDiff;
+    }
+    const subtask = subtaskDiffs?.find((sd) => sd.subtaskId === activeDiffTab);
+    return subtask?.diff ?? null;
+  }, [activeDiffTab, worktreeDiff, subtaskDiffs]);
+
+  const files = activeDiff?.files ?? [];
   const selectedFile = files[selectedFileIndex] ?? null;
+
+  // Whether we have subtask diffs to show tabs
+  const hasSubtaskDiffs = (subtaskDiffs?.length ?? 0) > 0;
 
   /** Total number of comments across all files */
   const totalCommentCount = useMemo(() => {
@@ -62,8 +87,14 @@ export function DiffViewDialog({
     if (open) {
       setSelectedFileIndex(0);
       setComments(new Map());
+      setActiveDiffTab('overall');
     }
   }, [open]);
+
+  // --- Reset file selection when switching tabs ---
+  useEffect(() => {
+    setSelectedFileIndex(0);
+  }, [activeDiffTab]);
 
   // --- Keyboard navigation (ArrowUp / ArrowDown for file selection) ---
   useEffect(() => {
@@ -226,10 +257,59 @@ export function DiffViewDialog({
             </div>
           </div>
           <DialogDescription className="sr-only">
-            {worktreeDiff?.summary ||
+            {activeDiff?.summary ||
               t('taskReview:diffViewer.noChanges', 'No changes found')}
           </DialogDescription>
         </DialogHeader>
+
+        {/* Subtask diff tabs — only shown when subtask diffs are available */}
+        {hasSubtaskDiffs && (
+          <div className="px-4 py-2 border-b border-border bg-muted/20 shrink-0 overflow-x-auto">
+            <div className="flex items-center gap-1.5">
+              <Layers className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <div className="flex gap-1 min-w-0">
+                {/* Overall tab */}
+                <button
+                  type="button"
+                  onClick={() => setActiveDiffTab('overall')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
+                    activeDiffTab === 'overall'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
+                  }`}
+                >
+                  {t('taskReview:diffViewer.overallTab', 'Overall')}
+                  {worktreeDiff && (
+                    <span className="ml-1.5 opacity-70">
+                      ({worktreeDiff.files.length})
+                    </span>
+                  )}
+                </button>
+
+                {/* Per-subtask tabs */}
+                {subtaskDiffs?.map((sd, idx) => (
+                  <button
+                    type="button"
+                    key={sd.subtaskId}
+                    onClick={() => setActiveDiffTab(sd.subtaskId)}
+                    title={sd.subtaskDescription}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors max-w-[200px] truncate ${
+                      activeDiffTab === sd.subtaskId
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
+                    }`}
+                  >
+                    <span className="opacity-70 mr-1">#{idx + 1}</span>
+                    {truncateDescription(sd.subtaskDescription, 30)}
+                    <span className="ml-1.5 opacity-70">
+                      ({sd.diff.files.length})
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Two-panel layout */}
         <ResizablePanels

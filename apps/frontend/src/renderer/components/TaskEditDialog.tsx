@@ -120,9 +120,12 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
   // Image attachments
   const [images, setImages] = useState<ImageAttachment[]>(task.metadata?.attachedImages || []);
 
-  // Review setting
+  // Review settings
   const [requireReviewBeforeCoding, setRequireReviewBeforeCoding] = useState(
     task.metadata?.requireReviewBeforeCoding ?? false
+  );
+  const [requireReviewPerSubtask, setRequireReviewPerSubtask] = useState(
+    task.metadata?.requireReviewPerSubtask ?? false
   );
 
   // Fast mode
@@ -180,6 +183,7 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
 
       setImages(task.metadata?.attachedImages || []);
       setRequireReviewBeforeCoding(task.metadata?.requireReviewBeforeCoding ?? false);
+      setRequireReviewPerSubtask(task.metadata?.requireReviewPerSubtask ?? false);
       setFastMode(task.metadata?.fastMode ?? false);
       setError(null);
 
@@ -225,6 +229,7 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
       model !== (task.metadata?.model || '') ||
       thinkingLevel !== (task.metadata?.thinkingLevel || '') ||
       requireReviewBeforeCoding !== (task.metadata?.requireReviewBeforeCoding ?? false) ||
+      requireReviewPerSubtask !== (task.metadata?.requireReviewPerSubtask ?? false) ||
       fastMode !== (task.metadata?.fastMode ?? false) ||
       JSON.stringify(images) !== JSON.stringify(task.metadata?.attachedImages || []) ||
       JSON.stringify(phaseModels) !== JSON.stringify(task.metadata?.phaseModels || DEFAULT_PHASE_MODELS) ||
@@ -258,6 +263,7 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
     // Always set attachedImages to persist removal when all images are deleted
     metadataUpdates.attachedImages = images.length > 0 ? images : [];
     metadataUpdates.requireReviewBeforeCoding = requireReviewBeforeCoding;
+    metadataUpdates.requireReviewPerSubtask = requireReviewPerSubtask;
     metadataUpdates.fastMode = fastMode;
 
     const success = await persistUpdateTask(task.id, {
@@ -340,6 +346,8 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
         onImagesChange={setImages}
         requireReviewBeforeCoding={requireReviewBeforeCoding}
         onRequireReviewChange={setRequireReviewBeforeCoding}
+        requireReviewPerSubtask={requireReviewPerSubtask}
+        onRequireReviewPerSubtaskChange={setRequireReviewPerSubtask}
         fastMode={fastMode}
         onFastModeChange={setFastMode}
         showFastModeToggle={showFastModeToggle && isFastModeEditable}

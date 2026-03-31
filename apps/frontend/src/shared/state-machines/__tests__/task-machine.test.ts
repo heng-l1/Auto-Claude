@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { createActor } from 'xstate';
 import { taskMachine, type TaskEvent } from '../task-machine';
+import {
+  TASK_STATE_NAMES,
+  XSTATE_SETTLED_STATES,
+  XSTATE_TO_PHASE,
+  mapStateToLegacy
+} from '../task-state-utils';
 
 /**
  * Helper to run a sequence of events and get the final state
@@ -451,6 +457,127 @@ describe('taskMachine', () => {
     });
   });
 
+  describe('subtask_review flow (requireReviewPerSubtask)', () => {
+    it('should transition from coding to subtask_review on SUBTASK_REVIEW_NEEDED', () => {
+      const events: TaskEvent[] = [
+        { type: 'PLANNING_STARTED' },
+        { type: 'PLANNING_COMPLETE', hasSubtasks: true, subtaskCount: 3, requireReviewBeforeCoding: false },
+        { type: 'SUBTASK_REVIEW_NEEDED', subtaskId: 'sub1', completedCount: 1, totalCount: 3 }
+      ];
+
+      const snapshot = runEvents(events);
+      expect(snapshot.value).toBe('subtask_review');
+      expect(snapshot.context.reviewReason).toBe('subtask_review');
+    });
+
+    it('should transition from subtask_review to coding on SUBTASK_APPROVED', () => {
+      const events: TaskEvent[] = [
+        { type: 'PLANNING_STARTED' },
+        { type: 'PLANNING_COMPLETE', hasSubtasks: true, subtaskCount: 3, requireReviewBeforeCoding: false },
+        { type: 'SUBTASK_REVIEW_NEEDED', subtaskId: 'sub1', completedCount: 1, totalCount: 3 },
+        { type: 'SUBTASK_APPROVED' }
+      ];
+
+      const snapshot = runEvents(events);
+      expect(snapshot.value).toBe('coding');
+      expect(snapshot.context.reviewReason).toBeUndefined();
+    });
+
+    it('should transition from subtask_review to human_review on USER_STOPPED', () => {
+      const events: TaskEvent[] = [
+        { type: 'PLANNING_STARTED' },
+        { type: 'PLANNING_COMPLETE', hasSubtasks: true, subtaskCount: 3, requireReviewBeforeCoding: false },
+        { type: 'SUBTASK_REVIEW_NEEDED', subtaskId: 'sub1', completedCount: 1, totalCount: 3 },
+        { type: 'USER_STOPPED' }
+      ];
+
+      const snapshot = runEvents(events);
+      expect(snapshot.value).toBe('human_review');
+      expect(snapshot.context.reviewReason).toBe('stopped');
+    });
+
+    it('should transition from subtask_review to error on unexpected PROCESS_EXITED', () => {
+      const events: TaskEvent[] = [
+        { type: 'PLANNING_STARTED' },
+        { type: 'PLANNING_COMPLETE', hasSubtasks: true, subtaskCount: 3, requireReviewBeforeCoding: false },
+        { type: 'SUBTASK_REVIEW_NEEDED', subtaskId: 'sub1', completedCount: 1, totalCount: 3 },
+        { type: 'PROCESS_EXITED', exitCode: 1, unexpected: true }
+      ];
+
+      const snapshot = runEvents(events);
+      expect(snapshot.value).toBe('error');
+      expect(snapshot.context.reviewReason).toBe('errors');
+    });
+
+    it('should NOT transition from subtask_review on expected PROCESS_EXITED', () => {
+      const snapshot = runEvents(
+        [{ type: 'PROCESS_EXITED', exitCode: 0, unexpected: false }],
+        'subtask_review'
+      );
+
+      // Should stay in subtask_review since guard fails
+      expect(snapshot.value).toBe('subtask_review');
+    });
+
+    it('should complete full flow with subtask reviews between subtasks', () => {
+      const events: TaskEvent[] = [
+        { type: 'PLANNING_STARTED' },
+        { type: 'PLANNING_COMPLETE', hasSubtasks: true, subtaskCount: 3, requireReviewBeforeCoding: false },
+        // First subtask completes, review gate
+        { type: 'SUBTASK_REVIEW_NEEDED', subtaskId: 'sub1', completedCount: 1, totalCount: 3 },
+        { type: 'SUBTASK_APPROVED' },
+        // Second subtask completes, review gate
+        { type: 'SUBTASK_REVIEW_NEEDED', subtaskId: 'sub2', completedCount: 2, totalCount: 3 },
+        { type: 'SUBTASK_APPROVED' },
+        // Last subtask completes, proceeds to QA (no review gate)
+        { type: 'QA_STARTED', iteration: 1, maxIterations: 3 },
+        { type: 'QA_PASSED', iteration: 1, testsRun: {} },
+        { type: 'MARK_DONE' }
+      ];
+
+      const snapshot = runEvents(events);
+      expect(snapshot.value).toBe('done');
+    });
+
+    it('should work with both plan_review and subtask_review enabled', () => {
+      const events: TaskEvent[] = [
+        { type: 'PLANNING_STARTED' },
+        // Plan review gate fires
+        { type: 'PLANNING_COMPLETE', hasSubtasks: true, subtaskCount: 2, requireReviewBeforeCoding: true },
+        { type: 'PLAN_APPROVED' },
+        // Subtask review gate fires after first subtask
+        { type: 'SUBTASK_REVIEW_NEEDED', subtaskId: 'sub1', completedCount: 1, totalCount: 2 },
+        { type: 'SUBTASK_APPROVED' },
+        // Last subtask goes straight to QA
+        { type: 'QA_STARTED', iteration: 1, maxIterations: 3 },
+        { type: 'QA_PASSED', iteration: 1, testsRun: {} }
+      ];
+
+      const snapshot = runEvents(events);
+      expect(snapshot.value).toBe('human_review');
+      expect(snapshot.context.reviewReason).toBe('completed');
+    });
+  });
+
+  describe('subtask_review state utility registration', () => {
+    it('should include subtask_review in TASK_STATE_NAMES', () => {
+      expect(TASK_STATE_NAMES).toContain('subtask_review');
+    });
+
+    it('should include subtask_review in XSTATE_SETTLED_STATES', () => {
+      expect(XSTATE_SETTLED_STATES.has('subtask_review')).toBe(true);
+    });
+
+    it('should map subtask_review to coding phase in XSTATE_TO_PHASE', () => {
+      expect(XSTATE_TO_PHASE['subtask_review']).toBe('coding');
+    });
+
+    it('should map subtask_review to legacy human_review with subtask_review reason', () => {
+      const result = mapStateToLegacy('subtask_review');
+      expect(result).toEqual({ status: 'human_review', reviewReason: 'subtask_review' });
+    });
+  });
+
   describe('state restoration from task', () => {
     it('should restore to correct state from existing task status', () => {
       // Test restoring to different states
@@ -474,6 +601,19 @@ describe('taskMachine', () => {
         expect(actor.getSnapshot().value).toBe(expectedState);
         actor.stop();
       }
+    });
+
+    it('should restore subtask_review state', () => {
+      const actor = createActor(taskMachine, {
+        snapshot: taskMachine.resolveState({
+          value: 'subtask_review',
+          context: { reviewReason: 'subtask_review' }
+        })
+      });
+      actor.start();
+      expect(actor.getSnapshot().value).toBe('subtask_review');
+      expect(actor.getSnapshot().context.reviewReason).toBe('subtask_review');
+      actor.stop();
     });
   });
 });

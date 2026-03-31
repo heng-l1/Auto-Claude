@@ -1,4 +1,4 @@
-import type { Task, WorktreeStatus, WorktreeDiff, MergeConflict, MergeStats, GitConflictInfo, ImageAttachment, WorktreeCreatePRResult } from '../../../shared/types';
+import type { Task, WorktreeStatus, WorktreeDiff, SubtaskDiff, MergeConflict, MergeStats, GitConflictInfo, ImageAttachment, WorktreeCreatePRResult } from '../../../shared/types';
 import {
   StagedSuccessMessage,
   WorkspaceStatus,
@@ -18,6 +18,7 @@ interface TaskReviewProps {
   isSubmitting: boolean;
   worktreeStatus: WorktreeStatus | null;
   worktreeDiff: WorktreeDiff | null;
+  subtaskDiffs?: SubtaskDiff[];
   isLoadingWorktree: boolean;
   isMerging: boolean;
   isDiscarding: boolean;
@@ -73,6 +74,7 @@ export function TaskReview({
   isSubmitting,
   worktreeStatus,
   worktreeDiff,
+  subtaskDiffs,
   isLoadingWorktree,
   isMerging,
   isDiscarding,
@@ -188,6 +190,7 @@ export function TaskReview({
       <DiffViewDialog
         open={showDiffDialog}
         worktreeDiff={worktreeDiff}
+        subtaskDiffs={subtaskDiffs}
         onOpenChange={onShowDiffDialog}
         onRequestChanges={onRequestChanges}
       />

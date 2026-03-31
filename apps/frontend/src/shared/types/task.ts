@@ -15,7 +15,8 @@ export type TaskOrderState = Record<TaskStatus, string[]>;
 // - 'errors': Subtasks failed during execution
 // - 'qa_rejected': QA found issues that need fixing
 // - 'plan_review': Spec/plan created and awaiting approval before coding starts
-export type ReviewReason = 'completed' | 'errors' | 'qa_rejected' | 'plan_review' | 'stopped';
+// - 'subtask_review': Individual subtask completed and awaiting review before next subtask starts
+export type ReviewReason = 'completed' | 'errors' | 'qa_rejected' | 'plan_review' | 'stopped' | 'subtask_review';
 
 export type SubtaskStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
 
@@ -155,6 +156,7 @@ export interface TaskDraft {
   images: ImageAttachment[];
   referencedFiles: ReferencedFile[];
   requireReviewBeforeCoding?: boolean;
+  requireReviewPerSubtask?: boolean;  // Require human review after each subtask completes
   fastMode?: boolean;
   savedAt: Date;
 }
@@ -226,6 +228,7 @@ export interface TaskMetadata {
 
   // Review settings
   requireReviewBeforeCoding?: boolean;  // Require human review of spec/plan before coding starts
+  requireReviewPerSubtask?: boolean;  // Require human review after each subtask completes before next starts
 
   // Agent configuration (from agent profile or manual selection)
   model?: ModelType;  // Claude model to use (haiku, sonnet, opus) - used when not auto profile
@@ -332,6 +335,15 @@ export interface WorktreeDiff {
   files: WorktreeDiffFile[];
   summary: string;
   patch?: string;  // Full unified diff output from git diff
+}
+
+// Per-subtask diff — one entry per subtask that produced git commits
+export interface SubtaskDiff {
+  subtaskId: string;
+  subtaskDescription: string;
+  commitHash: string;     // Last commit hash for this subtask
+  timestamp: string;      // ISO timestamp of the commit
+  diff: WorktreeDiff;     // The diff for just this subtask's changes
 }
 
 export interface WorktreeDiffFile {

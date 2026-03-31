@@ -26,7 +26,8 @@ const TERMINAL_EVENTS = new Set<string>([
   'CODING_FAILED',
   'QA_MAX_ITERATIONS',
   'QA_AGENT_ERROR',
-  'ALL_SUBTASKS_DONE'
+  'ALL_SUBTASKS_DONE',
+  'SUBTASK_REVIEW_NEEDED'
 ]);
 
 export class TaskStateManager {
@@ -118,8 +119,13 @@ export class TaskStateManager {
         const currentState = this.getCurrentState(taskId);
         if (currentState === 'plan_review') {
           this.handleUiEvent(taskId, { type: 'PLAN_APPROVED' }, task, project);
+        } else if (currentState === 'subtask_review') {
+          this.handleUiEvent(taskId, { type: 'SUBTASK_APPROVED' }, task, project);
         } else if (currentState === 'human_review' || currentState === 'error') {
           this.handleUiEvent(taskId, { type: 'USER_RESUMED' }, task, project);
+        } else if (!currentState && task.reviewReason === 'subtask_review') {
+          // Fallback: No actor exists (e.g., after app restart), use task data
+          this.handleUiEvent(taskId, { type: 'SUBTASK_APPROVED' }, task, project);
         } else if (!currentState && task.reviewReason === 'plan_review') {
           // Fallback: No actor exists (e.g., after app restart), use task data
           this.handleUiEvent(taskId, { type: 'PLAN_APPROVED' }, task, project);
@@ -412,7 +418,7 @@ export class TaskStateManager {
         stateValue = 'qa_review';
         break;
       case 'human_review':
-        stateValue = reviewReason === 'plan_review' ? 'plan_review' : 'human_review';
+        stateValue = reviewReason === 'plan_review' ? 'plan_review' : reviewReason === 'subtask_review' ? 'subtask_review' : 'human_review';
         contextReviewReason = reviewReason;
         break;
       case 'pr_created':

@@ -553,6 +553,7 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
                             isSubmitting={state.isSubmitting}
                             worktreeStatus={state.worktreeStatus}
                             worktreeDiff={state.worktreeDiff}
+                            subtaskDiffs={state.subtaskDiffs}
                             isLoadingWorktree={state.isLoadingWorktree}
                             isMerging={state.isMerging}
                             isDiscarding={state.isDiscarding}

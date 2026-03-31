@@ -16,6 +16,7 @@ from pathlib import Path
 from context.constants import SKIP_DIRS
 from core.client import create_client
 from core.file_utils import write_json_atomic
+from core.task_event import TaskEventEmitter, _load_task_metadata
 from linear_updater import (
     LinearTaskState,
     is_linear_enabled,
@@ -1365,6 +1366,34 @@ async def run_autonomous_agent(
                             subtask_id,
                         )
                         success = False
+
+            # === PER-SUBTASK REVIEW GATE ===
+            # After successful subtask completion (and coding critic pass),
+            # check if the user wants to review each subtask before continuing.
+            if success and not is_build_complete(spec_dir):
+                metadata = _load_task_metadata(spec_dir)
+                if metadata.get("requireReviewPerSubtask", False):
+                    emitter = TaskEventEmitter.from_spec_dir(spec_dir)
+                    details = count_subtasks_detailed(spec_dir)
+                    emitter.emit("SUBTASK_REVIEW_NEEDED", {
+                        "subtaskId": subtask_id,
+                        "completedCount": details["completed"],
+                        "totalCount": details["total"],
+                    })
+                    if source_spec_dir:
+                        sync_spec_to_source(spec_dir, source_spec_dir)
+                    print_status(
+                        f"Subtask {subtask_id} completed. Pausing for human review.",
+                        "info",
+                    )
+                    if task_logger:
+                        task_logger.end_phase(
+                            LogPhase.CODING,
+                            success=True,
+                            message=f"Subtask {subtask_id} done, awaiting review",
+                        )
+                    status_manager.update(state=BuildState.PAUSED)
+                    return
 
             # Check for stuck subtasks
             attempt_count = recovery_manager.get_attempt_count(subtask_id)
