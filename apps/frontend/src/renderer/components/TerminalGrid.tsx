@@ -146,7 +146,15 @@ export function TerminalGrid({ projectPath, onNewTaskClick, isActive = false }: 
     setExpandedTerminalId(null);
     setPendingCleanup(new Map());
     clearAllCleanupTimers();
-  }, [clearAllCleanupTimers]);
+  }, [projectPath, clearAllCleanupTimers]);
+
+  // Defensive guard: clear expandedTerminalId if it references a terminal
+  // not in the current project's filtered list (catches edge cases beyond project switching)
+  useEffect(() => {
+    if (expandedTerminalId && !terminals.some(t => t.id === expandedTerminalId)) {
+      setExpandedTerminalId(null);
+    }
+  }, [expandedTerminalId, terminals]);
 
   // Refit all terminals when the terminal view becomes active.
   // TerminalGrid is always mounted but hidden (display: none) when not the active view.
