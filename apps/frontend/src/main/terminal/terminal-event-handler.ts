@@ -71,8 +71,9 @@ export function handleTerminalData(
     }
 
     // Detect Claude exit (returned to shell prompt)
-    // Only check if not busy - busy output takes precedence
-    if (busyState !== 'busy' && OutputParser.detectClaudeExit(data)) {
+    // detectClaudeExit() handles busy-state gating internally:
+    // definitive exit patterns bypass it, shell prompt patterns respect it
+    if (OutputParser.detectClaudeExit(data)) {
       callbacks.onClaudeExit(terminal);
       // Clear busy state tracking since Claude has exited
       lastBusyState.delete(terminal.id);

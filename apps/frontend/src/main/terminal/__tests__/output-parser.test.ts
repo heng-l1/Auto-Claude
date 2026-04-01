@@ -54,6 +54,9 @@ describe('output-parser', () => {
         { input: 'Goodbye!', desc: 'goodbye message' },
         { input: 'Session ended', desc: 'session ended' },
         { input: 'Exiting Claude', desc: 'exiting claude' },
+
+        // Resume session message (definitive exit)
+        { input: 'Resume this session with:\n  claude --resume "abc123"', desc: 'resume session message' },
       ];
 
       it.each(shellPrompts)('detects: $desc', ({ input }) => {
@@ -98,6 +101,23 @@ describe('output-parser', () => {
         // This tests the guard in detectClaudeExit that checks busy state first
         const mixedOutput = '● Processing...\nuser@host:~$ ';
         expect(detectClaudeExit(mixedOutput)).toBe(false);
+      });
+    });
+
+    describe('definitive exit patterns should bypass busy content', () => {
+      it('detects Resume with busy bullet in same chunk', () => {
+        const output = '●\nResume this session with:\n  claude --resume "abc"';
+        expect(detectClaudeExit(output)).toBe(true);
+      });
+
+      it('detects Goodbye with busy bullet in same chunk', () => {
+        const output = '● Final summary\nGoodbye!';
+        expect(detectClaudeExit(output)).toBe(true);
+      });
+
+      it('detects Session ended with progress bar in same chunk', () => {
+        const output = '████░░░░ 80%\nSession ended';
+        expect(detectClaudeExit(output)).toBe(true);
       });
     });
 

@@ -292,9 +292,21 @@ export function detectClaudeBusyState(data: string): 'busy' | 'idle' | null {
 }
 
 /**
- * Patterns indicating Claude Code has exited and returned to shell
+ * Definitive exit patterns — unambiguous text messages printed by Claude on exit.
+ * These ALWAYS indicate Claude has exited, regardless of busy state.
+ */
+const CLAUDE_DEFINITIVE_EXIT_PATTERNS = [
+  /Goodbye!?\s*$/im,
+  /Session ended/i,
+  /Exiting Claude/i,
+  /Resume this session with:/i,
+];
+
+/**
+ * Shell prompt patterns — heuristic patterns that detect a return to shell.
+ * These must be gated by busy-state check to avoid false positives
+ * when Claude's response contains shell-like text.
  *
- * These patterns detect shell prompts that are distinct from Claude's simple ">" prompt.
  * Shell prompts typically include:
  * - Username and hostname (user@host)
  * - Current directory
@@ -304,7 +316,7 @@ export function detectClaudeBusyState(data: string): 'busy' | 'idle' | null {
  * We look for these patterns to distinguish between Claude's idle prompt (">")
  * and a proper shell prompt indicating Claude has exited.
  */
-const CLAUDE_EXIT_PATTERNS = [
+const CLAUDE_SHELL_PROMPT_PATTERNS = [
   // Standard shell prompts with path/context (bash/zsh)
   // Matches: "user@hostname:~/path$", "hostname:path %", "[user@host path]$"
   // Must be at line start to avoid matching user@host in Claude's output
@@ -343,11 +355,6 @@ const CLAUDE_EXIT_PATTERNS = [
   // Simple but distinctive shell prompts with hostname
   // Matches: "hostname$", "hostname %"
   /^[a-zA-Z0-9._-]+[$%#]\s*$/m,
-
-  // Detect Claude exit messages (optional, catches explicit exits)
-  /Goodbye!?\s*$/im,
-  /Session ended/i,
-  /Exiting Claude/i,
 ];
 
 /**
@@ -355,10 +362,15 @@ const CLAUDE_EXIT_PATTERNS = [
  *
  * This is more specific than shell prompt detection - it looks for patterns
  * that indicate we've returned to a shell AFTER being in Claude mode.
+ * Checks both definitive exit messages and shell prompt patterns for
+ * backward compatibility.
  */
 export function isClaudeExitOutput(data: string): boolean {
   const cleanData = stripAnsi(data);
-  return CLAUDE_EXIT_PATTERNS.some(pattern => pattern.test(cleanData));
+  return (
+    CLAUDE_DEFINITIVE_EXIT_PATTERNS.some(pattern => pattern.test(cleanData)) ||
+    CLAUDE_SHELL_PROMPT_PATTERNS.some(pattern => pattern.test(cleanData))
+  );
 }
 
 /**
@@ -367,15 +379,27 @@ export function isClaudeExitOutput(data: string): boolean {
  *
  * This function should be called when the terminal is in Claude mode
  * to detect if Claude has exited (user typed /exit, Ctrl+D, etc.)
+ *
+ * Detection priority:
+ * 1. Definitive exit messages (Goodbye, Session ended, etc.) — always trusted,
+ *    even if busy indicators appear in the same data chunk
+ * 2. Busy-state check — if Claude is busy, shell prompt patterns are suppressed
+ * 3. Shell prompt heuristics — only checked when Claude is not busy
  */
 export function detectClaudeExit(data: string): boolean {
   const cleanData = stripAnsi(data);
-  // First, make sure this doesn't look like Claude activity
-  // If we see Claude busy indicators, Claude hasn't exited
+
+  // Definitive exit messages always indicate Claude has exited,
+  // even if busy indicators appear in the same data chunk
+  if (CLAUDE_DEFINITIVE_EXIT_PATTERNS.some(p => p.test(cleanData))) {
+    return true;
+  }
+
+  // For heuristic shell prompt detection, busy state takes precedence
+  // to avoid false positives during active Claude responses
   if (isClaudeBusyOutput(cleanData)) {
     return false;
   }
 
-  // Check for Claude exit patterns (shell prompt return)
-  return isClaudeExitOutput(cleanData);
+  return CLAUDE_SHELL_PROMPT_PATTERNS.some(p => p.test(cleanData));
 }
