@@ -251,6 +251,15 @@ export function App() {
     }
   }, [activeProjectId, selectedProjectId]);
 
+  // Navigate to a specific project + view (used by Activity Center for cross-project navigation)
+  const navigateToProjectView = useCallback((projectId: string, view: SidebarView) => {
+    // Save the target view for the target project BEFORE switching,
+    // so the useEffect above loads the correct view when activeProjectId changes
+    saveSidebarView(projectId, view);
+    setActiveProject(projectId);
+    setActiveView(view);
+  }, [setActiveProject]);
+
   const [isOnboardingWizardOpen, setIsOnboardingWizardOpen] = useState(false);
   const [isVersionWarningModalOpen, setIsVersionWarningModalOpen] = useState(false);
   const [isRefreshingTasks, setIsRefreshingTasks] = useState(false);
@@ -995,6 +1004,7 @@ export function App() {
           onNewTaskClick={() => setIsNewTaskDialogOpen(true)}
           activeView={activeView}
           onViewChange={changeActiveView}
+          onNavigateToProject={navigateToProjectView}
         />
 
         {/* Main content */}

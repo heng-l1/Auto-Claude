@@ -67,6 +67,7 @@ interface SidebarProps {
   onNewTaskClick: () => void;
   activeView?: SidebarView;
   onViewChange?: (view: SidebarView) => void;
+  onNavigateToProject?: (projectId: string, view: SidebarView) => void;
 }
 
 interface NavItem {
@@ -105,7 +106,8 @@ export function Sidebar({
   onSettingsClick,
   onNewTaskClick,
   activeView = 'kanban',
-  onViewChange
+  onViewChange,
+  onNavigateToProject
 }: SidebarProps) {
   const { t } = useTranslation(['navigation', 'dialogs', 'common']);
   const projects = useProjectStore((state) => state.projects);
@@ -437,7 +439,7 @@ export function Sidebar({
           {!isCollapsed && <ClaudeCodeStatusBadge />}
 
           {/* Activity Center */}
-          <ActivityCenter onViewChange={(view) => onViewChange?.(view)} isCollapsed={isCollapsed} />
+          <ActivityCenter onViewChange={(view) => onViewChange?.(view)} onNavigateToProject={onNavigateToProject} isCollapsed={isCollapsed} />
 
           {/* Settings row */}
           <div className={cn(

@@ -27,11 +27,13 @@ import {
   markAllNotificationsRead,
   clearAllNotifications
 } from '../stores/activity-store';
+import { useProjectStore } from '../stores/project-store';
 import type { SidebarView } from './Sidebar';
 import type { ActivityNotificationType } from '../../shared/types';
 
 interface ActivityCenterProps {
   onViewChange: (view: SidebarView) => void;
+  onNavigateToProject?: (projectId: string, view: SidebarView) => void;
   isCollapsed: boolean;
 }
 
@@ -60,16 +62,31 @@ function getNavigationTarget(type: ActivityNotificationType): SidebarView {
   }
 }
 
-export function ActivityCenter({ onViewChange, isCollapsed }: ActivityCenterProps) {
+export function ActivityCenter({ onViewChange, onNavigateToProject, isCollapsed }: ActivityCenterProps) {
   const { t } = useTranslation(['common']);
   const [open, setOpen] = useState(false);
 
   const notifications = useActivityStore((state) => state.notifications);
   const unreadCount = useActivityStore((state) => state.unreadCount);
 
-  const handleNotificationClick = (id: string, type: ActivityNotificationType) => {
+  const projects = useProjectStore((state) => state.projects);
+  const activeProjectId = useProjectStore((state) => state.activeProjectId);
+
+  const getProjectName = (projectId?: string): string | undefined => {
+    if (!projectId) return undefined;
+    return projects.find((p) => p.id === projectId)?.name;
+  };
+
+  const handleNotificationClick = (id: string, type: ActivityNotificationType, projectId?: string) => {
     markNotificationRead(id);
-    onViewChange(getNavigationTarget(type));
+    const targetView = getNavigationTarget(type);
+
+    // If notification belongs to a different project, navigate to that project + view
+    if (projectId && projectId !== activeProjectId && onNavigateToProject) {
+      onNavigateToProject(projectId, targetView);
+    } else {
+      onViewChange(targetView);
+    }
     setOpen(false);
   };
 
@@ -166,6 +183,7 @@ export function ActivityCenter({ onViewChange, isCollapsed }: ActivityCenterProp
               {notifications.map((notification) => {
                 const Icon = notificationIcons[notification.type];
                 const iconColor = notificationIconColors[notification.type];
+                const projectName = getProjectName(notification.projectId);
 
                 return (
                   <button
@@ -176,7 +194,7 @@ export function ActivityCenter({ onViewChange, isCollapsed }: ActivityCenterProp
                       !notification.isRead && 'bg-accent/50'
                     )}
                     onClick={() =>
-                      handleNotificationClick(notification.id, notification.type)
+                      handleNotificationClick(notification.id, notification.type, notification.projectId)
                     }
                   >
                     <Icon className={cn('mt-0.5 h-4 w-4 shrink-0', iconColor)} />
@@ -194,6 +212,11 @@ export function ActivityCenter({ onViewChange, isCollapsed }: ActivityCenterProp
                           {formatRelativeTime(new Date(notification.createdAt))}
                         </span>
                       </div>
+                      {projectName && (
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground/70">
+                          {projectName}
+                        </p>
+                      )}
                       {notification.body && (
                         <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
                           {notification.body}
