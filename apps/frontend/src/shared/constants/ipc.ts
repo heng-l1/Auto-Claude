@@ -611,5 +611,15 @@ export const IPC_CHANNELS = {
   // Queue routing events (main -> renderer)
   QUEUE_PROFILE_SWAPPED: 'queue:profileSwapped',      // Task switched to different profile
   QUEUE_SESSION_CAPTURED: 'queue:sessionCaptured',    // Session ID captured from running task
-  QUEUE_BLOCKED_NO_PROFILES: 'queue:blockedNoProfiles' // All profiles unavailable
+  QUEUE_BLOCKED_NO_PROFILES: 'queue:blockedNoProfiles', // All profiles unavailable
+
+  // Activity center operations (notification history)
+  ACTIVITY_GET_NOTIFICATIONS: 'activity:getNotifications',
+  ACTIVITY_MARK_READ: 'activity:markRead',
+  ACTIVITY_MARK_ALL_READ: 'activity:markAllRead',
+  ACTIVITY_CLEAR_ALL: 'activity:clearAll',
+  ACTIVITY_DELETE: 'activity:delete',
+
+  // Activity center events (main -> renderer)
+  ACTIVITY_NOTIFICATION: 'activity:notification'
 } as const;
