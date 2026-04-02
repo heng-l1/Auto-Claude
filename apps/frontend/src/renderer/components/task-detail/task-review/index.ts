@@ -13,5 +13,5 @@ export { DiscardDialog } from './DiscardDialog';
 export { DiffViewDialog } from './DiffViewDialog';
 export { ConflictDetailsDialog } from './ConflictDetailsDialog';
 export { CreatePRDialog } from './CreatePRDialog';
-export { LoadingMessage, NoWorkspaceMessage, StagedInProjectMessage } from './WorkspaceMessages';
+export { LoadingMessage, NoWorkspaceMessage, StagedInProjectMessage, SubtaskReviewMessage } from './WorkspaceMessages';
 export { getSeverityIcon, getSeverityVariant } from './utils';

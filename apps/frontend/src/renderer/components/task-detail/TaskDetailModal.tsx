@@ -430,7 +430,8 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
                               {task.reviewReason === 'completed' ? 'Completed' :
                                task.reviewReason === 'errors' ? 'Has Errors' :
                                task.reviewReason === 'plan_review' ? 'Approve Plan' :
-                               task.reviewReason === 'stopped' ? 'Stopped' : 'QA Issues'}
+                               task.reviewReason === 'stopped' ? 'Stopped' :
+                               task.reviewReason === 'subtask_review' ? 'Subtask Review' : 'QA Issues'}
                             </Badge>
                           )}
                         </>

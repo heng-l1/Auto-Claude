@@ -9,6 +9,7 @@ import {
   LoadingMessage,
   NoWorkspaceMessage,
   StagedInProjectMessage,
+  SubtaskReviewMessage,
   CreatePRDialog
 } from './task-review';
 
@@ -123,8 +124,10 @@ export function TaskReview({
         />
       )}
 
-      {/* Workspace Status - priority: loading > fresh staging success > already staged (persisted) > worktree exists > no workspace */}
-      {isLoadingWorktree ? (
+      {/* Workspace Status - priority: subtask_review > loading > fresh staging success > already staged (persisted) > worktree exists > no workspace */}
+      {task.reviewReason === 'subtask_review' ? (
+        <SubtaskReviewMessage task={task} />
+      ) : isLoadingWorktree ? (
         <LoadingMessage />
       ) : stagedSuccess ? (
         /* Fresh staging just completed - StagedSuccessMessage is rendered above */

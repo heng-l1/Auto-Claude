@@ -1191,7 +1191,17 @@ export function isIncompleteHumanReview(task: Task): boolean {
 
   // JSON error tasks are intentionally in human_review with no subtasks - not incomplete
   // plan_review tasks are waiting for human approval before coding - not incomplete
-  if (task.reviewReason === 'errors' || task.reviewReason === 'stopped' || task.reviewReason === 'plan_review') return false;
+  if (task.reviewReason === 'errors' || task.reviewReason === 'plan_review') return false;
+
+  // Stopped tasks with partial progress should show "Resume Task" button
+  // - No subtasks or 0 completed → not resumable (never started or crashed early)
+  // - All completed → not incomplete (task finished)
+  // - Some completed → incomplete, should be resumed
+  if (task.reviewReason === 'stopped') {
+    if (!task.subtasks || task.subtasks.length === 0) return false;
+    const completedCount = task.subtasks.filter(s => s.status === 'completed').length;
+    return completedCount > 0 && completedCount < task.subtasks.length;
+  }
 
   // If no subtasks defined, task hasn't been planned yet (shouldn't be in human_review)
   if (!task.subtasks || task.subtasks.length === 0) return true;

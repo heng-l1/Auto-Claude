@@ -2,7 +2,7 @@ import { AlertCircle, GitMerge, Loader2, Check, RotateCcw, Play, SkipForward } f
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../../ui/button';
-import { persistTaskStatus, startTaskOrQueue } from '../../../stores/task-store';
+import { getTaskProgress, persistTaskStatus, startTaskOrQueue } from '../../../stores/task-store';
 import type { Task } from '../../../../shared/types';
 
 interface LoadingMessageProps {
@@ -391,6 +391,82 @@ export function StagedInProjectMessage({ task, projectPath, hasWorktree = false,
           </p>
         )}
       </div>
+    </div>
+  );
+}
+
+interface SubtaskReviewMessageProps {
+  task: Task;
+}
+
+/**
+ * Displays message when a subtask has completed and is paused for human review
+ * before continuing to the next subtask.
+ */
+export function SubtaskReviewMessage({ task }: SubtaskReviewMessageProps) {
+  const { t } = useTranslation(['tasks']);
+  const [isProceeding, setIsProceeding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const progress = getTaskProgress(task);
+
+  const handleContinue = async () => {
+    setIsProceeding(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await startTaskOrQueue(task.id);
+      if (!result.success) {
+        setError(result.error || t('tasks:wizard.errors.startFailed'));
+      } else if (result.action === 'queued') {
+        setNotice(t('tasks:queue.movedToQueue'));
+      }
+    } catch (err) {
+      console.error('Error continuing to next subtask:', err);
+      setError(err instanceof Error ? err.message : 'Failed to continue');
+    } finally {
+      setIsProceeding(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-border bg-secondary/30 p-4">
+      <h3 className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
+        <SkipForward className="h-4 w-4 text-primary" />
+        Subtask Review
+      </h3>
+      <p className="text-sm text-muted-foreground mb-1">
+        A subtask has completed and is paused for your review before continuing to the next subtask.
+      </p>
+      <p className="text-sm text-muted-foreground mb-3">
+        {progress.completed} of {progress.total} subtasks completed
+      </p>
+      <Button
+        onClick={handleContinue}
+        disabled={isProceeding}
+        size="sm"
+        variant="default"
+        className="w-full"
+      >
+        {isProceeding ? (
+          <>
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            Updating...
+          </>
+        ) : (
+          <>
+            <SkipForward className="h-4 w-4 mr-2" />
+            Continue to Next Subtask
+          </>
+        )}
+      </Button>
+      {error && (
+        <p className="text-xs text-destructive mt-2">{error}</p>
+      )}
+      {notice && (
+        <p className="text-xs text-muted-foreground mt-2">{notice}</p>
+      )}
     </div>
   );
 }
