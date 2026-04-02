@@ -14,7 +14,6 @@ import type { BrowserWindow } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants';
 import type { IPCResult, ActivityNotification } from '../../shared/types';
 import { notificationStore } from '../notification-store';
-import { safeSendToRenderer } from './utils';
 
 /**
  * Register activity center IPC handlers
@@ -22,7 +21,7 @@ import { safeSendToRenderer } from './utils';
  * @param getMainWindow - Function to get the main BrowserWindow
  */
 export function registerActivityHandlers(
-  getMainWindow: () => BrowserWindow | null
+  _getMainWindow: () => BrowserWindow | null
 ): void {
   // Get all notifications
   ipcMain.handle(
@@ -44,19 +43,8 @@ export function registerActivityHandlers(
     async (_, id: string): Promise<IPCResult<ActivityNotification>> => {
       try {
         notificationStore.markRead(id);
-
-        // Find the updated notification and send it to the renderer
         const notifications = notificationStore.getAll();
         const updated = notifications.find((n) => n.id === id);
-
-        if (updated) {
-          safeSendToRenderer(
-            getMainWindow,
-            IPC_CHANNELS.ACTIVITY_NOTIFICATION,
-            updated
-          );
-        }
-
         return { success: true, data: updated };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
