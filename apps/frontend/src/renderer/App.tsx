@@ -1291,7 +1291,6 @@ export function App() {
           open={!!selectedTask}
           task={selectedTask}
           onOpenChange={(open) => !open && handleCloseTaskDetail()}
-          onSwitchToTerminals={() => changeActiveView('terminals')}
           onOpenInbuiltTerminal={handleOpenInbuiltTerminal}
         />
 

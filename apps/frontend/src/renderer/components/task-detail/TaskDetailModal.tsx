@@ -1,4 +1,3 @@
-import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { useToast } from '../../hooks/use-toast';
@@ -30,7 +29,6 @@ import {
   Pencil,
   X,
   GitPullRequest,
-  Terminal
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { calculateProgress } from '../../lib/utils';
@@ -45,18 +43,16 @@ import { TaskSubtasks } from './TaskSubtasks';
 import { TaskLogs } from './TaskLogs';
 import { TaskFiles } from './TaskFiles';
 import { TaskReview } from './TaskReview';
-import { TaskTerminals } from './TaskTerminals';
 import type { Task, WorktreeCreatePROptions } from '../../../shared/types';
 
 interface TaskDetailModalProps {
   open: boolean;
   task: Task | null;
   onOpenChange: (open: boolean) => void;
-  onSwitchToTerminals?: () => void;
-  onOpenInbuiltTerminal?: (id: string, cwd: string) => void;
+  onOpenInbuiltTerminal?: (taskId: string, cwd: string, options?: { launchClaude?: boolean; worktreeBranch?: string; worktreeBaseBranch?: string }) => void;
 }
 
-export function TaskDetailModal({ open, task, onOpenChange, onSwitchToTerminals, onOpenInbuiltTerminal }: TaskDetailModalProps) {
+export function TaskDetailModal({ open, task, onOpenChange, onOpenInbuiltTerminal }: TaskDetailModalProps) {
   // Don't render anything if no task
   if (!task) {
     return null;
@@ -67,7 +63,6 @@ export function TaskDetailModal({ open, task, onOpenChange, onSwitchToTerminals,
       open={open}
       task={task}
       onOpenChange={onOpenChange}
-      onSwitchToTerminals={onSwitchToTerminals}
       onOpenInbuiltTerminal={onOpenInbuiltTerminal}
     />
   );
@@ -80,7 +75,7 @@ const isFilesTabEnabled = () => {
 };
 
 // Separate component to use hooks only when task exists
-function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals, onOpenInbuiltTerminal }: { open: boolean; task: Task; onOpenChange: (open: boolean) => void; onSwitchToTerminals?: () => void; onOpenInbuiltTerminal?: (id: string, cwd: string) => void }) {
+function TaskDetailModalContent({ open, task, onOpenChange, onOpenInbuiltTerminal }: { open: boolean; task: Task; onOpenChange: (open: boolean) => void; onOpenInbuiltTerminal?: (taskId: string, cwd: string, options?: { launchClaude?: boolean; worktreeBranch?: string; worktreeBaseBranch?: string }) => void }) {
   const { t } = useTranslation(['tasks']);
   const { toast } = useToast();
   const state = useTaskDetail({ task });
@@ -89,18 +84,6 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
   const progressPercent = calculateProgress(task.subtasks);
   const completedSubtasks = task.subtasks.filter(s => s.status === 'completed').length;
   const totalSubtasks = task.subtasks.length;
-
-  // Auto-launch Claude Code when task is completed review with a valid worktree
-  const autoLaunchClaude = task.status === 'human_review' && task.reviewReason === 'completed' && !task.stagedInMainProject;
-
-  // Trigger state for Claude Code invocation — incremented each time the user clicks "Launch Claude Code"
-  const [claudeInvocationTrigger, setClaudeInvocationTrigger] = useState(0);
-
-  // Handler for the Claude Code button in TaskReview — switches to terminal tab and signals invocation
-  const handleLaunchClaudeCode = useCallback(() => {
-    state.setActiveTab('terminal');
-    setClaudeInvocationTrigger(prev => prev + 1);
-  }, [state.setActiveTab]);
 
   // Event Handlers
   const handleStartStop = async () => {
@@ -527,13 +510,6 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
                       {t('tasks:files.tab')}
                     </TabsTrigger>
                   )}
-                  <TabsTrigger
-                    value="terminal"
-                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2.5 text-sm"
-                  >
-                    <Terminal className="h-3.5 w-3.5 mr-1.5" />
-                    {t('tasks:kanban.terminal.tab')}
-                  </TabsTrigger>
                 </TabsList>
 
                 {/* Overview Tab */}
@@ -578,9 +554,7 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
                             onShowConflictDialog={state.setShowConflictDialog}
                             onLoadMergePreview={state.loadMergePreview}
                             onClose={handleClose}
-                            onSwitchToTerminals={onSwitchToTerminals}
                             onOpenInbuiltTerminal={onOpenInbuiltTerminal}
-                            onLaunchClaudeCode={handleLaunchClaudeCode}
                             onReviewAgain={state.handleReviewAgain}
                             onRequestChanges={handleRequestChangesFromDiff}
                             showPRDialog={state.showPRDialog}
@@ -621,16 +595,6 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
                   </TabsContent>
                 )}
 
-                {/* Terminal Tab */}
-                <TabsContent value="terminal" className="flex-1 min-h-0 overflow-hidden mt-0">
-                  <TaskTerminals
-                    task={task}
-                    projectPath={activeProject?.path ?? ''}
-                    isActive={state.activeTab === 'terminal'}
-                    autoLaunchClaude={autoLaunchClaude}
-                    claudeInvocationTrigger={claudeInvocationTrigger}
-                  />
-                </TabsContent>
               </Tabs>
             </div>
 
