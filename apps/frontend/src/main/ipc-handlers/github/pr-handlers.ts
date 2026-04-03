@@ -279,30 +279,39 @@ export function parsePatchForNewFileLines(patch: string | null | undefined): Set
 
 /**
  * Review comment produced by buildReviewComments().
- * Includes optional subject_type for file-level comments.
+ * Always includes a line number — only used for inline (line-level) comments.
  */
 export interface ReviewComment {
   path: string;
-  line?: number;
+  line: number;
   body: string;
-  subject_type?: "line" | "file";
+}
+
+/**
+ * Result of buildReviewComments(): inline comments for the GitHub review
+ * comments array, and file-level entries formatted as markdown for the review body.
+ */
+export interface BuildReviewCommentsResult {
+  inlineComments: ReviewComment[];
+  fileLevelEntries: string[];
 }
 
 /**
  * Build review comments with diff-aware routing:
- * - Inline (line-level) for findings on lines within the diff
- * - File-level for findings on lines outside the diff but in a PR file
+ * - Inline (line-level) for findings on lines within the diff → inlineComments
+ * - File-level for findings on lines outside the diff but in a PR file → fileLevelEntries
  * - Skipped for findings on files not in the PR
  *
  * @param findings - Array of PR review findings to route
  * @param fileLineMap - Map of filename → valid line numbers in the diff, or null to fall back to all-inline
- * @returns Array of review comments with routing metadata
+ * @returns Object with inlineComments for the review comments array and fileLevelEntries for the review body
  */
 export function buildReviewComments(
   findings: PRReviewFinding[],
   fileLineMap: Map<string, Set<number>> | null,
-): ReviewComment[] {
-  const comments: ReviewComment[] = [];
+): BuildReviewCommentsResult {
+  const inlineComments: ReviewComment[] = [];
+  const fileLevelEntries: string[] = [];
   for (const f of findings) {
     if (f.file && f.line && f.line > 0) {
       const emoji =
@@ -322,24 +331,20 @@ export function buildReviewComments(
         if (validLines) {
           if (validLines.has(f.line)) {
             // Line is in the diff — post as inline line-level comment
-            comments.push({ path: normalizedPath, line: f.line, body: commentBody });
+            inlineComments.push({ path: normalizedPath, line: f.line, body: commentBody });
           } else {
-            // Line is NOT in the diff — post as file-level comment with line hint
-            comments.push({
-              path: normalizedPath,
-              body: `> Line ${f.line}: ${commentBody}`,
-              subject_type: "file",
-            });
+            // Line is NOT in the diff — add as formatted markdown for the review body
+            fileLevelEntries.push(`- **${normalizedPath}** (line ${f.line}): ${commentBody}`);
           }
         }
         // If file not in map, skip this finding (file not in PR)
       } else {
         // fileLineMap is null (fetch failed) — fall back to original behavior
-        comments.push({ path: normalizedPath, line: f.line, body: commentBody });
+        inlineComments.push({ path: normalizedPath, line: f.line, body: commentBody });
       }
     }
   }
-  return comments;
+  return { inlineComments, fileLevelEntries };
 }
 
 /**
