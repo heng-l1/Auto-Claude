@@ -2385,8 +2385,13 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
             });
           }
 
-          // No overall review body — findings are posted as inline line-level comments only
-          const body = "";
+          // Build diff-aware review comments using file patch data
+          const { inlineComments, fileLevelEntries } = buildReviewComments(findings, fileLineMap);
+
+          // Build review body: file-level findings go into body, inline comments go into comments array
+          const body = fileLevelEntries.length > 0
+            ? "### File-Level Findings\n\n" + fileLevelEntries.join("\n")
+            : "";
 
           // Determine review status based on selected findings (or force approve)
           let overallStatus = result.overallStatus;
@@ -2419,18 +2424,13 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
             findingsCount: findings.length,
           });
 
-          // Build diff-aware review comments using file patch data
-          const reviewComments = buildReviewComments(findings, fileLineMap);
-
-          // Categorize comments for debug logging
-          const lineLevel = reviewComments.filter((c) => c.line !== undefined).length;
-          const fileLevel = reviewComments.filter((c) => c.subject_type === "file").length;
-          const skipped = findings.filter((f) => f.file && f.line && f.line > 0).length - lineLevel - fileLevel;
+          // Debug categorization of comment routing
+          const skipped = findings.filter((f) => f.file && f.line && f.line > 0).length - inlineComments.length - fileLevelEntries.length;
 
           debugLog("Posting review with diff-aware comments", {
             prNumber,
-            lineLevel,
-            fileLevel,
+            inlineCount: inlineComments.length,
+            fileLevelCount: fileLevelEntries.length,
             skipped,
             commitSha,
             totalFindings: findings.length,
@@ -2445,8 +2445,8 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
           if (commitSha) {
             reviewPayload.commit_id = commitSha;
           }
-          if (reviewComments.length > 0) {
-            reviewPayload.comments = reviewComments;
+          if (inlineComments.length > 0) {
+            reviewPayload.comments = inlineComments;
           }
 
           try {
@@ -2484,7 +2484,7 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
               reviewId = fallbackResponse.id;
             } else {
               // If inline comments fail (e.g., line not in diff), retry without them
-              if (reviewComments.length > 0 && (errorMsg.includes("pull_request_review_thread.line") || errorMsg.includes("Line could not be resolved"))) {
+              if (inlineComments.length > 0 && (errorMsg.includes("pull_request_review_thread.line") || errorMsg.includes("Line could not be resolved"))) {
                 debugLog("Inline comments failed, retrying without them", { prNumber });
                 const retryResponse = (await githubFetch(
                   config.token,
