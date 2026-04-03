@@ -2484,7 +2484,7 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
               reviewId = fallbackResponse.id;
             } else {
               // If inline comments fail (e.g., line not in diff), retry without them
-              if (inlineComments.length > 0 && (errorMsg.includes("pull_request_review_thread.line") || errorMsg.includes("Line could not be resolved"))) {
+              if (inlineComments.length > 0 && (errorMsg.includes("pull_request_review_thread.line") || errorMsg.includes("Line could not be resolved") || errorMsg.includes("DraftPullRequestReviewComment"))) {
                 debugLog("Inline comments failed, retrying without them", { prNumber });
                 const retryResponse = (await githubFetch(
                   config.token,
