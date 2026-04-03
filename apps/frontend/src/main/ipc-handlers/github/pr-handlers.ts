@@ -279,30 +279,39 @@ export function parsePatchForNewFileLines(patch: string | null | undefined): Set
 
 /**
  * Review comment produced by buildReviewComments().
- * Includes optional subject_type for file-level comments.
+ * Always includes a line number — only used for inline (line-level) comments.
  */
 export interface ReviewComment {
   path: string;
-  line?: number;
+  line: number;
   body: string;
-  subject_type?: "line" | "file";
+}
+
+/**
+ * Result of buildReviewComments(): inline comments for the GitHub review
+ * comments array, and file-level entries formatted as markdown for the review body.
+ */
+export interface BuildReviewCommentsResult {
+  inlineComments: ReviewComment[];
+  fileLevelEntries: string[];
 }
 
 /**
  * Build review comments with diff-aware routing:
- * - Inline (line-level) for findings on lines within the diff
- * - File-level for findings on lines outside the diff but in a PR file
+ * - Inline (line-level) for findings on lines within the diff → inlineComments
+ * - File-level for findings on lines outside the diff but in a PR file → fileLevelEntries
  * - Skipped for findings on files not in the PR
  *
  * @param findings - Array of PR review findings to route
  * @param fileLineMap - Map of filename → valid line numbers in the diff, or null to fall back to all-inline
- * @returns Array of review comments with routing metadata
+ * @returns Object with inlineComments for the review comments array and fileLevelEntries for the review body
  */
 export function buildReviewComments(
   findings: PRReviewFinding[],
   fileLineMap: Map<string, Set<number>> | null,
-): ReviewComment[] {
-  const comments: ReviewComment[] = [];
+): BuildReviewCommentsResult {
+  const inlineComments: ReviewComment[] = [];
+  const fileLevelEntries: string[] = [];
   for (const f of findings) {
     if (f.file && f.line && f.line > 0) {
       const emoji =
@@ -322,24 +331,20 @@ export function buildReviewComments(
         if (validLines) {
           if (validLines.has(f.line)) {
             // Line is in the diff — post as inline line-level comment
-            comments.push({ path: normalizedPath, line: f.line, body: commentBody });
+            inlineComments.push({ path: normalizedPath, line: f.line, body: commentBody });
           } else {
-            // Line is NOT in the diff — post as file-level comment with line hint
-            comments.push({
-              path: normalizedPath,
-              body: `> Line ${f.line}: ${commentBody}`,
-              subject_type: "file",
-            });
+            // Line is NOT in the diff — add as formatted markdown for the review body
+            fileLevelEntries.push(`- **${normalizedPath}** (line ${f.line}): ${commentBody}`);
           }
         }
         // If file not in map, skip this finding (file not in PR)
       } else {
         // fileLineMap is null (fetch failed) — fall back to original behavior
-        comments.push({ path: normalizedPath, line: f.line, body: commentBody });
+        inlineComments.push({ path: normalizedPath, line: f.line, body: commentBody });
       }
     }
   }
-  return comments;
+  return { inlineComments, fileLevelEntries };
 }
 
 /**
@@ -2380,8 +2385,13 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
             });
           }
 
-          // No overall review body — findings are posted as inline line-level comments only
-          const body = "";
+          // Build diff-aware review comments using file patch data
+          const { inlineComments, fileLevelEntries } = buildReviewComments(findings, fileLineMap);
+
+          // Build review body: file-level findings go into body, inline comments go into comments array
+          const body = fileLevelEntries.length > 0
+            ? "### File-Level Findings\n\n" + fileLevelEntries.join("\n")
+            : "";
 
           // Determine review status based on selected findings (or force approve)
           let overallStatus = result.overallStatus;
@@ -2414,18 +2424,13 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
             findingsCount: findings.length,
           });
 
-          // Build diff-aware review comments using file patch data
-          const reviewComments = buildReviewComments(findings, fileLineMap);
-
-          // Categorize comments for debug logging
-          const lineLevel = reviewComments.filter((c) => c.line !== undefined).length;
-          const fileLevel = reviewComments.filter((c) => c.subject_type === "file").length;
-          const skipped = findings.filter((f) => f.file && f.line && f.line > 0).length - lineLevel - fileLevel;
+          // Debug categorization of comment routing
+          const skipped = findings.filter((f) => f.file && f.line && f.line > 0).length - inlineComments.length - fileLevelEntries.length;
 
           debugLog("Posting review with diff-aware comments", {
             prNumber,
-            lineLevel,
-            fileLevel,
+            inlineCount: inlineComments.length,
+            fileLevelCount: fileLevelEntries.length,
             skipped,
             commitSha,
             totalFindings: findings.length,
@@ -2440,8 +2445,8 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
           if (commitSha) {
             reviewPayload.commit_id = commitSha;
           }
-          if (reviewComments.length > 0) {
-            reviewPayload.comments = reviewComments;
+          if (inlineComments.length > 0) {
+            reviewPayload.comments = inlineComments;
           }
 
           try {
@@ -2479,7 +2484,7 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
               reviewId = fallbackResponse.id;
             } else {
               // If inline comments fail (e.g., line not in diff), retry without them
-              if (reviewComments.length > 0 && (errorMsg.includes("pull_request_review_thread.line") || errorMsg.includes("Line could not be resolved"))) {
+              if (inlineComments.length > 0 && (errorMsg.includes("pull_request_review_thread.line") || errorMsg.includes("Line could not be resolved") || errorMsg.includes("DraftPullRequestReviewComment"))) {
                 debugLog("Inline comments failed, retrying without them", { prNumber });
                 const retryResponse = (await githubFetch(
                   config.token,
