@@ -150,21 +150,14 @@
     "error": "Failed to remove project"
   },
   "appUpdate": {
-    "title": "App Update Available",
-    "description": "A new version of Auto Claude is ready to download",
+    "title": "New Version Available",
+    "description": "A new version of Auto Claude is available on GitHub",
     "newVersion": "New Version",
     "released": "Released",
-    "downloading": "Downloading...",
-    "downloadUpdate": "Download Update",
-    "installAndRestart": "Install and Restart",
-    "installLater": "Install Later",
+    "viewOnGitHub": "View on GitHub",
     "remindMeLater": "Remind Me Later",
-    "updateDownloaded": "Update downloaded successfully! Click Install to restart and apply the update.",
-    "downloadError": "Failed to download update",
     "claudeCodeChangelog": "View Claude Code Changelog",
-    "claudeCodeChangelogAriaLabel": "View Claude Code Changelog (opens in new window)",
-    "readOnlyVolumeTitle": "Cannot install from disk image",
-    "readOnlyVolumeDescription": "Please move Auto Claude to your Applications folder before updating."
+    "claudeCodeChangelogAriaLabel": "View Claude Code Changelog (opens in new window)"
   },
   "addCompetitor": {
     "title": "Add Competitor",
