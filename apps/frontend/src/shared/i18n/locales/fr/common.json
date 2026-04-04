@@ -1,0 +1,17 @@
+{
+  "activityCenter": {
+    "title": "Centre d'activité",
+    "notifications": "Notifications",
+    "noNotifications": "Aucune activité pour le moment",
+    "markAllRead": "Tout marquer comme lu",
+    "clearAll": "Tout effacer",
+    "unread": "{{count}} non lu(s)",
+    "taskCompleted": "Tâche terminée",
+    "taskFailed": "Tâche échouée",
+    "reviewNeeded": "Révision nécessaire",
+    "prReviewComplete": "Revue PR terminée",
+    "viewAll": "Tout voir",
+    "justNow": "À l'instant",
+    "delete": "Supprimer"
+  }
+}

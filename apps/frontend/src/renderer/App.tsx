@@ -66,11 +66,13 @@ import { useClaudeProfileStore, loadClaudeProfiles } from './stores/claude-profi
 import { useTerminalStore, restoreTerminalSessions } from './stores/terminal-store';
 import { useKanbanSettingsStore } from './stores/kanban-settings-store';
 import { initializeGitHubListeners, cleanupGitHubListeners } from './stores/github';
+import { loadNotifications } from './stores/activity-store';
 import { initDownloadProgressListener } from './stores/download-store';
 import { GlobalDownloadIndicator } from './components/GlobalDownloadIndicator';
 import { useIpcListeners } from './hooks/useIpc';
 import { useGlobalTerminalListeners } from './hooks/useGlobalTerminalListeners';
 import { useTerminalProfileChange } from './hooks/useTerminalProfileChange';
+import { useActivityListeners } from './hooks/useActivityListeners';
 import { COLOR_THEMES, UI_SCALE_MIN, UI_SCALE_MAX, UI_SCALE_DEFAULT, TAB_COLORS } from '../shared/constants';
 import type { Task, Project, ColorTheme } from '../shared/types';
 import { ProjectTabBar } from './components/ProjectTabBar';
@@ -192,6 +194,9 @@ export function App() {
   // Handle terminal profile change events (recreate terminals on profile switch)
   useTerminalProfileChange();
 
+  // Listen for activity notifications from main process (task completions, PR reviews, etc.)
+  useActivityListeners();
+
   // Detect reduced motion preference for accessibility
   const reducedMotion = useReducedMotion();
 
@@ -247,6 +252,15 @@ export function App() {
     }
   }, [activeProjectId, selectedProjectId]);
 
+  // Navigate to a specific project + view (used by Activity Center for cross-project navigation)
+  const navigateToProjectView = useCallback((projectId: string, view: SidebarView) => {
+    // Save the target view for the target project BEFORE switching,
+    // so the useEffect above loads the correct view when activeProjectId changes
+    saveSidebarView(projectId, view);
+    setActiveProject(projectId);
+    setActiveView(view);
+  }, [setActiveProject]);
+
   const [isOnboardingWizardOpen, setIsOnboardingWizardOpen] = useState(false);
   const [isVersionWarningModalOpen, setIsVersionWarningModalOpen] = useState(false);
   const [isRefreshingTasks, setIsRefreshingTasks] = useState(false);
@@ -294,6 +308,7 @@ export function App() {
     loadSettings();
     loadProfiles();
     loadClaudeProfiles();
+    loadNotifications();
     // Initialize global GitHub listeners (PR reviews, etc.) so they persist across navigation
     initializeGitHubListeners();
     // Initialize global download progress listener for Ollama model downloads
@@ -984,6 +999,7 @@ export function App() {
           onNewTaskClick={() => setIsNewTaskDialogOpen(true)}
           activeView={activeView}
           onViewChange={changeActiveView}
+          onNavigateToProject={navigateToProjectView}
         />
 
         {/* Main content */}

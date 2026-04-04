@@ -8,3 +8,4 @@ export {
 export type { AgentSettingsSource } from '../../shared/types/settings';
 export { useVirtualizedTree } from './useVirtualizedTree';
 export { useTerminalProfileChange } from './useTerminalProfileChange';
+export { useActivityListeners } from './useActivityListeners';

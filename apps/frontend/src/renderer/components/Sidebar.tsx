@@ -56,6 +56,7 @@ import { AddProjectModal } from './AddProjectModal';
 import { GitSetupModal } from './GitSetupModal';
 import { RateLimitIndicator } from './RateLimitIndicator';
 import { ClaudeCodeStatusBadge } from './ClaudeCodeStatusBadge';
+import { ActivityCenter } from './ActivityCenter';
 import { UpdateBanner } from './UpdateBanner';
 import type { Project, GitStatus } from '../../shared/types';
 
@@ -66,6 +67,7 @@ interface SidebarProps {
   onNewTaskClick: () => void;
   activeView?: SidebarView;
   onViewChange?: (view: SidebarView) => void;
+  onNavigateToProject?: (projectId: string, view: SidebarView) => void;
 }
 
 interface NavItem {
@@ -104,7 +106,8 @@ export function Sidebar({
   onSettingsClick,
   onNewTaskClick,
   activeView = 'kanban',
-  onViewChange
+  onViewChange,
+  onNavigateToProject
 }: SidebarProps) {
   const { t } = useTranslation(['navigation', 'dialogs', 'common']);
   const projects = useProjectStore((state) => state.projects);
@@ -434,6 +437,9 @@ export function Sidebar({
         <div className={cn("space-y-3 transition-all duration-300", isCollapsed ? "p-2" : "p-4")}>
           {/* Claude Code Status Badge */}
           {!isCollapsed && <ClaudeCodeStatusBadge />}
+
+          {/* Activity Center */}
+          <ActivityCenter onViewChange={(view) => onViewChange?.(view)} onNavigateToProject={onNavigateToProject} isCollapsed={isCollapsed} />
 
           {/* Settings row */}
           <div className={cn(

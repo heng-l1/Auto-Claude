@@ -922,5 +922,20 @@
       "blockedTooltip": "This PR cannot be merged due to blocking conditions",
       "conflictTooltip": "This PR has merge conflicts that need to be resolved"
     }
+  },
+  "activityCenter": {
+    "title": "Activity Center",
+    "notifications": "Notifications",
+    "noNotifications": "No activity yet",
+    "markAllRead": "Mark all read",
+    "clearAll": "Clear all",
+    "unread": "{{count}} unread",
+    "taskCompleted": "Task completed",
+    "taskFailed": "Task failed",
+    "reviewNeeded": "Review needed",
+    "prReviewComplete": "PR review complete",
+    "viewAll": "View all",
+    "justNow": "Just now",
+    "delete": "Delete"
   }
 }

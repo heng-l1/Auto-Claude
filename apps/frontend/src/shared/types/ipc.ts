@@ -4,6 +4,7 @@
 
 import type { IPCResult } from './common';
 import type { KanbanPreferences } from './kanban';
+import type { ActivityNotification } from './notification';
 import type { SupportedIDE, SupportedTerminal } from './settings';
 import type {
   Project,
@@ -966,6 +967,14 @@ export interface ElectronAPI {
 
   // Queue Routing API (rate limit recovery)
   queue: import('../../preload/api/queue-api').QueueAPI;
+
+  // Activity Center operations
+  getNotifications: () => Promise<IPCResult<ActivityNotification[]>>;
+  markRead: (id: string) => Promise<IPCResult>;
+  markAllRead: () => Promise<IPCResult>;
+  clearAll: () => Promise<IPCResult>;
+  deleteNotification: (id: string) => Promise<IPCResult>;
+  onActivityNotification: (callback: (notification: ActivityNotification) => void) => () => void;
 }
 
 /** Platform information exposed via contextBridge for platform-specific behavior */

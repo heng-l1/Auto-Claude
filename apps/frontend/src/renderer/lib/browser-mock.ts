@@ -385,6 +385,14 @@ const browserMockAPI: ElectronAPI = {
     error: 'Screenshot capture not available in browser mode'
   }),
 
+  // Activity Center Operations
+  getNotifications: async () => ({ success: true as const, data: [] }),
+  markRead: async (_id: string) => ({ success: true as const }),
+  markAllRead: async () => ({ success: true as const }),
+  clearAll: async () => ({ success: true as const }),
+  deleteNotification: async (_id: string) => ({ success: true as const }),
+  onActivityNotification: () => () => {},
+
   // Debug Operations
   getDebugInfo: async () => ({
     systemInfo: {

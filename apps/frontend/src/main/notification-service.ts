@@ -1,6 +1,9 @@
 import { Notification, shell } from 'electron';
 import type { BrowserWindow } from 'electron';
 import { projectStore } from './project-store';
+import { notificationStore } from './notification-store';
+import { safeSendToRenderer } from './ipc-handlers/utils';
+import { IPC_CHANNELS } from '../shared/constants';
 
 export type NotificationType = 'task-complete' | 'task-failed' | 'review-needed' | 'pr-review-complete';
 
@@ -9,6 +12,7 @@ interface NotificationOptions {
   body: string;
   projectId?: string;
   taskId?: string;
+  prNumber?: number;
 }
 
 /**
@@ -67,7 +71,8 @@ class NotificationService {
     this.sendNotification('pr-review-complete', {
       title: 'PR Review Complete',
       body: `PR #${prNumber} review is complete and ready to post`,
-      projectId
+      projectId,
+      prNumber
     });
   }
 
@@ -75,6 +80,18 @@ class NotificationService {
    * Send a system notification with optional sound
    */
   private sendNotification(type: NotificationType, options: NotificationOptions): void {
+    // Persist to activity notification store (always, regardless of OS notification settings)
+    const addedNotification = notificationStore.addNotification(type, options.title, options.body, {
+      projectId: options.projectId,
+      taskId: options.taskId,
+      prNumber: options.prNumber
+    });
+
+    // Push activity notification to renderer
+    if (this.mainWindow) {
+      safeSendToRenderer(this.mainWindow, IPC_CHANNELS.ACTIVITY_NOTIFICATION, addedNotification);
+    }
+
     // Get notification settings
     const settings = this.getNotificationSettings(options.projectId);
 
