@@ -47,9 +47,7 @@ interface TaskReviewProps {
   onShowConflictDialog: (show: boolean) => void;
   onLoadMergePreview: () => void;
   onClose?: () => void;
-  onSwitchToTerminals?: () => void;
-  onOpenInbuiltTerminal?: (id: string, cwd: string) => void;
-  onLaunchClaudeCode?: () => void;
+  onOpenInbuiltTerminal?: (taskId: string, cwd: string, options?: { launchClaude?: boolean; worktreeBranch?: string; worktreeBaseBranch?: string }) => void;
   onReviewAgain?: () => void;
   /** Callback when user requests changes from the diff viewer with formatted inline comments */
   onRequestChanges?: (feedback: string) => void;
@@ -101,9 +99,7 @@ export function TaskReview({
   onShowConflictDialog,
   onLoadMergePreview,
   onClose,
-  onSwitchToTerminals,
   onOpenInbuiltTerminal,
-  onLaunchClaudeCode,
   onReviewAgain,
   onRequestChanges,
   showPRDialog,
@@ -161,9 +157,7 @@ export function TaskReview({
           onMerge={onMerge}
           onShowPRDialog={onShowPRDialog}
           onClose={onClose}
-          onSwitchToTerminals={onSwitchToTerminals}
           onOpenInbuiltTerminal={onOpenInbuiltTerminal}
-          onLaunchClaudeCode={onLaunchClaudeCode}
         />
       ) : (
         <NoWorkspaceMessage task={task} onClose={onClose} />

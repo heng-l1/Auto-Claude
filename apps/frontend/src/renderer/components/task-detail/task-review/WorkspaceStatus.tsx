@@ -49,9 +49,7 @@ interface WorkspaceStatusProps {
   onMerge: () => void;
   onShowPRDialog?: (show: boolean) => void;
   onClose?: () => void;
-  onSwitchToTerminals?: () => void;
-  onOpenInbuiltTerminal?: (id: string, cwd: string) => void;
-  onLaunchClaudeCode?: () => void;
+  onOpenInbuiltTerminal?: (taskId: string, cwd: string, options?: { launchClaude?: boolean; worktreeBranch?: string; worktreeBaseBranch?: string }) => void;
 }
 
 /**
@@ -93,9 +91,7 @@ export function WorkspaceStatus({
   onMerge,
   onShowPRDialog,
   onClose,
-  onSwitchToTerminals,
-  onOpenInbuiltTerminal,
-  onLaunchClaudeCode
+  onOpenInbuiltTerminal
 }: WorkspaceStatusProps) {
   const { t } = useTranslation(['taskReview', 'common', 'tasks']);
   const { settings } = useSettingsStore();
@@ -226,19 +222,6 @@ export function WorkspaceStatus({
     }
   };
 
-  const handleOpenInTerminal = async () => {
-    if (!worktreeStatus.worktreePath) return;
-    try {
-      await window.electronAPI.worktreeOpenInTerminal(
-        worktreeStatus.worktreePath,
-        settings.preferredTerminal || 'system',
-        settings.customTerminalPath
-      );
-    } catch (err) {
-      console.error('Failed to open in terminal:', err);
-    }
-  };
-
   const hasGitConflicts = mergePreview?.gitConflicts?.hasConflicts;
   const hasUncommittedChanges = mergePreview?.uncommittedChanges?.hasChanges;
   const uncommittedCount = mergePreview?.uncommittedChanges?.count || 0;
@@ -340,7 +323,7 @@ export function WorkspaceStatus({
             <Button
               variant="outline"
               size="sm"
-              onClick={onLaunchClaudeCode}
+              onClick={() => onOpenInbuiltTerminal?.(taskId, worktreeStatus.worktreePath!, { launchClaude: true, worktreeBranch: worktreeStatus.branch, worktreeBaseBranch: worktreeStatus.baseBranch })}
               className="h-7 px-2 text-xs"
             >
               <Sparkles className="h-3.5 w-3.5 mr-1" />
@@ -349,7 +332,7 @@ export function WorkspaceStatus({
             <Button
               variant="outline"
               size="sm"
-              onClick={handleOpenInTerminal}
+              onClick={() => onOpenInbuiltTerminal?.(taskId, worktreeStatus.worktreePath!, { worktreeBranch: worktreeStatus.branch, worktreeBaseBranch: worktreeStatus.baseBranch })}
               className="h-7 px-2 text-xs"
             >
               <Terminal className="h-3.5 w-3.5 mr-1" />
