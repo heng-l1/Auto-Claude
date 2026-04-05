@@ -3,12 +3,10 @@ import { useTranslation } from 'react-i18next';
 import {
   RefreshCw,
   CheckCircle2,
-  Download,
   Sparkles,
   ArrowDownToLine,
   X,
-  AlertTriangle,
-  AlertCircle
+  ExternalLink
 } from 'lucide-react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -17,15 +15,15 @@ import rehypeSanitize from 'rehype-sanitize';
 import { Button } from '../ui/button';
 import { Label } from '../ui/label';
 import { Switch } from '../ui/switch';
-import { Progress } from '../ui/progress';
 import { SettingsSection } from './SettingsSection';
 import type {
   AppSettings,
   AppUpdateAvailableEvent,
-  AppUpdateProgress,
   AppUpdateInfo,
   NotificationSettings
 } from '../../../shared/types';
+
+const GITHUB_RELEASES_URL = 'https://github.com/heng-l1/Auto-Claude/releases';
 
 /**
  * Release notes renderer that handles both HTML and markdown input.
@@ -79,17 +77,10 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
   // Electron app update state
   const [appUpdateInfo, setAppUpdateInfo] = useState<AppUpdateAvailableEvent | null>(null);
   const [isCheckingAppUpdate, setIsCheckingAppUpdate] = useState(false);
-  const [isDownloadingAppUpdate, setIsDownloadingAppUpdate] = useState(false);
-  const [appDownloadProgress, setAppDownloadProgress] = useState<AppUpdateProgress | null>(null);
-  const [isAppUpdateDownloaded, setIsAppUpdateDownloaded] = useState(false);
   // Stable downgrade state (shown when user turns off beta while on prerelease)
   const [stableDowngradeInfo, setStableDowngradeInfo] = useState<AppUpdateInfo | null>(null);
-  // Read-only volume warning (shown when trying to install from DMG)
-  const [showReadOnlyWarning, setShowReadOnlyWarning] = useState(false);
-  // General update error state
-  const [appUpdateError, setAppUpdateError] = useState<string | null>(null);
 
-  // Check for updates on mount, including any already-downloaded updates
+  // Check for updates on mount
   useEffect(() => {
     if (section !== 'updates') {
       return;
@@ -97,31 +88,7 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
 
     let isCancelled = false;
 
-    // First check if an update was already downloaded, then check for new updates
     (async () => {
-      // Check if an update was already downloaded (e.g., auto-downloaded in background)
-      try {
-        const result = await window.electronAPI.getDownloadedAppUpdate();
-
-        // Skip state updates if component unmounted or section changed
-        if (isCancelled) return;
-
-        if (result.success && result.data) {
-          // An update was already downloaded - show "Install and Restart" button
-          setAppUpdateInfo(result.data);
-          setIsAppUpdateDownloaded(true);
-          console.log('[AdvancedSettings] Found already-downloaded update:', result.data.version);
-          return; // Don't check for new updates if we already have one downloaded
-        }
-      } catch (err) {
-        console.error('Failed to check for downloaded update:', err);
-        if (isCancelled) return;
-      }
-
-      // Only check for available updates if no update is already downloaded
-      // (electron-updater reports no available update when one is already downloaded,
-      // which would clear our appUpdateInfo and lose the version metadata)
-      // Inline the update check with cancellation support
       setIsCheckingAppUpdate(true);
       try {
         const result = await window.electronAPI.checkAppUpdate();
@@ -150,24 +117,6 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
     const cleanupAvailable = window.electronAPI.onAppUpdateAvailable((info) => {
       setAppUpdateInfo(info);
       setIsCheckingAppUpdate(false);
-      setShowReadOnlyWarning(false);
-      setAppUpdateError(null);
-    });
-
-    const cleanupDownloaded = window.electronAPI.onAppUpdateDownloaded((info) => {
-      setAppUpdateInfo(info);
-      setIsDownloadingAppUpdate(false);
-      setIsAppUpdateDownloaded(true);
-      setAppDownloadProgress(null);
-      // Clear downgrade info if any update downloaded
-      setStableDowngradeInfo(null);
-      // Reset read-only warning when a new update is downloaded
-      setShowReadOnlyWarning(false);
-      setAppUpdateError(null);
-    });
-
-    const cleanupProgress = window.electronAPI.onAppUpdateProgress((progress) => {
-      setAppDownloadProgress(progress);
     });
 
     // Listen for stable downgrade available (when user turns off beta while on prerelease)
@@ -175,25 +124,9 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
       setStableDowngradeInfo(info);
     });
 
-    // Listen for read-only volume warning (when trying to install from DMG)
-    const cleanupReadOnlyVolume = window.electronAPI.onAppUpdateReadOnlyVolume(() => {
-      setShowReadOnlyWarning(true);
-    });
-
-    // Listen for update errors (e.g., install failures)
-    const cleanupError = window.electronAPI.onAppUpdateError((error) => {
-      setAppUpdateError(error.message);
-      setIsDownloadingAppUpdate(false);
-      setAppDownloadProgress(null);
-    });
-
     return () => {
       cleanupAvailable();
-      cleanupDownloaded();
-      cleanupProgress();
       cleanupStableDowngrade();
-      cleanupReadOnlyVolume();
-      cleanupError();
     };
   }, []);
 
@@ -211,45 +144,6 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
       console.error('Failed to check for app updates:', err);
     } finally {
       setIsCheckingAppUpdate(false);
-    }
-  };
-
-  const handleDownloadAppUpdate = async () => {
-    setIsDownloadingAppUpdate(true);
-    setAppUpdateError(null);
-    try {
-      const result = await window.electronAPI.downloadAppUpdate();
-      if (!result.success) {
-        setAppUpdateError(result.error || t('updates.downloadError'));
-        setIsDownloadingAppUpdate(false);
-      }
-      // Note: Success case is handled by the onAppUpdateDownloaded event listener
-    } catch (err) {
-      console.error('Failed to download app update:', err);
-      setAppUpdateError(t('updates.downloadError'));
-      setIsDownloadingAppUpdate(false);
-    }
-  };
-
-  const handleInstallAppUpdate = () => {
-    window.electronAPI.installAppUpdate();
-  };
-
-  const handleDownloadStableVersion = async () => {
-    setIsDownloadingAppUpdate(true);
-    setAppUpdateError(null);
-    try {
-      // Use dedicated stable download API with allowDowngrade enabled
-      const result = await window.electronAPI.downloadStableUpdate();
-      if (!result.success) {
-        setAppUpdateError(result.error || t('updates.downloadError'));
-        setIsDownloadingAppUpdate(false);
-      }
-      // Note: Success case is handled by the onAppUpdateDownloaded event listener
-    } catch (err) {
-      console.error('Failed to download stable version:', err);
-      setAppUpdateError(t('updates.downloadError'));
-      setIsDownloadingAppUpdate(false);
     }
   };
 
@@ -276,7 +170,7 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
               {isCheckingAppUpdate ? (
                 <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
               ) : appUpdateInfo ? (
-                <Download className="h-6 w-6 text-info" />
+                <ExternalLink className="h-6 w-6 text-info" />
               ) : (
                 <CheckCircle2 className="h-6 w-6 text-success" />
               )}
@@ -303,7 +197,7 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
           </div>
 
           {/* Electron App Update Section - shows when update available */}
-          {(appUpdateInfo || isAppUpdateDownloaded) && (
+          {appUpdateInfo && (
             <div className="rounded-lg border-2 border-info/50 bg-info/5 p-5 space-y-4">
               <div className="flex items-center gap-2 text-info">
                 <Sparkles className="h-5 w-5" />
@@ -316,98 +210,37 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
                     {t('updates.newVersion')}
                   </p>
                   <p className="text-base font-medium text-foreground">
-                    {appUpdateInfo?.version || 'Unknown'}
+                    {appUpdateInfo.version || 'Unknown'}
                   </p>
-                  {appUpdateInfo?.releaseDate && (
+                  {appUpdateInfo.releaseDate && (
                     <p className="text-xs text-muted-foreground mt-1">
                       {t('updates.released')} {new Date(appUpdateInfo.releaseDate).toLocaleDateString()}
                     </p>
                   )}
                 </div>
-                {isAppUpdateDownloaded ? (
-                  <CheckCircle2 className="h-6 w-6 text-success" />
-                ) : isDownloadingAppUpdate ? (
-                  <RefreshCw className="h-6 w-6 animate-spin text-info" />
-                ) : (
-                  <Download className="h-6 w-6 text-info" />
-                )}
+                <ExternalLink className="h-6 w-6 text-info" />
               </div>
 
               {/* Release Notes */}
-              {appUpdateInfo?.releaseNotes && (
+              {appUpdateInfo.releaseNotes && (
                 <div className="bg-background rounded-lg p-4 max-h-48 overflow-y-auto border border-border/50">
                   <ReleaseNotesRenderer content={appUpdateInfo.releaseNotes} />
                 </div>
               )}
 
-              {/* Download Progress */}
-              {isDownloadingAppUpdate && appDownloadProgress && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">{t('updates.downloading')}</span>
-                    <span className="text-foreground font-medium">
-                      {Math.round(appDownloadProgress.percent)}%
-                    </span>
-                  </div>
-                  <Progress value={appDownloadProgress.percent} className="h-2" />
-                  <p className="text-xs text-muted-foreground text-right">
-                    {(appDownloadProgress.transferred / 1024 / 1024).toFixed(2)} MB / {(appDownloadProgress.total / 1024 / 1024).toFixed(2)} MB
-                  </p>
-                </div>
-              )}
-
-              {/* Update Error */}
-              {appUpdateError && (
-                <div className="flex items-center gap-3 text-sm text-destructive bg-destructive/10 border border-destructive/30 rounded-lg p-3">
-                  <AlertCircle className="h-5 w-5 shrink-0" />
-                  <span>{appUpdateError}</span>
-                </div>
-              )}
-
-              {/* Downloaded Success */}
-              {isAppUpdateDownloaded && !showReadOnlyWarning && (
-                <div className="flex items-center gap-3 text-sm text-success bg-success/10 border border-success/30 rounded-lg p-3">
-                  <CheckCircle2 className="h-5 w-5 shrink-0" />
-                  <span>{t('updates.updateDownloaded')}</span>
-                </div>
-              )}
-
-              {/* Read-Only Volume Warning */}
-              {showReadOnlyWarning && (
-                <div className="flex items-start gap-3 text-sm text-warning bg-warning/10 border border-warning/30 rounded-lg p-3">
-                  <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
-                  <div className="space-y-1">
-                    <p className="font-medium text-warning">{t('updates.readOnlyVolumeTitle')}</p>
-                    <p className="text-muted-foreground">{t('updates.readOnlyVolumeDescription')}</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Action Buttons */}
+              {/* View on GitHub Button */}
               <div className="flex gap-3">
-                {isAppUpdateDownloaded ? (
-                  <Button onClick={handleInstallAppUpdate} disabled={showReadOnlyWarning}>
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    {t('updates.installAndRestart')}
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={handleDownloadAppUpdate}
-                    disabled={isDownloadingAppUpdate}
-                  >
-                    {isDownloadingAppUpdate ? (
-                      <>
-                        <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                        {t('updates.downloading')}
-                      </>
-                    ) : (
-                      <>
-                        <Download className="mr-2 h-4 w-4" />
-                        {t('updates.downloadUpdate')}
-                      </>
-                    )}
-                  </Button>
-                )}
+                <Button
+                  onClick={() => {
+                    const url = appUpdateInfo?.version
+                      ? `${GITHUB_RELEASES_URL}/tag/v${appUpdateInfo.version}`
+                      : GITHUB_RELEASES_URL;
+                    window.electronAPI.openExternal(url);
+                  }}
+                >
+                  <ExternalLink className="mr-2 h-4 w-4" aria-hidden="true" />
+                  {t('updates.viewOnGitHub')}
+                </Button>
               </div>
             </div>
           )}
@@ -486,11 +319,7 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
                     </p>
                   )}
                 </div>
-                {isDownloadingAppUpdate ? (
-                  <RefreshCw className="h-6 w-6 animate-spin text-warning" />
-                ) : (
-                  <ArrowDownToLine className="h-6 w-6 text-warning" />
-                )}
+                <ArrowDownToLine className="h-6 w-6 text-warning" />
               </div>
 
               {/* Release Notes */}
@@ -500,40 +329,19 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
                 </div>
               )}
 
-              {/* Download Progress */}
-              {isDownloadingAppUpdate && appDownloadProgress && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">{t('updates.downloading')}</span>
-                    <span className="text-foreground font-medium">
-                      {Math.round(appDownloadProgress.percent)}%
-                    </span>
-                  </div>
-                  <Progress value={appDownloadProgress.percent} className="h-2" />
-                  <p className="text-xs text-muted-foreground text-right">
-                    {(appDownloadProgress.transferred / 1024 / 1024).toFixed(2)} MB / {(appDownloadProgress.total / 1024 / 1024).toFixed(2)} MB
-                  </p>
-                </div>
-              )}
-
               {/* Action Buttons */}
               <div className="flex gap-3">
                 <Button
-                  onClick={handleDownloadStableVersion}
-                  disabled={isDownloadingAppUpdate}
+                  onClick={() => {
+                    const url = stableDowngradeInfo?.version
+                      ? `${GITHUB_RELEASES_URL}/tag/v${stableDowngradeInfo.version}`
+                      : GITHUB_RELEASES_URL;
+                    window.electronAPI.openExternal(url);
+                  }}
                   variant="outline"
                 >
-                  {isDownloadingAppUpdate ? (
-                    <>
-                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                      {t('updates.downloading')}
-                    </>
-                  ) : (
-                    <>
-                      <ArrowDownToLine className="mr-2 h-4 w-4" />
-                      {t('updates.downloadStableVersion')}
-                    </>
-                  )}
+                  <ExternalLink className="mr-2 h-4 w-4" aria-hidden="true" />
+                  {t('updates.viewOnGitHub')}
                 </Button>
                 <Button
                   variant="ghost"
