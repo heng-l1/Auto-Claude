@@ -32,13 +32,9 @@
   },
   "updateBanner": {
     "title": "Update Available",
-    "version": "Version {{version}} is ready",
-    "updateAndRestart": "Update and Restart",
-    "installAndRestart": "Install and Restart",
-    "downloading": "Downloading...",
-    "dismiss": "Dismiss",
-    "downloadError": "Failed to download update",
-    "readOnlyVolumeWarning": "Move to Applications folder to update"
+    "version": "Version {{version}} is available",
+    "viewOnGitHub": "View on GitHub",
+    "dismiss": "Dismiss"
   },
   "claudeCode": {
     "checking": "Checking Claude Code...",

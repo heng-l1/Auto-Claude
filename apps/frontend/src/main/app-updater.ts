@@ -1,24 +1,19 @@
 /**
- * Electron App Auto-Updater
+ * Electron App Update Checker
  *
- * Manages automatic updates for the packaged Electron application using electron-updater.
- * Updates are published through GitHub Releases and automatically downloaded and installed.
+ * Manages update detection for the packaged Electron application using electron-updater.
+ * Updates are detected via GitHub Releases; users are directed to the GitHub release page
+ * to download manually (no auto-download or in-app install).
  *
  * Update flow:
  * 1. Check for updates 3 seconds after app launch
- * 2. Download updates automatically when available
- * 3. Notify user when update is downloaded
- * 4. Install and restart when user confirms
+ * 2. Notify user when a newer version is available
+ * 3. User clicks "View on GitHub" to download from the release page
  *
  * Events sent to renderer:
  * - APP_UPDATE_AVAILABLE: New update available (with version info)
- * - APP_UPDATE_DOWNLOADED: Update downloaded and ready to install
- * - APP_UPDATE_PROGRESS: Download progress updates
- * - APP_UPDATE_ERROR: Error during update process
  */
 
-import { accessSync, constants as fsConstants } from 'fs';
-import path from 'path';
 import { autoUpdater } from 'electron-updater';
 import type { UpdateInfo } from 'electron-updater';
 import { app, net } from 'electron';
@@ -26,7 +21,6 @@ import type { BrowserWindow } from 'electron';
 import { IPC_CHANNELS } from '../shared/constants';
 import type { AppUpdateInfo } from '../shared/types';
 import { compareVersions } from './updater/version-manager';
-import { isMacOS } from './platform';
 
 // GitHub repo info for API calls
 const GITHUB_OWNER = 'heng-l1';
@@ -167,9 +161,6 @@ export function setUpdateChannel(channel: UpdateChannel): void {
   // Enable pre-release scanning when beta channel is selected
   // This allows electron-updater to find beta releases on GitHub
   autoUpdater.allowPrerelease = channel === 'beta';
-  // Clear any downloaded update info when channel changes to prevent showing
-  // an Install button for an update from a different channel
-  downloadedUpdateInfo = null;
   console.warn(`[app-updater] Update channel set to: ${channel}, allowPrerelease: ${autoUpdater.allowPrerelease}`);
 }
 
@@ -184,12 +175,6 @@ if (DEBUG_UPDATER) {
 }
 
 let mainWindow: BrowserWindow | null = null;
-
-// Track downloaded update state so it persists across Settings page navigations
-let downloadedUpdateInfo: AppUpdateInfo | null = null;
-
-// Flag to allow intentional downgrades (e.g., switching from beta to stable)
-let intentionalDowngrade = false;
 
 /**
  * Initialize the app updater system
@@ -227,8 +212,8 @@ export function initializeAppUpdater(window: BrowserWindow, betaUpdates = false)
     const isNewer = compareVersions(info.version, currentVersion) > 0;
     console.warn(`[app-updater] Update available: ${info.version} (current: ${currentVersion}, isNewer: ${isNewer})`);
 
-    // Skip if the "update" is actually a downgrade, unless it's an intentional downgrade
-    if (!isNewer && !intentionalDowngrade) {
+    // Skip if the "update" is actually a downgrade
+    if (!isNewer) {
       console.warn('[app-updater] Ignoring update - not newer than current version');
       return;
     }
@@ -238,58 +223,6 @@ export function initializeAppUpdater(window: BrowserWindow, betaUpdates = false)
         version: info.version,
         releaseNotes: formatReleaseNotes(info.releaseNotes),
         releaseDate: info.releaseDate
-      });
-    }
-
-    // Download the update now that we've confirmed it's valid
-    autoUpdater.downloadUpdate().catch((error) => {
-      console.error('[app-updater] Failed to download update:', error.message);
-    });
-  });
-
-  // Update downloaded - ready to install
-  autoUpdater.on('update-downloaded', (info) => {
-    const currentVersion = autoUpdater.currentVersion.version;
-    const isNewer = compareVersions(info.version, currentVersion) > 0;
-    console.warn(`[app-updater] Update downloaded: ${info.version} (current: ${currentVersion}, isNewer: ${isNewer})`);
-
-    // Skip if the downloaded "update" is actually a downgrade, unless intentional
-    if (!isNewer && !intentionalDowngrade) {
-      console.warn('[app-updater] Ignoring downloaded update - not newer than current version');
-      return;
-    }
-
-    // Store downloaded update info so it persists across Settings page navigations
-    downloadedUpdateInfo = {
-      version: info.version,
-      releaseNotes: formatReleaseNotes(info.releaseNotes),
-      releaseDate: info.releaseDate
-    };
-    if (mainWindow) {
-      // Reuse downloadedUpdateInfo instead of calling formatReleaseNotes again
-      mainWindow.webContents.send(IPC_CHANNELS.APP_UPDATE_DOWNLOADED, downloadedUpdateInfo);
-    }
-  });
-
-  // Download progress
-  autoUpdater.on('download-progress', (progress) => {
-    console.warn(`[app-updater] Download progress: ${progress.percent.toFixed(2)}%`);
-    if (mainWindow) {
-      mainWindow.webContents.send(IPC_CHANNELS.APP_UPDATE_PROGRESS, {
-        percent: progress.percent,
-        bytesPerSecond: progress.bytesPerSecond,
-        transferred: progress.transferred,
-        total: progress.total
-      });
-    }
-  });
-
-  // Error handling
-  autoUpdater.on('error', (error) => {
-    console.error('[app-updater] Update error:', error);
-    if (mainWindow) {
-      mainWindow.webContents.send(IPC_CHANNELS.APP_UPDATE_ERROR, {
-        message: error.message
       });
     }
   });
@@ -381,73 +314,6 @@ export async function checkForUpdates(): Promise<AppUpdateInfo | null> {
 }
 
 /**
- * Manually download update
- * Called from IPC handler when user requests manual download
- */
-export async function downloadUpdate(): Promise<void> {
-  try {
-    console.warn('[app-updater] Manual update download requested');
-    await autoUpdater.downloadUpdate();
-  } catch (error) {
-    console.error('[app-updater] Manual update download failed:', error);
-    throw error;
-  }
-}
-
-/**
- * Check if the app is running from a read-only volume (e.g., DMG on macOS)
- * Returns true if the app cannot be updated in place
- */
-function isRunningFromReadOnlyVolume(): boolean {
-  if (!isMacOS()) {
-    return false;
-  }
-
-  const appPath = app.getAppPath();
-
-  // Check if the filesystem is read-only by testing write access.
-  // We don't use a /Volumes/ prefix check because writable external drives
-  // (USB, external SSDs) are also mounted under /Volumes/ on macOS.
-  try {
-    // Navigate from app.asar to the Contents/ directory (app.asar -> Resources -> Contents)
-    const contentsPath = path.resolve(appPath, '..', '..');
-
-    // Try to check if we can write to the app bundle's parent directory
-    accessSync(path.dirname(contentsPath), fsConstants.W_OK);
-    return false;
-  } catch (error: unknown) {
-    // Only treat as read-only if the filesystem itself is read-only (EROFS).
-    // Permission errors (EACCES) in managed/enterprise environments should not
-    // block updates — the updater may still have elevated access.
-    const code = error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined;
-    return code === 'EROFS';
-  }
-}
-
-/**
- * Quit and install update
- * Called from IPC handler when user confirms installation
- * Returns false if running from a read-only volume (update cannot proceed)
- */
-export function quitAndInstall(): boolean {
-  // Check if running from read-only volume before attempting install
-  if (isRunningFromReadOnlyVolume()) {
-    console.warn('[app-updater] Cannot install: running from read-only volume');
-
-    if (mainWindow) {
-      mainWindow.webContents.send(IPC_CHANNELS.APP_UPDATE_READONLY_VOLUME, {
-        appPath: app.getAppPath()
-      });
-    }
-    return false;
-  }
-
-  console.warn('[app-updater] Quitting and installing update');
-  autoUpdater.quitAndInstall(false, true);
-  return true;
-}
-
-/**
  * Get current app version
  */
 export function getCurrentVersion(): string {
@@ -455,12 +321,14 @@ export function getCurrentVersion(): string {
 }
 
 /**
- * Get downloaded update info if an update has been downloaded and is ready to install.
- * This allows the UI to show "Install and Restart" even if the user opens Settings
- * after the download completed in the background.
+ * Get the GitHub release URL for a specific version.
+ * Used by the renderer to open the release page in the user's browser.
+ *
+ * @param version - Semver version string (e.g., "2.8.0")
+ * @returns GitHub release page URL
  */
-export function getDownloadedUpdateInfo(): AppUpdateInfo | null {
-  return downloadedUpdateInfo;
+export function getGitHubReleaseUrl(version: string): string {
+  return `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tag/v${version}`;
 }
 
 /**
@@ -644,34 +512,6 @@ export async function setUpdateChannelWithDowngradeCheck(
   }
 
   return null;
-}
-
-/**
- * Download a specific version (for downgrade)
- * Uses electron-updater with allowDowngrade enabled to download older stable versions
- */
-export async function downloadStableVersion(): Promise<void> {
-  // Switch to stable channel (resets allowPrerelease and clears downloadedUpdateInfo)
-  setUpdateChannel('latest');
-  // Enable downgrade to allow downloading older versions (e.g., stable when on beta)
-  autoUpdater.allowDowngrade = true;
-  intentionalDowngrade = true;
-  console.warn('[app-updater] Downloading stable version (allowDowngrade=true)...');
-
-  try {
-    // Force a fresh check on the stable channel, then download
-    const result = await autoUpdater.checkForUpdates();
-    if (!result) {
-      throw new Error('No stable version available for download');
-    }
-  } catch (error) {
-    console.error('[app-updater] Failed to download stable version:', error);
-    throw error;
-  } finally {
-    // Reset flags to prevent unintended downgrades in normal update checks
-    autoUpdater.allowDowngrade = false;
-    intentionalDowngrade = false;
-  }
 }
 
 /**
