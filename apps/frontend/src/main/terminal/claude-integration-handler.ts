@@ -18,6 +18,8 @@ import * as OutputParser from './output-parser';
 import * as SessionHandler from './session-handler';
 import * as PtyManager from './pty-manager';
 import { safeSendToRenderer } from '../ipc-handlers/utils';
+import { notificationService } from '../notification-service';
+import { projectStore } from '../project-store';
 import { debugLog, debugError } from '../../shared/utils/debug-logger';
 import { escapeShellArg, escapeForWindowsDoubleQuote, buildCdCommand } from '../../shared/utils/shell-escape';
 import { getClaudeCliInvocation, getClaudeCliInvocationAsync } from '../claude-cli-utils';
@@ -1222,6 +1224,15 @@ export function handleClaudeExit(
 
   // Notify renderer to update UI
   safeSendToRenderer(getWindow, IPC_CHANNELS.TERMINAL_CLAUDE_EXIT, terminal.id);
+
+  // Send system notification for Claude session completion
+  if (terminal.projectPath) {
+    const projects = projectStore.getProjects();
+    const project = projects.find(p => p.path === terminal.projectPath);
+    if (project) {
+      notificationService.notifyClaudeSessionComplete(terminal.title, project.id, terminal.id);
+    }
+  }
 }
 
 /**
