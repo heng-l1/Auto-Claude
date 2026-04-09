@@ -46,6 +46,7 @@ export const DEFAULT_APP_SETTINGS = {
     onTaskFailed: true,
     onReviewNeeded: true,
     onPRReviewComplete: true,
+    onClaudeSessionComplete: true,
     sound: false
   },
   // Global API keys (used as defaults for all projects)
@@ -88,6 +89,7 @@ export const DEFAULT_PROJECT_SETTINGS = {
     onTaskFailed: true,
     onReviewNeeded: true,
     onPRReviewComplete: true,
+    onClaudeSessionComplete: true,
     sound: false
   },
   // Graphiti MCP server for agent-accessible knowledge graph (enabled by default)
