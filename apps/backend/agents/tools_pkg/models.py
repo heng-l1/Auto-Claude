@@ -284,6 +284,12 @@ AGENT_CONFIGS = {
         "auto_claude_tools": [],
         "thinking_default": "high",
     },
+    "pr_replier": {
+        "tools": BASE_READ_TOOLS + WEB_TOOLS,  # Read-only — reply generation does not need write access
+        "mcp_servers": ["context7", "graphiti"],  # Docs lookup + memory; graphiti auto-excluded if GRAPHITI_MCP_URL unset
+        "auto_claude_tools": [],
+        "thinking_default": "medium",
+    },
     "pr_orchestrator_parallel": {
         # Read-only for parallel PR orchestrator
         # NOTE: Do NOT add "Task" here - the SDK auto-allows Task when agents are defined

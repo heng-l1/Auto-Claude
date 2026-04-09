@@ -32,9 +32,17 @@ import {
   runPythonSubprocess,
   getPythonPath,
   getRunnerPath,
+  getBackendPath,
   validateGitHubModule,
   buildRunnerArgs,
 } from "./utils/subprocess-runner";
+import type {
+  ReviewThread,
+  ReviewThreadComment,
+  PRReviewThreadsResult,
+  ReplyDraft,
+  ReplyDraftsFile,
+} from "../../../shared/types/pr-review-comments";
 import { getPRStatusPoller } from "../../services/pr-status-poller";
 import { PRReviewStateManager } from "../../pr-review-state-manager";
 import { notificationService } from "../../notification-service";
@@ -174,6 +182,159 @@ query($owner: String!, $repo: String!, $first: Int!, $after: String) {
   }
 }
 `;
+
+/**
+ * GraphQL query to fetch review comment threads for a PR
+ */
+const GET_REVIEW_THREADS_QUERY = `
+query($owner: String!, $repo: String!, $prNumber: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $prNumber) {
+      author { login }
+      reviewThreads(first: 100) {
+        totalCount
+        nodes {
+          id
+          isResolved
+          isOutdated
+          path
+          line
+          diffSide
+          subjectType
+          viewerCanReply
+          viewerCanResolve
+          viewerCanUnresolve
+          resolvedBy { login }
+          comments(first: 50) {
+            nodes {
+              id
+              databaseId
+              author { login avatarUrl }
+              body
+              createdAt
+              updatedAt
+              diffHunk
+            }
+          }
+        }
+      }
+    }
+  }
+}
+`;
+
+/**
+ * GraphQL mutation to reply to a review thread
+ * Uses addPullRequestReviewThreadReply (NOT deprecated addPullRequestReviewComment)
+ */
+const REPLY_TO_THREAD_MUTATION = `
+mutation AddPullRequestReviewThreadReply($threadId: ID!, $body: String!) {
+  addPullRequestReviewThreadReply(input: {
+    pullRequestReviewThreadId: $threadId
+    body: $body
+  }) {
+    comment {
+      id
+      databaseId
+      author { login avatarUrl }
+      body
+      createdAt
+      updatedAt
+    }
+  }
+}
+`;
+
+/**
+ * GraphQL mutation to resolve a review thread
+ * Uses threadId parameter (NOT pullRequestReviewThreadId)
+ */
+const RESOLVE_THREAD_MUTATION = `
+mutation ResolveReviewThread($threadId: ID!) {
+  resolveReviewThread(input: { threadId: $threadId }) {
+    thread { id isResolved resolvedBy { login } }
+  }
+}
+`;
+
+/**
+ * GraphQL mutation to unresolve a review thread
+ */
+const UNRESOLVE_THREAD_MUTATION = `
+mutation UnresolveReviewThread($threadId: ID!) {
+  unresolveReviewThread(input: { threadId: $threadId }) {
+    thread { id isResolved }
+  }
+}
+`;
+
+/**
+ * GraphQL response types for review thread operations
+ */
+interface GraphQLReviewThreadCommentNode {
+  id: string;
+  databaseId: number;
+  author: { login: string; avatarUrl: string } | null;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+  diffHunk: string | null;
+}
+
+interface GraphQLReviewThreadNode {
+  id: string;
+  isResolved: boolean;
+  isOutdated: boolean;
+  path: string | null;
+  line: number | null;
+  diffSide: "LEFT" | "RIGHT" | null;
+  subjectType: "LINE" | "FILE" | null;
+  viewerCanReply: boolean;
+  viewerCanResolve: boolean;
+  viewerCanUnresolve: boolean;
+  resolvedBy: { login: string } | null;
+  comments: {
+    nodes: GraphQLReviewThreadCommentNode[];
+  };
+}
+
+interface GraphQLReviewThreadsResponse {
+  data: {
+    repository: {
+      pullRequest: {
+        author: { login: string } | null;
+        reviewThreads: {
+          totalCount: number;
+          nodes: GraphQLReviewThreadNode[];
+        };
+      } | null;
+    } | null;
+  };
+}
+
+interface GraphQLReplyToThreadResponse {
+  data: {
+    addPullRequestReviewThreadReply: {
+      comment: GraphQLReviewThreadCommentNode;
+    };
+  };
+}
+
+interface GraphQLResolveThreadResponse {
+  data: {
+    resolveReviewThread: {
+      thread: { id: string; isResolved: boolean; resolvedBy: { login: string } | null };
+    };
+  };
+}
+
+interface GraphQLUnresolveThreadResponse {
+  data: {
+    unresolveReviewThread: {
+      thread: { id: string; isResolved: boolean };
+    };
+  };
+}
 
 /**
  * Sanitize network data before writing to file
@@ -368,6 +529,12 @@ const runningReviews = new Map<string, import("child_process").ChildProcess | CI
  * Key format: `${projectId}:resolve:${prNumber}`
  */
 const runningConflictResolutions = new Map<string, import("child_process").ChildProcess>();
+
+/**
+ * Registry of running PR reply suggestion processes
+ * Key format: `${projectId}:${prNumber}`
+ */
+const runningReplyProcesses = new Map<string, import("child_process").ChildProcess>();
 
 /**
  * Registry of abort controllers for CI wait cancellation
@@ -3974,6 +4141,378 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
         sendToWindow(IPC_CHANNELS.GITHUB_PR_DISCUSSION_ERROR, projectId, prNumber,
           error instanceof Error ? error.message : "Discussion failed"
         );
+      }
+    }
+  );
+
+  // ──────────────────────────────────────────────────────────────
+  // PR Review Comment Thread Handlers
+  // ──────────────────────────────────────────────────────────────
+
+  // (1) Fetch review threads for a PR
+  ipcMain.handle(
+    IPC_CHANNELS.GITHUB_PR_GET_REVIEW_THREADS,
+    async (_, projectId: string, prNumber: number): Promise<PRReviewThreadsResult> => {
+      debugLog("getReviewThreads handler called", { projectId, prNumber });
+      const result = await withProjectOrNull(projectId, async (project) => {
+        const config = getGitHubConfig(project);
+        if (!config) {
+          debugLog("No GitHub config found for project");
+          return { threads: [], totalCount: 0, unresolvedCount: 0, fetchedAt: new Date().toISOString() };
+        }
+
+        const [owner, repo] = config.repo.split("/");
+        const response = await githubGraphQL<GraphQLReviewThreadsResponse>(
+          config.token,
+          GET_REVIEW_THREADS_QUERY,
+          { owner, repo, prNumber }
+        );
+
+        const pr = response.data?.repository?.pullRequest;
+        if (!pr) {
+          debugLog("PR not found", { prNumber });
+          return { threads: [], totalCount: 0, unresolvedCount: 0, fetchedAt: new Date().toISOString() };
+        }
+
+        const prAuthorLogin = pr.author?.login ?? "";
+        const threadNodes = pr.reviewThreads.nodes;
+
+        const threads: ReviewThread[] = threadNodes.map((node) => {
+          const firstComment = node.comments.nodes[0];
+          const comments: ReviewThreadComment[] = node.comments.nodes.map((c) => ({
+            id: c.id,
+            databaseId: c.databaseId,
+            author: c.author ? { login: c.author.login, avatarUrl: c.author.avatarUrl } : null,
+            body: c.body,
+            createdAt: c.createdAt,
+            updatedAt: c.updatedAt,
+            diffHunk: c.diffHunk ?? undefined,
+            isAuthor: c.author?.login === prAuthorLogin,
+          }));
+
+          return {
+            id: node.id,
+            isResolved: node.isResolved,
+            isOutdated: node.isOutdated,
+            path: node.path ?? undefined,
+            line: node.line ?? undefined,
+            diffSide: node.diffSide ?? undefined,
+            subjectType: node.subjectType ?? undefined,
+            diffHunk: firstComment?.diffHunk ?? undefined,
+            viewerCanReply: node.viewerCanReply,
+            viewerCanResolve: node.viewerCanResolve,
+            viewerCanUnresolve: node.viewerCanUnresolve,
+            resolvedBy: node.resolvedBy,
+            comments,
+          };
+        });
+
+        const unresolvedCount = threads.filter((t) => !t.isResolved).length;
+
+        return {
+          threads,
+          totalCount: pr.reviewThreads.totalCount,
+          unresolvedCount,
+          fetchedAt: new Date().toISOString(),
+        };
+      });
+
+      return result ?? { threads: [], totalCount: 0, unresolvedCount: 0, fetchedAt: new Date().toISOString() };
+    }
+  );
+
+  // (2) Reply to a review thread
+  ipcMain.handle(
+    IPC_CHANNELS.GITHUB_PR_REPLY_TO_THREAD,
+    async (_, projectId: string, threadId: string, body: string): Promise<ReviewThreadComment | null> => {
+      debugLog("replyToThread handler called", { projectId, threadId });
+      return withProjectOrNull(projectId, async (project) => {
+        const config = getGitHubConfig(project);
+        if (!config) {
+          throw new Error("No GitHub config found for project");
+        }
+
+        const response = await githubGraphQL<GraphQLReplyToThreadResponse>(
+          config.token,
+          REPLY_TO_THREAD_MUTATION,
+          { threadId, body }
+        );
+
+        const comment = response.data.addPullRequestReviewThreadReply.comment;
+        return {
+          id: comment.id,
+          databaseId: comment.databaseId,
+          author: comment.author ? { login: comment.author.login, avatarUrl: comment.author.avatarUrl } : null,
+          body: comment.body,
+          createdAt: comment.createdAt,
+          updatedAt: comment.updatedAt,
+          isAuthor: true, // We are the one posting, so this is always true
+        };
+      });
+    }
+  );
+
+  // (3) Resolve or unresolve a review thread
+  ipcMain.handle(
+    IPC_CHANNELS.GITHUB_PR_RESOLVE_THREAD,
+    async (_, projectId: string, threadId: string, resolved: boolean): Promise<{ id: string; isResolved: boolean; resolvedBy?: { login: string } | null } | null> => {
+      debugLog("resolveThread handler called", { projectId, threadId, resolved });
+      return withProjectOrNull(projectId, async (project) => {
+        const config = getGitHubConfig(project);
+        if (!config) {
+          throw new Error("No GitHub config found for project");
+        }
+
+        if (resolved) {
+          const response = await githubGraphQL<GraphQLResolveThreadResponse>(
+            config.token,
+            RESOLVE_THREAD_MUTATION,
+            { threadId }
+          );
+          const thread = response.data.resolveReviewThread.thread;
+          return {
+            id: thread.id,
+            isResolved: thread.isResolved,
+            resolvedBy: thread.resolvedBy,
+          };
+        } else {
+          const response = await githubGraphQL<GraphQLUnresolveThreadResponse>(
+            config.token,
+            UNRESOLVE_THREAD_MUTATION,
+            { threadId }
+          );
+          const thread = response.data.unresolveReviewThread.thread;
+          return {
+            id: thread.id,
+            isResolved: thread.isResolved,
+          };
+        }
+      });
+    }
+  );
+
+  // (4) Save reply drafts to disk
+  ipcMain.handle(
+    IPC_CHANNELS.GITHUB_PR_SAVE_REPLY_DRAFTS,
+    async (_, projectId: string, prNumber: number, drafts: Record<string, ReplyDraft>): Promise<boolean> => {
+      debugLog("saveReplyDrafts handler called", { projectId, prNumber });
+      const result = await withProjectOrNull(projectId, async (project) => {
+        try {
+          const prDir = path.join(getGitHubDir(project), "pr");
+          if (!fs.existsSync(prDir)) {
+            fs.mkdirSync(prDir, { recursive: true });
+          }
+
+          const envelope: ReplyDraftsFile = {
+            prNumber,
+            drafts,
+            savedAt: new Date().toISOString(),
+          };
+
+          const draftsPath = path.join(prDir, `reply_drafts_${prNumber}.json`);
+          fs.writeFileSync(draftsPath, JSON.stringify(envelope, null, 2), "utf-8");
+          debugLog("Reply drafts saved", { prNumber, draftsPath });
+          return true;
+        } catch (error) {
+          debugLog("Failed to save reply drafts", {
+            prNumber,
+            error: error instanceof Error ? error.message : error,
+          });
+          return false;
+        }
+      });
+      return result ?? false;
+    }
+  );
+
+  // (5) Load reply drafts from disk
+  ipcMain.handle(
+    IPC_CHANNELS.GITHUB_PR_LOAD_REPLY_DRAFTS,
+    async (_, projectId: string, prNumber: number): Promise<Record<string, ReplyDraft>> => {
+      debugLog("loadReplyDrafts handler called", { projectId, prNumber });
+      const result = await withProjectOrNull(projectId, async (project) => {
+        try {
+          const draftsPath = path.join(getGitHubDir(project), "pr", `reply_drafts_${prNumber}.json`);
+          if (!fs.existsSync(draftsPath)) {
+            return {};
+          }
+
+          const rawData = fs.readFileSync(draftsPath, "utf-8");
+          const sanitizedData = sanitizeNetworkData(rawData);
+          const draftsFile = JSON.parse(sanitizedData) as ReplyDraftsFile;
+          return draftsFile.drafts;
+        } catch (error) {
+          debugLog("Failed to load reply drafts", {
+            prNumber,
+            error: error instanceof Error ? error.message : error,
+          });
+          return {};
+        }
+      });
+      return result ?? {};
+    }
+  );
+
+  // (6) Suggest replies via AI — spawns pr_reply_runner.py subprocess (streaming)
+  ipcMain.on(
+    IPC_CHANNELS.GITHUB_PR_SUGGEST_REPLIES,
+    async (_, projectId: string, prNumber: number, threadsJson: string) => {
+      debugLog("suggestReplies handler called", { projectId, prNumber });
+      const replyKey = getReviewKey(projectId, prNumber);
+
+      // Cancel any existing reply process for this PR
+      const existingProcess = runningReplyProcesses.get(replyKey);
+      if (existingProcess) {
+        debugLog("Killing existing reply process", { replyKey });
+        existingProcess.kill("SIGTERM");
+        runningReplyProcesses.delete(replyKey);
+      }
+
+      try {
+        await withProjectOrNull(projectId, async (project) => {
+          const config = getGitHubConfig(project);
+          if (!config) {
+            sendToWindow(IPC_CHANNELS.GITHUB_PR_SUGGEST_REPLIES_ERROR, projectId, prNumber, "No GitHub config found");
+            return;
+          }
+
+          const backendPath = getBackendPath(project);
+          if (!backendPath) {
+            sendToWindow(IPC_CHANNELS.GITHUB_PR_SUGGEST_REPLIES_ERROR, projectId, prNumber, "GitHub automation module not found");
+            return;
+          }
+
+          const { model, thinkingLevel } = getGitHubPRSettings();
+          const replyRunnerPath = path.join(backendPath, "runners", "github", "pr_reply_runner.py");
+
+          if (!fs.existsSync(replyRunnerPath)) {
+            sendToWindow(IPC_CHANNELS.GITHUB_PR_SUGGEST_REPLIES_ERROR, projectId, prNumber, "Reply runner not found");
+            return;
+          }
+
+          const args = [
+            replyRunnerPath,
+            "--repo", config.repo,
+            "--pr", prNumber.toString(),
+            "--project", project.path,
+            "--model", model,
+            "--thinking", thinkingLevel,
+          ];
+
+          debugLog("Spawning reply suggestion process", { args, model, thinkingLevel });
+
+          const subprocessEnv = await getRunnerEnv(getClaudeMdEnv(project));
+
+          const { process: childProcess } = runPythonSubprocess({
+            pythonPath: getPythonPath(backendPath),
+            args,
+            cwd: backendPath,
+            env: subprocessEnv,
+            onStdout: (line) => {
+              debugLog("Reply STDOUT:", line);
+              // Parse __REPLY_CHUNK__ markers for per-thread reply streaming
+              if (line.startsWith("__REPLY_CHUNK__:")) {
+                try {
+                  const chunkData = JSON.parse(line.slice("__REPLY_CHUNK__:".length));
+                  sendToWindow(
+                    IPC_CHANNELS.GITHUB_PR_SUGGEST_REPLIES_CHUNK,
+                    projectId,
+                    prNumber,
+                    chunkData
+                  );
+                } catch (parseError) {
+                  debugLog("Failed to parse reply chunk", { line });
+                }
+              } else if (line.startsWith("__REPLY_COMPLETE__")) {
+                sendToWindow(
+                  IPC_CHANNELS.GITHUB_PR_SUGGEST_REPLIES_COMPLETE,
+                  projectId,
+                  prNumber
+                );
+              }
+            },
+            onStderr: (line) => debugLog("Reply STDERR:", line),
+            onError: (error) => {
+              debugLog("Reply process error", { error });
+              sendToWindow(
+                IPC_CHANNELS.GITHUB_PR_SUGGEST_REPLIES_ERROR,
+                projectId,
+                prNumber,
+                error
+              );
+            },
+          });
+
+          // Track the process for cancellation
+          runningReplyProcesses.set(replyKey, childProcess);
+
+          // Pipe thread data to the subprocess via stdin
+          if (childProcess.stdin) {
+            childProcess.stdin.write(threadsJson);
+            childProcess.stdin.end();
+          }
+
+          // Handle process exit
+          childProcess.on("exit", (code) => {
+            debugLog("Reply process exited", { replyKey, code });
+            runningReplyProcesses.delete(replyKey);
+
+            if (code !== 0 && code !== null) {
+              sendToWindow(
+                IPC_CHANNELS.GITHUB_PR_SUGGEST_REPLIES_ERROR,
+                projectId,
+                prNumber,
+                `Reply generation process exited with code ${code}`
+              );
+            }
+          });
+        });
+      } catch (error) {
+        debugLog("Failed to start reply suggestion", {
+          error: error instanceof Error ? error.message : error,
+        });
+        sendToWindow(
+          IPC_CHANNELS.GITHUB_PR_SUGGEST_REPLIES_ERROR,
+          projectId,
+          prNumber,
+          error instanceof Error ? error.message : "Failed to start reply generation"
+        );
+        runningReplyProcesses.delete(replyKey);
+      }
+    }
+  );
+
+  // (7) Cancel reply suggestion subprocess
+  ipcMain.on(
+    IPC_CHANNELS.GITHUB_PR_SUGGEST_REPLIES_CANCEL,
+    (_, projectId: string, prNumber: number) => {
+      const replyKey = getReviewKey(projectId, prNumber);
+      const childProcess = runningReplyProcesses.get(replyKey);
+
+      if (!childProcess) {
+        debugLog("No running reply process found to cancel", { replyKey });
+        return;
+      }
+
+      debugLog("Cancelling reply process", { replyKey, pid: childProcess.pid });
+
+      try {
+        childProcess.kill("SIGTERM");
+
+        // Force kill if still running after 1s
+        setTimeout(() => {
+          if (!childProcess.killed) {
+            debugLog("Force killing reply process", { replyKey, pid: childProcess.pid });
+            childProcess.kill("SIGKILL");
+          }
+        }, 1000);
+
+        runningReplyProcesses.delete(replyKey);
+      } catch (error) {
+        debugLog("Failed to cancel reply process", {
+          replyKey,
+          error: error instanceof Error ? error.message : error,
+        });
       }
     }
   );

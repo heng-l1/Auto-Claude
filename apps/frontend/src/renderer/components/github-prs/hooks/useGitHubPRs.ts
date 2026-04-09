@@ -35,6 +35,7 @@ interface UseGitHubPRsResult {
   reviewError: string | null;
   isConnected: boolean;
   repoFullName: string | null;
+  currentUsername: string | null;
   activePRReviews: number[]; // PR numbers currently being reviewed
   hasMore: boolean; // True when 100 PRs returned (GitHub limit) - more may exist
   selectPR: (prNumber: number | null) => void;
@@ -77,6 +78,7 @@ export function useGitHubPRs(
   const [selectedPRDetails, setSelectedPRDetails] = useState<PRData | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [repoFullName, setRepoFullName] = useState<string | null>(null);
+  const [currentUsername, setCurrentUsername] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [endCursor, setEndCursor] = useState<string | null>(null);
@@ -178,6 +180,15 @@ export function useGitHubPRs(
           setRepoFullName(connectionResult.data.repoFullName || null);
 
           if (connectionResult.data.connected) {
+            // Fetch current GitHub username for "My PRs" filtering
+            if (!currentUsername) {
+              window.electronAPI.github.getGitHubUser().then((userResult) => {
+                if (userResult.success && userResult.data) {
+                  setCurrentUsername(userResult.data.username);
+                }
+              });
+            }
+
             // Fetch PRs (returns up to 100 open PRs at once - GitHub GraphQL limit)
             const result = await window.electronAPI.github.listPRs(projectId);
             if (result) {
@@ -728,6 +739,7 @@ export function useGitHubPRs(
     reviewError,
     isConnected,
     repoFullName,
+    currentUsername,
     activePRReviews,
     hasMore,
     selectPR,

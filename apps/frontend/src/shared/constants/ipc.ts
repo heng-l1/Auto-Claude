@@ -447,6 +447,25 @@ export const IPC_CHANNELS = {
   GITHUB_PR_DISCUSSION_CHUNK: 'github:pr:discussion:chunk',      // Streaming response chunk (main -> renderer)
   GITHUB_PR_DISCUSSION_ERROR: 'github:pr:discussion:error',      // Error event (main -> renderer)
 
+  // GitHub PR Review Comment Threads (user reply workflow)
+  GITHUB_PR_GET_REVIEW_THREADS: 'github:pr:getReviewThreads',    // Fetch review threads for a PR
+  GITHUB_PR_REPLY_TO_THREAD: 'github:pr:replyToThread',          // Post a reply to a thread
+  GITHUB_PR_RESOLVE_THREAD: 'github:pr:resolveThread',           // Resolve or unresolve a thread
+
+  // GitHub PR Reply Suggestion (streaming AI reply generation)
+  GITHUB_PR_SUGGEST_REPLIES: 'github:pr:suggestReplies',                 // Trigger AI reply generation
+  GITHUB_PR_SUGGEST_REPLIES_CHUNK: 'github:pr:suggestRepliesChunk',      // Stream per-thread reply chunks (main -> renderer)
+  GITHUB_PR_SUGGEST_REPLIES_COMPLETE: 'github:pr:suggestRepliesComplete', // All replies generated (main -> renderer)
+  GITHUB_PR_SUGGEST_REPLIES_ERROR: 'github:pr:suggestRepliesError',      // Reply generation error (main -> renderer)
+  GITHUB_PR_SUGGEST_REPLIES_CANCEL: 'github:pr:suggestRepliesCancel',    // Cancel ongoing generation
+
+  // GitHub PR Reply Drafts (persistence)
+  GITHUB_PR_SAVE_REPLY_DRAFTS: 'github:pr:saveReplyDrafts',      // Persist drafts to disk
+  GITHUB_PR_LOAD_REPLY_DRAFTS: 'github:pr:loadReplyDrafts',      // Restore drafts from disk
+
+  // GitHub PR Reply Style Learning (future)
+  GITHUB_PR_LEARN_REPLY_STYLE: 'github:pr:learnReplyStyle',      // Store edit patterns in memory (placeholder)
+
   // GitHub Workflow Approval (for fork PRs)
   GITHUB_WORKFLOWS_AWAITING_APPROVAL: 'github:workflows:awaitingApproval',
   GITHUB_WORKFLOW_APPROVE: 'github:workflow:approve',

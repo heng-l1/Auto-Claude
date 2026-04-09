@@ -13,5 +13,28 @@
     "viewAll": "Tout voir",
     "justNow": "À l'instant",
     "delete": "Supprimer"
+  },
+  "prReview": {
+    "myPRs": "Mes PRs",
+    "myPRsTooltip": "Afficher uniquement les PRs que vous avez créées",
+    "allAuthors": "Tous les auteurs",
+    "reviewThreads": "Fils de discussion",
+    "unresolvedThreads": "{{count}} non résolus",
+    "noThreads": "Aucun commentaire de revue sur cette PR",
+    "generateReplies": "Générer les réponses",
+    "generatingReplies": "Génération des réponses...",
+    "cancelGeneration": "Annuler",
+    "postReply": "Publier",
+    "editReply": "Modifier",
+    "resolveThread": "Résoudre",
+    "unresolveThread": "Rouvrir",
+    "threadNew": "Nouveau",
+    "threadResponded": "Répondu",
+    "threadAddressed": "Traité",
+    "threadResolved": "Résolu",
+    "draftSaved": "Brouillon enregistré",
+    "replyPosted": "Réponse publiée",
+    "replyError": "Échec de la publication de la réponse",
+    "outdatedThread": "Obsolète"
   }
 }

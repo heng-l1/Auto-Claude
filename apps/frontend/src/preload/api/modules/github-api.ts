@@ -12,6 +12,14 @@ import type {
   PRStatusUpdate,
   PollingMetadata
 } from '../../../shared/types';
+import type {
+  PRReviewThreadsResult,
+  ReviewThreadComment,
+  ReviewThread,
+  ReplyDraft,
+  SuggestedReplyStatus,
+  ReplyClassification
+} from '../../../shared/types/pr-review-comments';
 import { createIpcListener, invokeIpc, sendIpc, IpcListenerCleanup } from './ipc-utils';
 
 /**
@@ -351,6 +359,34 @@ export interface GitHubAPI {
   /** Subscribe to PR status updates from background polling */
   onPRStatusUpdate: (
     callback: (update: PRStatusUpdate) => void
+  ) => IpcListenerCleanup;
+
+  // PR Review Comment Response operations
+  /** Fetch review comment threads for a PR */
+  getReviewThreads: (projectId: string, prNumber: number) => Promise<PRReviewThreadsResult>;
+  /** Post a reply to a review thread */
+  replyToThread: (projectId: string, threadId: string, body: string) => Promise<ReviewThreadComment>;
+  /** Resolve or unresolve a review thread */
+  resolveThread: (projectId: string, threadId: string, resolved: boolean) => Promise<ReviewThread>;
+  /** Persist reply drafts to disk */
+  saveReplyDrafts: (projectId: string, prNumber: number, drafts: Record<string, ReplyDraft>) => Promise<void>;
+  /** Restore reply drafts from disk */
+  loadReplyDrafts: (projectId: string, prNumber: number) => Promise<Record<string, ReplyDraft>>;
+  /** Trigger AI reply generation for unresolved threads (fire-and-forget) */
+  suggestReplies: (projectId: string, prNumber: number, threadsJson: string) => void;
+  /** Cancel ongoing AI reply generation (fire-and-forget) */
+  cancelSuggestReplies: (projectId: string, prNumber: number) => void;
+  /** Subscribe to per-thread AI reply chunks during generation */
+  onSuggestRepliesChunk: (
+    callback: (projectId: string, prNumber: number, chunk: { threadId: string; content: string; status: SuggestedReplyStatus; classification?: ReplyClassification }) => void
+  ) => IpcListenerCleanup;
+  /** Subscribe to AI reply generation completion */
+  onSuggestRepliesComplete: (
+    callback: (projectId: string, prNumber: number) => void
+  ) => IpcListenerCleanup;
+  /** Subscribe to AI reply generation errors */
+  onSuggestRepliesError: (
+    callback: (projectId: string, prNumber: number, error: string) => void
   ) => IpcListenerCleanup;
 }
 
@@ -922,5 +958,42 @@ export const createGitHubAPI = (): GitHubAPI => ({
   onPRDiscussionError: (
     callback: (projectId: string, prNumber: number, error: string) => void
   ): IpcListenerCleanup =>
-    createIpcListener(IPC_CHANNELS.GITHUB_PR_DISCUSSION_ERROR, callback)
+    createIpcListener(IPC_CHANNELS.GITHUB_PR_DISCUSSION_ERROR, callback),
+
+  // PR Review Comment Response operations
+  getReviewThreads: (projectId: string, prNumber: number): Promise<PRReviewThreadsResult> =>
+    invokeIpc(IPC_CHANNELS.GITHUB_PR_GET_REVIEW_THREADS, projectId, prNumber),
+
+  replyToThread: (projectId: string, threadId: string, body: string): Promise<ReviewThreadComment> =>
+    invokeIpc(IPC_CHANNELS.GITHUB_PR_REPLY_TO_THREAD, projectId, threadId, body),
+
+  resolveThread: (projectId: string, threadId: string, resolved: boolean): Promise<ReviewThread> =>
+    invokeIpc(IPC_CHANNELS.GITHUB_PR_RESOLVE_THREAD, projectId, threadId, resolved),
+
+  saveReplyDrafts: (projectId: string, prNumber: number, drafts: Record<string, ReplyDraft>): Promise<void> =>
+    invokeIpc(IPC_CHANNELS.GITHUB_PR_SAVE_REPLY_DRAFTS, projectId, prNumber, drafts),
+
+  loadReplyDrafts: (projectId: string, prNumber: number): Promise<Record<string, ReplyDraft>> =>
+    invokeIpc(IPC_CHANNELS.GITHUB_PR_LOAD_REPLY_DRAFTS, projectId, prNumber),
+
+  suggestReplies: (projectId: string, prNumber: number, threadsJson: string): void =>
+    sendIpc(IPC_CHANNELS.GITHUB_PR_SUGGEST_REPLIES, projectId, prNumber, threadsJson),
+
+  cancelSuggestReplies: (projectId: string, prNumber: number): void =>
+    sendIpc(IPC_CHANNELS.GITHUB_PR_SUGGEST_REPLIES_CANCEL, projectId, prNumber),
+
+  onSuggestRepliesChunk: (
+    callback: (projectId: string, prNumber: number, chunk: { threadId: string; content: string; status: SuggestedReplyStatus; classification?: ReplyClassification }) => void
+  ): IpcListenerCleanup =>
+    createIpcListener(IPC_CHANNELS.GITHUB_PR_SUGGEST_REPLIES_CHUNK, callback),
+
+  onSuggestRepliesComplete: (
+    callback: (projectId: string, prNumber: number) => void
+  ): IpcListenerCleanup =>
+    createIpcListener(IPC_CHANNELS.GITHUB_PR_SUGGEST_REPLIES_COMPLETE, callback),
+
+  onSuggestRepliesError: (
+    callback: (projectId: string, prNumber: number, error: string) => void
+  ): IpcListenerCleanup =>
+    createIpcListener(IPC_CHANNELS.GITHUB_PR_SUGGEST_REPLIES_ERROR, callback)
 });

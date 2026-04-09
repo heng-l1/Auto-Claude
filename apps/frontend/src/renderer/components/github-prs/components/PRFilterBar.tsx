@@ -44,6 +44,9 @@ interface PRFilterBarProps {
   onStatusesChange: (statuses: PRStatusFilter[]) => void;
   onSortChange: (sortBy: PRSortOption) => void;
   onDraftFilterChange: (draftFilter: PRDraftFilter) => void;
+  onMyPRsFilterChange?: (active: boolean) => void;
+  myPRsFilter?: boolean;
+  currentUsername?: string | null;
   onClearFilters: () => void;
 }
 
@@ -432,6 +435,9 @@ export function PRFilterBar({
   onStatusesChange,
   onSortChange,
   onDraftFilterChange,
+  onMyPRsFilterChange,
+  myPRsFilter,
+  currentUsername,
   onClearFilters,
 }: PRFilterBarProps) {
   const { t } = useTranslation('common');
@@ -560,6 +566,24 @@ export function PRFilterBar({
             );
           })}
         </div>
+
+        {/* My PRs Filter Toggle */}
+        {currentUsername && onMyPRsFilterChange && (
+          <div className="flex-shrink-0 flex items-center rounded-md border border-border/60 h-8 overflow-hidden">
+            <button
+              onClick={() => onMyPRsFilterChange(!myPRsFilter)}
+              title={t('prReview.myPRsTooltip')}
+              className={cn(
+                "px-2.5 h-full text-xs font-medium transition-colors",
+                myPRsFilter
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+              )}
+            >
+              {t('prReview.myPRs')}
+            </button>
+          </div>
+        )}
 
         {/* Sort Dropdown */}
         <div className="flex-shrink-0">

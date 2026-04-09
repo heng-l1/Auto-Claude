@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { GitPullRequest, RefreshCw, ExternalLink, Settings, Play, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useProjectStore } from "../../stores/project-store";
@@ -7,6 +7,8 @@ import type { PRData, PRReviewResult } from "./hooks/useGitHubPRs";
 import { PRList, PRDetail, PRFilterBar } from "./components";
 import { Button } from "../ui/button";
 import { ResizablePanels } from "../ui/resizable-panels";
+import { initializePRReviewCommentsListeners } from "../../stores/github/pr-review-comments-store";
+import { usePRReviewCommentsStore } from "../../stores/github/pr-review-comments-store";
 
 interface GitHubPRsProps {
   onOpenSettings?: () => void;
@@ -86,6 +88,7 @@ export function GitHubPRs({ onOpenSettings, isActive = false, onDiscussInTermina
     loadMore,
     isConnected,
     repoFullName,
+    currentUsername,
     getReviewStateForPR,
     selectedPR,
   } = useGitHubPRs(selectedProject?.id, { isActive });
@@ -108,6 +111,38 @@ export function GitHubPRs({ onOpenSettings, isActive = false, onDiscussInTermina
     hasActiveFilters,
   } = usePRFiltering(prs, getReviewStateForPR);
 
+  // My PRs filter state
+  const [myPRsFilter, setMyPRsFilter] = useState(false);
+
+  const handleMyPRsFilterChange = useCallback((active: boolean) => {
+    setMyPRsFilter(active);
+  }, []);
+
+  // Apply My PRs filter on top of existing filters
+  const displayedPRs = useMemo(() => {
+    if (!myPRsFilter || !currentUsername) return filteredPRs;
+    return filteredPRs.filter(pr => pr.author.login === currentUsername);
+  }, [filteredPRs, myPRsFilter, currentUsername]);
+
+  // Initialize PR review comments listeners once on mount
+  const fetchThreads = usePRReviewCommentsStore((state) => state.fetchThreads);
+
+  useEffect(() => {
+    initializePRReviewCommentsListeners();
+  }, []);
+
+  // Fetch review threads when a user-authored PR is selected
+  useEffect(() => {
+    if (
+      selectedPR &&
+      currentUsername &&
+      selectedPR.author.login === currentUsername &&
+      selectedProjectId
+    ) {
+      fetchThreads(selectedProjectId, selectedPR.number);
+    }
+  }, [selectedPR, currentUsername, selectedProjectId, fetchThreads]);
+
   // Bulk selection state (always active — checkboxes always visible)
   const [checkedPRNumbers, setCheckedPRNumbers] = useState<Set<number>>(new Set());
 
@@ -124,8 +159,8 @@ export function GitHubPRs({ onOpenSettings, isActive = false, onDiscussInTermina
   }, []);
 
   const handleSelectAll = useCallback(() => {
-    setCheckedPRNumbers(new Set(filteredPRs.map(pr => pr.number)));
-  }, [filteredPRs]);
+    setCheckedPRNumbers(new Set(displayedPRs.map(pr => pr.number)));
+  }, [displayedPRs]);
 
   const handleDeselectAll = useCallback(() => {
     setCheckedPRNumbers(new Set());
@@ -278,8 +313,8 @@ export function GitHubPRs({ onOpenSettings, isActive = false, onDiscussInTermina
       {/* Bulk action bar — shows when PRs are checked */}
       {checkedPRNumbers.size > 0 && (
         <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-muted/50">
-          <Button variant="ghost" size="sm" onClick={checkedPRNumbers.size === filteredPRs.length ? handleDeselectAll : handleSelectAll}>
-            {checkedPRNumbers.size === filteredPRs.length ? t("prReview.deselectAll") : t("prReview.selectAll")}
+          <Button variant="ghost" size="sm" onClick={checkedPRNumbers.size === displayedPRs.length ? handleDeselectAll : handleSelectAll}>
+            {checkedPRNumbers.size === displayedPRs.length ? t("prReview.deselectAll") : t("prReview.selectAll")}
           </Button>
           <span className="text-xs text-muted-foreground">
             {t("prReview.selectedCount", { count: checkedPRNumbers.size })}
@@ -311,10 +346,13 @@ export function GitHubPRs({ onOpenSettings, isActive = false, onDiscussInTermina
               onStatusesChange={setStatuses}
               onSortChange={setSortBy}
               onDraftFilterChange={setDraftFilter}
+              onMyPRsFilterChange={handleMyPRsFilterChange}
+              myPRsFilter={myPRsFilter}
+              currentUsername={currentUsername}
               onClearFilters={clearFilters}
             />
             <PRList
-              prs={filteredPRs}
+              prs={displayedPRs}
               selectedPRNumber={selectedPRNumber}
               isLoading={isLoading}
               hasMore={hasMore}

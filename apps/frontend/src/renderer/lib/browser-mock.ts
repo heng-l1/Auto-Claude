@@ -258,7 +258,18 @@ const browserMockAPI: ElectronAPI = {
     onConflictResolutionError: () => () => {},
     sendPRDiscussionMessage: () => {},
     onPRDiscussionChunk: () => () => {},
-    onPRDiscussionError: () => () => {}
+    onPRDiscussionError: () => () => {},
+    // PR review comment response
+    getReviewThreads: async () => ({ threads: [], totalCount: 0, unresolvedCount: 0, fetchedAt: new Date().toISOString() }),
+    replyToThread: async () => ({ id: '', databaseId: 0, author: null, body: '', createdAt: '', updatedAt: '', isAuthor: true }),
+    resolveThread: async () => ({ id: '', isResolved: true, isOutdated: false, viewerCanReply: true, viewerCanResolve: true, viewerCanUnresolve: true, comments: [] }),
+    saveReplyDrafts: async () => {},
+    loadReplyDrafts: async () => ({}),
+    suggestReplies: (_projectId: string, _prNumber: number, _threadsJson: string) => {},
+    cancelSuggestReplies: () => {},
+    onSuggestRepliesChunk: () => () => {},
+    onSuggestRepliesComplete: () => () => {},
+    onSuggestRepliesError: () => () => {}
   },
 
   // Queue Routing API (rate limit recovery)
