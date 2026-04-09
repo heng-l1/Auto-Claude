@@ -12,6 +12,7 @@ import { debugLog, } from '../../shared/utils/debug-logger';
 import { migrateSession } from '../claude-profile/session-utils';
 import { createProfileDirectory } from '../claude-profile/profile-utils';
 import { isValidConfigDir } from '../utils/config-path-validator';
+import { getMemoryService, getDefaultDbPath } from '../memory-service';
 
 
 /**
@@ -767,6 +768,67 @@ export function registerTerminalHandlers(
       }
     }
   );
+}
+
+/**
+ * Save a terminal session's output to memory.
+ * Called when a terminal session is closed.
+ */
+export async function saveTerminalSessionToMemory(
+  outputBuffer: string,
+  terminalName: string
+): Promise<void> {
+  const settings = await readSettingsFileAsync();
+  if (!settings?.memoryEnabled) {
+    debugLog("Memory not enabled, skipping terminal session memory save");
+    return;
+  }
+
+  try {
+    const { stripAnsiCodes } = await import("../../shared/utils/ansi-sanitizer");
+
+    // Clean and truncate the terminal output
+    let cleanedOutput = stripAnsiCodes(outputBuffer);
+    // Keep last 50KB to stay within memory limits
+    if (cleanedOutput.length > 50000) {
+      cleanedOutput = cleanedOutput.slice(-50000);
+    }
+
+    if (cleanedOutput.trim().length < 100) {
+      debugLog("Terminal session too short to save", { terminalName, length: cleanedOutput.length });
+      return;
+    }
+
+    const memoryService = getMemoryService({
+      dbPath: getDefaultDbPath(),
+      database: "auto_claude_memory",
+    });
+
+    const episodeName = `Terminal Session - ${terminalName}`;
+    const memoryContent = {
+      terminalName,
+      timestamp: new Date().toISOString(),
+      session: cleanedOutput,
+      type: "terminal_session",
+    };
+
+    const saveResult = await memoryService.addEpisode(
+      episodeName,
+      memoryContent,
+      "terminal_session",
+      "terminal_sessions"
+    );
+
+    if (saveResult.success) {
+      debugLog("Terminal session saved to memory", { terminalName, episodeId: saveResult.id });
+    } else {
+      debugLog("Failed to save terminal session to memory", { error: saveResult.error });
+    }
+  } catch (error) {
+    debugLog("Error saving terminal session to memory", {
+      error: error instanceof Error ? error.message : error,
+    });
+  }
 }
 
 /**
