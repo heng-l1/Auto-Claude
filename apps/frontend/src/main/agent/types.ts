@@ -1,5 +1,6 @@
 import { ChildProcess } from 'child_process';
 import type { CompletablePhase, ExecutionPhase } from '../../shared/constants/phase-protocol';
+import type { TaskComplexity } from '../../shared/types';
 import type { TaskEventPayload } from './task-event-schema';
 
 /**
@@ -80,6 +81,8 @@ export interface SpecCreationMetadata {
   // Workspace mode - whether to use worktree isolation
   useWorktree?: boolean; // If false, use --direct mode (no worktree isolation)
   useLocalBranch?: boolean; // If true, use local branch directly instead of preferring origin/branch
+  // Complexity assessment from task metadata
+  complexity?: TaskComplexity;
 }
 
 export interface IdeationProgressData {

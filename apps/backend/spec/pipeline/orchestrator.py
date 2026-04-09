@@ -13,7 +13,7 @@ from pathlib import Path
 from analysis.analyzers import analyze_project
 from core.task_event import TaskEventEmitter
 from core.workspace.models import SpecNumberLock
-from phase_config import get_thinking_budget
+from phase_config import apply_complexity_thinking_floor, get_thinking_budget
 from prompts_pkg.project_context import should_refresh_project_index
 from review import run_review_checkpoint
 from task_logger import (
@@ -540,6 +540,17 @@ class SpecOrchestrator:
             # Use heuristic assessment
             self.assessment = self._heuristic_assessment()
             self._print_assessment_info()
+
+        # Apply complexity thinking floor — raise thinking level if below minimum for this complexity
+        old_level = self.thinking_level
+        self.thinking_level = apply_complexity_thinking_floor(
+            self.thinking_level, self.assessment.complexity.value
+        )
+        if self.thinking_level != old_level:
+            print_status(
+                f"Thinking level raised from {old_level} to {self.thinking_level} (complexity floor)",
+                "info",
+            )
 
         # Show what phases will run
         self._print_phases_to_run()

@@ -40,6 +40,18 @@ THINKING_BUDGET_MAP: dict[str, int] = {
     "ultrathink": 128000,  # Maximum thinking capacity (per-phase toggle)
 }
 
+# Complexity-based minimum thinking level floor
+# Ensures thinking budget matches task complexity regardless of user setting
+COMPLEXITY_THINKING_FLOOR: dict[str, str] = {
+    "simple": "low",      # Simple tasks: no minimum enforcement
+    "standard": "high",   # Standard tasks: at least deep thinking
+    "complex": "max",     # Complex tasks: at least very deep analysis
+}
+
+# Ordered list of thinking levels from lowest to highest
+# Used by apply_complexity_thinking_floor() to compare levels by index
+THINKING_LEVEL_ORDER: list[str] = ["low", "medium", "high", "max", "ultrathink"]
+
 # Budget constant for ultrathink mode (128K tokens)
 ULTRATHINK_BUDGET = 128000
 
@@ -211,6 +223,39 @@ def sanitize_thinking_level(thinking_level: str) -> str:
     mapped = LEGACY_THINKING_LEVEL_MAP.get(thinking_level, "medium")
     logger.warning("Invalid thinking level '%s' mapped to '%s'", thinking_level, mapped)
     return mapped
+
+
+def apply_complexity_thinking_floor(thinking_level: str, complexity: str) -> str:
+    """
+    Ensure thinking level meets the minimum floor for a given complexity.
+
+    The floor only raises the thinking level; if the current level is already
+    at or above the floor, it is returned unchanged.
+
+    Args:
+        thinking_level: Current thinking level (low, medium, high, max, ultrathink)
+        complexity: Task complexity (simple, standard, complex)
+
+    Returns:
+        Thinking level raised to floor if needed, otherwise unchanged
+    """
+    floor_level = COMPLEXITY_THINKING_FLOOR.get(complexity, "medium")
+
+    # Default index 1 (medium) for unknown thinking levels
+    default_idx = 1
+    current_idx = (
+        THINKING_LEVEL_ORDER.index(thinking_level)
+        if thinking_level in THINKING_LEVEL_ORDER
+        else default_idx
+    )
+    floor_idx = (
+        THINKING_LEVEL_ORDER.index(floor_level)
+        if floor_level in THINKING_LEVEL_ORDER
+        else default_idx
+    )
+
+    result_idx = max(current_idx, floor_idx)
+    return THINKING_LEVEL_ORDER[result_idx]
 
 
 def get_thinking_budget(thinking_level: str) -> int:
