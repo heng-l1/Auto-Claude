@@ -14,10 +14,29 @@ import {
   TaskExecutionOptions,
   RoadmapConfig
 } from './types';
-import type { IdeationConfig } from '../../shared/types';
+import type { IdeationConfig, TaskComplexity } from '../../shared/types';
 import { resetStuckSubtasks } from '../ipc-handlers/task/plan-file-utils';
 import { AUTO_BUILD_PATHS, getSpecsDir, sanitizeThinkingLevel } from '../../shared/constants';
 import { projectStore } from '../project-store';
+
+/**
+ * Map frontend TaskComplexity to the backend --complexity CLI values.
+ * Returns null for unknown values so no arg is pushed.
+ */
+function mapComplexityToBackend(complexity: TaskComplexity): string | null {
+  switch (complexity) {
+    case 'trivial':
+      return 'simple';
+    case 'small':
+    case 'medium':
+      return 'standard';
+    case 'large':
+    case 'complex':
+      return 'complex';
+    default:
+      return null;
+  }
+}
 
 /**
  * Main AgentManager - orchestrates agent process lifecycle
@@ -331,6 +350,14 @@ export class AgentManager extends EventEmitter {
     // Workspace mode: --direct skips worktree isolation (default is isolated for safety)
     if (metadata?.useWorktree === false) {
       args.push('--direct');
+    }
+
+    // Pass complexity assessment to backend for spec orchestration
+    if (metadata?.complexity) {
+      const backendComplexity = mapComplexityToBackend(metadata.complexity);
+      if (backendComplexity) {
+        args.push('--complexity', backendComplexity);
+      }
     }
 
     // Store context for potential restart
