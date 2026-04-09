@@ -266,7 +266,10 @@ export type MemoryType =
   | 'pr_review'
   | 'pr_finding'
   | 'pr_pattern'
-  | 'pr_gotcha';
+  | 'pr_gotcha'
+  | 'terminal_session'
+  | 'qa_result'
+  | 'historical_context';
 
 export interface MemoryEpisode {
   id: string;
