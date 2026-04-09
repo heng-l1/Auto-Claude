@@ -334,11 +334,10 @@ export class ProjectStore {
               path.join(worktreesDir, worktree.name),
               'worktree',
               projectId,
-              specsBaseDir
+              specsBaseDir,
+              mainSpecIds
             );
-            // Only include worktree tasks if the spec exists in main project
-            const validWorktreeTasks = worktreeTasks.filter(t => mainSpecIds.has(t.specId));
-            allTasks.push(...validWorktreeTasks);
+            allTasks.push(...worktreeTasks);
           }
         }
       } catch (error) {
@@ -412,7 +411,8 @@ export class ProjectStore {
     _basePath: string,
     location: 'main' | 'worktree',
     projectId: string,
-    _specsBaseDir: string
+    _specsBaseDir: string,
+    filterSpecIds?: Set<string>
   ): Task[] {
     const tasks: Task[] = [];
     let specDirs: Dirent[] = [];
@@ -427,6 +427,7 @@ export class ProjectStore {
     for (const dir of specDirs) {
       if (!dir.isDirectory()) continue;
       if (dir.name === '.gitkeep') continue;
+      if (filterSpecIds && !filterSpecIds.has(dir.name)) continue;
 
       try {
         const specPath = path.join(specsDir, dir.name);
