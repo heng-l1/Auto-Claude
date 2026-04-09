@@ -1,4 +1,5 @@
 import { app } from 'electron';
+import chokidar, { FSWatcher } from 'chokidar';
 import { readFileSync, existsSync, mkdirSync, readdirSync, Dirent } from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -37,7 +38,8 @@ export class ProjectStore {
   private storePath: string;
   private data: StoreData;
   private tasksCache: Map<string, TasksCacheEntry> = new Map();
-  private readonly CACHE_TTL_MS = 3000; // 3 seconds TTL for task cache
+  private specsWatchers: Map<string, FSWatcher> = new Map();
+  private readonly CACHE_TTL_MS = 30_000; // 30 seconds TTL for task cache (watchers invalidate sooner)
 
   constructor() {
     // Store in app's userData directory
