@@ -147,6 +147,8 @@ export class ProjectStore {
    * Remove a project
    */
   removeProject(projectId: string): boolean {
+    this.unwatchSpecsDir(projectId); // Clean up watcher before removal
+    this.tasksCache.delete(projectId); // Clean up cached tasks for removed project
     const index = this.data.projects.findIndex((p) => p.id === projectId);
     if (index !== -1) {
       this.data.projects.splice(index, 1);
@@ -311,6 +313,7 @@ export class ProjectStore {
 
     // 1. Scan main project specs directory (source of truth for task existence)
     const mainSpecsDir = path.join(project.path, specsBaseDir);
+    this.watchSpecsDir(projectId, mainSpecsDir); // Lazy-start watcher on first cache miss
     const mainSpecIds = new Set<string>();
     if (existsSync(mainSpecsDir)) {
       const mainTasks = this.loadTasksFromSpecsDir(mainSpecsDir, project.path, 'main', projectId, specsBaseDir);
