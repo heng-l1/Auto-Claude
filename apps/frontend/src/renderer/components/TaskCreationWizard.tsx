@@ -676,6 +676,16 @@ export function TaskCreationWizard({
             setProfileId(newProfileId);
             setModel(newModel);
             setThinkingLevel(newThinkingLevel);
+            // Sync complexity classification with profile so the backend receives
+            // the matching --complexity override for spec orchestration.
+            // 'auto' clears to empty = let AI assess; other profiles set a default.
+            if (newProfileId === 'auto' || newProfileId === 'balanced') {
+              setComplexity('');
+            } else if (newProfileId === 'complex') {
+              setComplexity('complex');
+            } else if (newProfileId === 'quick') {
+              setComplexity('trivial');
+            }
           }}
           onModelChange={setModel}
           onThinkingLevelChange={setThinkingLevel}

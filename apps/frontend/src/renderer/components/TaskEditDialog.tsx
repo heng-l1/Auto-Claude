@@ -325,6 +325,15 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
           setProfileId(newProfileId);
           setModel(newModel);
           setThinkingLevel(newThinkingLevel);
+          // Sync complexity classification with profile selection.
+          // 'auto'/'balanced' clears to empty = let AI assess complexity.
+          if (newProfileId === 'auto' || newProfileId === 'balanced') {
+            setComplexity('');
+          } else if (newProfileId === 'complex') {
+            setComplexity('complex');
+          } else if (newProfileId === 'quick') {
+            setComplexity('trivial');
+          }
         }}
         onModelChange={setModel}
         onThinkingLevelChange={setThinkingLevel}
