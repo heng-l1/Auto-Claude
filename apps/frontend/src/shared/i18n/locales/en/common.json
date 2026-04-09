@@ -955,6 +955,7 @@
     "taskFailed": "Task failed",
     "reviewNeeded": "Review needed",
     "prReviewComplete": "PR review complete",
+    "claudeSessionComplete": "Claude session complete",
     "viewAll": "View all",
     "justNow": "Just now",
     "delete": "Delete"

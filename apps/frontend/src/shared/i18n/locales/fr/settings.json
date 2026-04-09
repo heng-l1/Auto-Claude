@@ -5,5 +5,9 @@
       "description": "Ajoutez des noms de processus pour les wrappers SSH ou outils distants à détecter comme sessions distantes (séparés par des virgules)",
       "placeholder": "ex. autossh, sshpass"
     }
+  },
+  "notifications": {
+    "onClaudeSessionComplete": "À la fin d'une session Claude",
+    "onClaudeSessionCompleteDescription": "Notifier lorsqu'une session Claude dans le terminal se termine"
   }
 }
