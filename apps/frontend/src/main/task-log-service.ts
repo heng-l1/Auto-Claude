@@ -435,6 +435,8 @@ export class TaskLogService extends EventEmitter {
       clearInterval(interval);
       this.pollIntervals.delete(specId);
       this.watchedPaths.delete(specId);
+      this.lastMainStat.delete(specId);
+      this.lastWorktreeStat.delete(specId);
     }
   }
 
@@ -445,6 +447,8 @@ export class TaskLogService extends EventEmitter {
     for (const specId of this.pollIntervals.keys()) {
       this.stopWatching(specId);
     }
+    this.lastMainStat.clear();
+    this.lastWorktreeStat.clear();
   }
 
   /**
