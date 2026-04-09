@@ -201,7 +201,7 @@ def cmd_get_memories(args):
             memory = {
                 "id": uuid_val or name_val or "unknown",
                 "name": name_val or "",
-                "type": infer_episode_type(name_val or "", content_val or ""),
+                "type": infer_episode_type(name_val or "", content_val or "", description_val or ""),
                 "timestamp": created_at_val or datetime.now().isoformat(),
                 "content": content_val or description_val or name_val or "",
                 "description": description_val or "",
@@ -274,7 +274,7 @@ def cmd_search(args):
             memory = {
                 "id": uuid_val or name_val or "unknown",
                 "name": name_val or "",
-                "type": infer_episode_type(name_val or "", content_val or ""),
+                "type": infer_episode_type(name_val or "", content_val or "", description_val or ""),
                 "timestamp": created_at_val or datetime.now().isoformat(),
                 "content": content_val or description_val or name_val or "",
                 "description": description_val or "",
@@ -621,10 +621,30 @@ def cmd_add_episode(args):
         output_error(f"Failed to add episode: {e}")
 
 
-def infer_episode_type(name: str, content: str = "") -> str:
-    """Infer the episode type from its name and content."""
+def infer_episode_type(name: str, content: str = "", description: str = "") -> str:
+    """Infer the episode type from its name, content, and source_description.
+
+    The source_description field stores the original type as '[type] name' when
+    episodes are inserted via cmd_add_episode. We extract it from there first,
+    then fall back to heuristic matching on name/content.
+    """
+    # First: extract type from source_description which stores it as "[type] name"
+    description_str = description or ""
+    if description_str.startswith("["):
+        bracket_end = description_str.find("]")
+        if bracket_end > 1:
+            stored_type = description_str[1:bracket_end].strip()
+            if stored_type:
+                return stored_type
+
+    # Fallback: heuristic matching on name and content
     name_lower = (name or "").lower()
     content_lower = (content or "").lower()
+
+    # PR review types
+    for pr_type in ["pr_review", "pr_finding", "pr_pattern", "pr_gotcha"]:
+        if pr_type in name_lower or f'"type": "{pr_type}"' in content_lower:
+            return pr_type
 
     if "session_" in name_lower or '"type": "session_insight"' in content_lower:
         return "session_insight"
