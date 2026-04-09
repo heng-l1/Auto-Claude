@@ -433,6 +433,21 @@ export class ProjectStore {
         const planPath = path.join(specPath, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
         const specFilePath = path.join(specPath, AUTO_BUILD_PATHS.SPEC_FILE);
 
+        // Lazy cache for spec.md content — avoids reading the same file twice
+        // (once for description fallback, once for title extraction)
+        let _specContent: string | undefined;
+        const getSpecContent = (): string | null => {
+          if (_specContent === undefined) {
+            if (existsSync(specFilePath)) {
+              try { _specContent = readFileSync(specFilePath, 'utf-8'); }
+              catch { _specContent = ''; }
+            } else {
+              _specContent = '';
+            }
+          }
+          return _specContent || null;
+        };
+
         // Try to read implementation plan
         let plan: ImplementationPlan | null = null;
         let hasJsonError = false;
@@ -473,18 +488,14 @@ export class ProjectStore {
         }
 
         // PRIORITY 3: Final fallback to spec.md Overview (AI-synthesized content)
-        if (!description && existsSync(specFilePath)) {
-          try {
-            const content = readFileSync(specFilePath, 'utf-8');
-            // Extract full Overview section until next heading or end of file
-            // Use \n#{1,6}\s to match valid markdown headings (# to ######) with required space
-            // This avoids truncating at # in code blocks (e.g., Python comments)
-            const overviewMatch = content.match(/## Overview\s*\n+([\s\S]*?)(?=\n#{1,6}\s|$)/);
-            if (overviewMatch) {
-              description = overviewMatch[1].trim();
-            }
-          } catch {
-            // Ignore read errors
+        const specContent = getSpecContent();
+        if (!description && specContent) {
+          // Extract full Overview section until next heading or end of file
+          // Use \n#{1,6}\s to match valid markdown headings (# to ######) with required space
+          // This avoids truncating at # in code blocks (e.g., Python comments)
+          const overviewMatch = specContent.match(/## Overview\s*\n+([\s\S]*?)(?=\n#{1,6}\s|$)/);
+          if (overviewMatch) {
+            description = overviewMatch[1].trim();
           }
         }
 
@@ -538,19 +549,15 @@ export class ProjectStore {
         // For JSON error tasks, use directory name with marker for i18n suffix
         let title = hasJsonError ? `${dir.name}${JSON_ERROR_TITLE_SUFFIX}` : (plan?.feature || plan?.title || dir.name);
         const looksLikeSpecId = /^\d{3}-/.test(title) && !hasJsonError;
-        if (looksLikeSpecId && existsSync(specFilePath)) {
-          try {
-            const specContent = readFileSync(specFilePath, 'utf-8');
-            // Extract title from first # line, handling patterns like:
-            // "# Quick Spec: Title" -> "Title"
-            // "# Specification: Title" -> "Title"
-            // "# Title" -> "Title"
-            const titleMatch = specContent.match(/^#\s+(?:Quick Spec:|Specification:)?\s*(.+)$/m);
-            if (titleMatch?.[1]) {
-              title = titleMatch[1].trim();
-            }
-          } catch {
-            // Keep the original title on error
+        const specContentForTitle = getSpecContent();
+        if (looksLikeSpecId && specContentForTitle) {
+          // Extract title from first # line, handling patterns like:
+          // "# Quick Spec: Title" -> "Title"
+          // "# Specification: Title" -> "Title"
+          // "# Title" -> "Title"
+          const titleMatch = specContentForTitle.match(/^#\s+(?:Quick Spec:|Specification:)?\s*(.+)$/m);
+          if (titleMatch?.[1]) {
+            title = titleMatch[1].trim();
           }
         }
 
