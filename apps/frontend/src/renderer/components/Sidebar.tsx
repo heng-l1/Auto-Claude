@@ -68,6 +68,7 @@ interface SidebarProps {
   activeView?: SidebarView;
   onViewChange?: (view: SidebarView) => void;
   onNavigateToProject?: (projectId: string, view: SidebarView) => void;
+  onSelectTerminal?: (terminalId: string) => void;
 }
 
 interface NavItem {
@@ -107,7 +108,8 @@ export function Sidebar({
   onNewTaskClick,
   activeView = 'kanban',
   onViewChange,
-  onNavigateToProject
+  onNavigateToProject,
+  onSelectTerminal
 }: SidebarProps) {
   const { t } = useTranslation(['navigation', 'dialogs', 'common']);
   const projects = useProjectStore((state) => state.projects);
