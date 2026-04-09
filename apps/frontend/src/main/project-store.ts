@@ -406,6 +406,82 @@ export class ProjectStore {
   }
 
   /**
+   * Start watching a project's specs directory for changes.
+   * When implementation_plan.json or task_metadata.json files change,
+   * the tasks cache is automatically invalidated so the next getTasks()
+   * call reads fresh data from disk instead of returning stale results.
+   */
+  private watchSpecsDir(projectId: string, specsDir: string): void {
+    // Return early if already watching this project
+    if (this.specsWatchers.has(projectId)) {
+      return;
+    }
+
+    try {
+      // Watch for changes to plan and metadata files across all spec directories
+      const watcher = chokidar.watch(
+        path.join(specsDir, '**/{implementation_plan.json,task_metadata.json}'),
+        {
+          persistent: true,
+          ignoreInitial: true,
+          awaitWriteFinish: {
+            stabilityThreshold: 300,
+            pollInterval: 100
+          }
+        }
+      );
+
+      // Invalidate cache on any relevant file event
+      watcher.on('change', () => {
+        this.invalidateTasksCache(projectId);
+      });
+
+      watcher.on('add', () => {
+        this.invalidateTasksCache(projectId);
+      });
+
+      watcher.on('unlink', () => {
+        this.invalidateTasksCache(projectId);
+      });
+
+      watcher.on('error', (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`[ProjectStore] Specs watcher error for project ${projectId}:`, message);
+      });
+
+      this.specsWatchers.set(projectId, watcher);
+    } catch (error) {
+      console.error(`[ProjectStore] Failed to start specs watcher for project ${projectId}:`, error);
+    }
+  }
+
+  /**
+   * Stop watching a project's specs directory
+   */
+  private unwatchSpecsDir(projectId: string): void {
+    const watcher = this.specsWatchers.get(projectId);
+    if (watcher) {
+      watcher.close().catch((error: unknown) => {
+        console.error(`[ProjectStore] Error closing specs watcher for project ${projectId}:`, error);
+      });
+      this.specsWatchers.delete(projectId);
+    }
+  }
+
+  /**
+   * Stop all specs directory watchers.
+   * Called during app shutdown to clean up file handles.
+   */
+  unwatchAllSpecs(): void {
+    for (const [projectId, watcher] of this.specsWatchers) {
+      watcher.close().catch((error: unknown) => {
+        console.error(`[ProjectStore] Error closing specs watcher for project ${projectId}:`, error);
+      });
+    }
+    this.specsWatchers.clear();
+  }
+
+  /**
    * Load tasks from a specs directory (helper method for main project and worktrees)
    */
   private loadTasksFromSpecsDir(
