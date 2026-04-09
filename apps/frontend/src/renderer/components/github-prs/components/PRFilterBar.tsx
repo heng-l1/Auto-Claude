@@ -448,7 +448,7 @@ export function PRFilterBar({
 
   return (
     <div className="px-4 py-2 border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex items-center gap-2 h-9">
+      <div className="flex items-center gap-2 flex-wrap">
         {/* Search Input - Flexible width */}
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
