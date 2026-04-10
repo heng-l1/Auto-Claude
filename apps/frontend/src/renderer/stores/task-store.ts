@@ -343,13 +343,15 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   updateTaskFromPlan: (taskId, plan) =>
     set((state) => {
       // FIX (PR Review): Gate debug logging to prevent production console clutter
-      debugLog('[updateTaskFromPlan] called with plan:', {
-        taskId,
-        feature: plan.feature,
-        phases: plan.phases?.length || 0,
-        totalSubtasks: plan.phases?.reduce((acc, p) => acc + (p.subtasks?.length || 0), 0) || 0
-        // Note: planData removed to avoid verbose output in logs
-      });
+      if (isDebugEnabled()) {
+        debugLog('[updateTaskFromPlan] called with plan:', {
+          taskId,
+          feature: plan.feature,
+          phases: plan.phases?.length || 0,
+          totalSubtasks: plan.phases?.reduce((acc, p) => acc + (p.subtasks?.length || 0), 0) || 0
+          // Note: planData removed to avoid verbose output in logs
+        });
+      }
 
       const index = findTaskIndex(state.tasks, taskId);
       if (index === -1) {
