@@ -367,8 +367,23 @@ def setup_workspace(
     )
     manager.setup()
 
+    # Capture whether worktree already existed BEFORE get_or_create_worktree()
+    # creates it (that call would make worktree_exists return True afterward)
+    worktree_already_existed = manager.worktree_exists(spec_name)
+
     # Get or create worktree for THIS SPECIFIC SPEC
     worktree_info = manager.get_or_create_worktree(spec_name)
+
+    # Rebase existing worktrees onto latest base branch
+    if worktree_already_existed:
+        rebase_ok = manager.rebase_worktree_onto_base(spec_name)
+        if rebase_ok:
+            print_status(f"Worktree rebased onto latest {manager.base_branch}", "success")
+        else:
+            print_status(
+                f"Could not rebase onto {manager.base_branch} (will use existing branch state)",
+                "warning",
+            )
 
     # Copy .env files to worktree so user can run the project
     copied_env_files = copy_env_files_to_worktree(project_dir, worktree_info.path)
