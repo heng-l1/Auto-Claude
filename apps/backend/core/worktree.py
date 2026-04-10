@@ -794,6 +794,118 @@ class WorktreeManager:
 
         return self.create_worktree(spec_name)
 
+    def rebase_worktree_onto_base(self, spec_name: str) -> bool:
+        """
+        Rebase a worktree branch onto the latest base branch.
+
+        Best-effort: returns True on success or if already up-to-date,
+        False on any failure. Never raises — build always proceeds.
+
+        Args:
+            spec_name: The spec folder name
+
+        Returns:
+            True if rebase succeeded or already up-to-date, False on any failure.
+        """
+        worktree_path = self.get_worktree_path(spec_name)
+        if not worktree_path.exists():
+            logger.warning("Worktree path does not exist for %s", spec_name)
+            return False
+
+        base_ref = f"origin/{self.base_branch}"
+
+        try:
+            # 1. Fetch latest base branch
+            result = self._run_git(
+                ["fetch", "origin", self.base_branch], cwd=worktree_path
+            )
+            if result.returncode != 0:
+                logger.warning(
+                    "Failed to fetch origin/%s — skipping rebase: %s",
+                    self.base_branch,
+                    result.stderr.strip(),
+                )
+                return False
+
+            # 2. Check if behind
+            result = self._run_git(
+                ["rev-list", "--count", f"HEAD..{base_ref}"], cwd=worktree_path
+            )
+            if result.returncode != 0:
+                logger.warning(
+                    "Failed to check rev-list count — skipping rebase: %s",
+                    result.stderr.strip(),
+                )
+                return False
+
+            behind_count = int(result.stdout.strip())
+            if behind_count == 0:
+                logger.info("Worktree %s is already up-to-date with %s", spec_name, base_ref)
+                return True
+
+            logger.info(
+                "Worktree %s is %d commit(s) behind %s — rebasing",
+                spec_name,
+                behind_count,
+                base_ref,
+            )
+
+            # 3. Stash uncommitted changes if dirty
+            did_stash = False
+            if self.has_uncommitted_changes(spec_name):
+                stash_result = self._run_git(["stash"], cwd=worktree_path)
+                did_stash = (
+                    stash_result.returncode == 0
+                    and "No local changes" not in stash_result.stdout
+                )
+
+            # 4. Rebase onto base branch
+            result = self._run_git(
+                ["rebase", base_ref], cwd=worktree_path, timeout=120
+            )
+
+            if result.returncode != 0:
+                # 5a. Conflict — abort rebase and restore state
+                logger.warning(
+                    "Rebase failed for %s — aborting: %s",
+                    spec_name,
+                    result.stderr.strip(),
+                )
+                abort_result = self._run_git(["rebase", "--abort"], cwd=worktree_path)
+                if abort_result.returncode != 0:
+                    logger.warning(
+                        "rebase --abort failed for %s. Manual intervention may be needed in %s",
+                        spec_name,
+                        worktree_path,
+                    )
+                if did_stash:
+                    pop_result = self._run_git(["stash", "pop"], cwd=worktree_path)
+                    if pop_result.returncode != 0:
+                        logger.warning(
+                            "stash pop failed after rebase abort for %s. "
+                            "Check 'git stash list' in %s",
+                            spec_name,
+                            worktree_path,
+                        )
+                return False
+
+            # 5b. Success — pop stash if we stashed
+            if did_stash:
+                pop_result = self._run_git(["stash", "pop"], cwd=worktree_path)
+                if pop_result.returncode != 0:
+                    logger.warning(
+                        "stash pop failed after successful rebase for %s. "
+                        "Check 'git stash list' in %s",
+                        spec_name,
+                        worktree_path,
+                    )
+
+            return True
+
+        except Exception as e:
+            logger.warning("Unexpected error during rebase for %s: %s", spec_name, e)
+            return False
+
     def remove_worktree(self, spec_name: str, delete_branch: bool = False) -> None:
         """
         Remove a spec's worktree.
