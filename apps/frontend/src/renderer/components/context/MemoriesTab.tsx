@@ -83,7 +83,7 @@ function isPRReview(memory: MemoryEpisode): boolean {
 // Get the effective category for a memory
 function getMemoryCategory(memory: MemoryEpisode): FilterCategory {
   if (isPRReview(memory)) return 'pr';
-  if (['session_insight', 'task_outcome'].includes(memory.type)) return 'sessions';
+  if (['session_insight', 'task_outcome', 'qa_result', 'historical_context', 'terminal_session'].includes(memory.type)) return 'sessions';
   if (['codebase_discovery', 'codebase_map'].includes(memory.type)) return 'codebase';
   if (['pattern', 'pr_pattern'].includes(memory.type)) return 'patterns';
   if (['gotcha', 'pr_gotcha'].includes(memory.type)) return 'gotchas';

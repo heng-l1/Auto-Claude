@@ -300,6 +300,21 @@ export async function destroyTerminal(
         });
     }
 
+    // Save terminal session to memory before cleanup (async, non-blocking)
+    // Only for Claude sessions that aren't PR discussions (those are handled above)
+    if (!terminal.prDiscussionContext && terminal.outputBuffer && (terminal.isClaudeMode || terminal.claudeSessionId)) {
+      import('../ipc-handlers/terminal-handlers')
+        .then(({ saveTerminalSessionToMemory }) =>
+          saveTerminalSessionToMemory(
+            terminal.outputBuffer,
+            terminal.title || terminal.id
+          )
+        )
+        .catch((err) => {
+          debugError('Failed to save terminal session to memory', err instanceof Error ? err.message : err);
+        });
+    }
+
     SessionHandler.removePersistedSession(terminal);
     // Release any claimed session ID for this terminal
     SessionHandler.releaseSessionId(id);

@@ -656,6 +656,8 @@ def infer_episode_type(name: str, content: str = "", description: str = "") -> s
         return "codebase_discovery"
     if "task_outcome" in name_lower or '"type": "task_outcome"' in content_lower:
         return "task_outcome"
+    if "terminal_session" in name_lower or "terminal" in name_lower or '"type": "terminal_session"' in content_lower:
+        return "terminal_session"
 
     return "session_insight"
 

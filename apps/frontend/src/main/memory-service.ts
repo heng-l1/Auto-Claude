@@ -709,24 +709,31 @@ export class MemoryService {
     // No persistent connection to close with subprocess model
   }
 
+  /** All valid MemoryEpisode types for Set-based lookup */
+  private static readonly VALID_MEMORY_TYPES = new Set<MemoryEpisode['type']>([
+    'session_insight',
+    'codebase_discovery',
+    'codebase_map',
+    'pattern',
+    'gotcha',
+    'task_outcome',
+    'pr_review',
+    'pr_finding',
+    'pr_pattern',
+    'pr_gotcha',
+    'terminal_session',
+    'qa_result',
+    'historical_context',
+  ]);
+
   /**
    * Map string type to MemoryEpisode type
    */
   private mapMemoryType(type: string): MemoryEpisode['type'] {
-    switch (type) {
-      case 'session_insight':
-        return 'session_insight';
-      case 'pattern':
-        return 'pattern';
-      case 'gotcha':
-        return 'gotcha';
-      case 'codebase_discovery':
-        return 'codebase_discovery';
-      case 'task_outcome':
-        return 'task_outcome';
-      default:
-        return 'session_insight';
+    if (MemoryService.VALID_MEMORY_TYPES.has(type as MemoryEpisode['type'])) {
+      return type as MemoryEpisode['type'];
     }
+    return 'session_insight';
   }
 }
 

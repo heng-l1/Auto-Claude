@@ -14,7 +14,8 @@ import {
   GitPullRequest,
   Bug,
   Sparkles,
-  Target
+  Target,
+  Terminal
 } from 'lucide-react';
 
 // Service type icon mapping
@@ -56,7 +57,8 @@ export const memoryTypeIcons: Record<string, React.ElementType> = {
   pr_review: GitPullRequest,
   pr_finding: Bug,
   pr_pattern: Sparkles,
-  pr_gotcha: AlertTriangle
+  pr_gotcha: AlertTriangle,
+  terminal_session: Terminal
 };
 
 // Memory type colors for badges and styling
@@ -72,7 +74,8 @@ export const memoryTypeColors: Record<string, string> = {
   pr_review: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30',
   pr_finding: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
   pr_pattern: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
-  pr_gotcha: 'bg-red-500/10 text-red-400 border-red-500/30'
+  pr_gotcha: 'bg-red-500/10 text-red-400 border-red-500/30',
+  terminal_session: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
 };
 
 // Memory type labels for display
@@ -88,14 +91,15 @@ export const memoryTypeLabels: Record<string, string> = {
   pr_review: 'PR Review',
   pr_finding: 'PR Finding',
   pr_pattern: 'PR Pattern',
-  pr_gotcha: 'PR Gotcha'
+  pr_gotcha: 'PR Gotcha',
+  terminal_session: 'Terminal Session'
 };
 
 // Filter categories for grouping memory types
 export const memoryFilterCategories = {
   all: { label: 'All', types: [] as string[] },
   pr: { label: 'PR Reviews', types: ['pr_review', 'pr_finding', 'pr_pattern', 'pr_gotcha'] },
-  sessions: { label: 'Sessions', types: ['session_insight', 'task_outcome', 'qa_result', 'historical_context'] },
+  sessions: { label: 'Sessions', types: ['session_insight', 'task_outcome', 'qa_result', 'historical_context', 'terminal_session'] },
   codebase: { label: 'Codebase', types: ['codebase_discovery', 'codebase_map'] },
   patterns: { label: 'Patterns', types: ['pattern', 'pr_pattern'] },
   gotchas: { label: 'Gotchas', types: ['gotcha', 'pr_gotcha'] },
