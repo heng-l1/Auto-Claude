@@ -826,6 +826,11 @@ export function App() {
   }, [selectedProject, // Switch to terminals view
     changeActiveView]);
 
+  const handleSelectTerminal = useCallback((terminalId: string) => {
+    useTerminalStore.getState().setActiveTerminal(terminalId);
+    changeActiveView('terminals');
+  }, [changeActiveView]);
+
   const handleAddProject = () => {
     setShowAddProjectModal(true);
   };
@@ -1028,6 +1033,7 @@ export function App() {
           activeView={activeView}
           onViewChange={changeActiveView}
           onNavigateToProject={navigateToProjectView}
+          onSelectTerminal={handleSelectTerminal}
         />
 
         {/* Main content */}
