@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Github, RefreshCw, KeyRound, Loader2, CheckCircle2, AlertCircle, User, Lock, Globe, ChevronDown, GitBranch } from 'lucide-react';
+import { Github, RefreshCw, KeyRound, Loader2, CheckCircle2, AlertCircle, User, Lock, Globe, ChevronDown, GitBranch, ScanSearch } from 'lucide-react';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { Switch } from '../../ui/switch';
@@ -414,6 +414,11 @@ export function GitHubIntegration({
             enabled={envConfig.githubAutoSync || false}
             onToggle={(checked) => updateEnvConfig({ githubAutoSync: checked })}
           />
+
+          <AutoPRReviewToggle
+            enabled={envConfig.githubAutoPRReview || false}
+            onToggle={(checked) => updateEnvConfig({ githubAutoPRReview: checked })}
+          />
         </>
       )}
     </div>
@@ -656,6 +661,28 @@ function AutoSyncToggle({ enabled, onToggle }: AutoSyncToggleProps) {
         </div>
         <p className="text-xs text-muted-foreground pl-6">
           Automatically fetch issues when the project loads
+        </p>
+      </div>
+      <Switch checked={enabled} onCheckedChange={onToggle} />
+    </div>
+  );
+}
+
+interface AutoPRReviewToggleProps {
+  enabled: boolean;
+  onToggle: (checked: boolean) => void;
+}
+
+function AutoPRReviewToggle({ enabled, onToggle }: AutoPRReviewToggleProps) {
+  return (
+    <div className="flex items-center justify-between">
+      <div className="space-y-0.5">
+        <div className="flex items-center gap-2">
+          <ScanSearch className="h-4 w-4 text-info" />
+          <Label className="font-normal text-foreground">Auto PR Review</Label>
+        </div>
+        <p className="text-xs text-muted-foreground pl-6">
+          Automatically review pull requests when new commits are pushed
         </p>
       </div>
       <Switch checked={enabled} onCheckedChange={onToggle} />
