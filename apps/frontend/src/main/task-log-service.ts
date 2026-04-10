@@ -1,5 +1,5 @@
 import path from 'path';
-import { existsSync, readFileSync, } from 'fs';
+import { existsSync, readFileSync, statSync } from 'fs';
 import { EventEmitter } from 'events';
 import type { TaskLogs, TaskLogPhase, TaskLogStreamChunk, TaskPhaseLog } from '../shared/types';
 import { findTaskWorktree } from './worktree-paths';
@@ -31,6 +31,9 @@ export class TaskLogService extends EventEmitter {
   private pollIntervals: Map<string, NodeJS.Timeout> = new Map();
   // Store paths being watched for each specId (main + worktree)
   private watchedPaths: Map<string, { mainSpecDir: string; worktreeSpecDir: string | null; specsRelPath: string }> = new Map();
+  // Stat tracking maps for efficient change detection (avoids reading file content on every poll tick)
+  private lastMainStat: Map<string, { mtime: number; size: number }> = new Map();
+  private lastWorktreeStat: Map<string, { mtime: number; size: number }> = new Map();
 
   // Poll interval for watching log changes (more reliable than fs.watch on some systems)
   private readonly POLL_INTERVAL_MS = 1000;
@@ -282,26 +285,24 @@ export class TaskLogService extends EventEmitter {
       specsRelPath: specsRelPath || ''
     });
 
-    let lastMainContent = '';
-    let lastWorktreeContent = '';
-
-    // Initial load from main spec dir
+    // Initialize stat tracking for change detection
     if (existsSync(mainLogFile)) {
       try {
-        lastMainContent = readFileSync(mainLogFile, 'utf-8');
+        const stat = statSync(mainLogFile);
+        this.lastMainStat.set(specId, { mtime: stat.mtimeMs, size: stat.size });
       } catch (_e) {
-        // Ignore parse errors on initial load
+        // Ignore stat errors on initial load
       }
     }
 
-    // Initial load from worktree spec dir
     if (worktreeSpecDir) {
       const worktreeLogFile = path.join(worktreeSpecDir, 'task_logs.json');
       if (existsSync(worktreeLogFile)) {
         try {
-          lastWorktreeContent = readFileSync(worktreeLogFile, 'utf-8');
+          const stat = statSync(worktreeLogFile);
+          this.lastWorktreeStat.set(specId, { mtime: stat.mtimeMs, size: stat.size });
         } catch (_e) {
-          // Ignore parse errors on initial load
+          // Ignore stat errors on initial load
         }
       }
     }
@@ -352,31 +353,33 @@ export class TaskLogService extends EventEmitter {
         }
       }
 
-      // Check main spec dir
+      // Check main spec dir via stat (avoids reading file content on every poll tick)
       if (existsSync(mainLogFile)) {
         try {
-          const currentContent = readFileSync(mainLogFile, 'utf-8');
-          if (currentContent !== lastMainContent) {
-            lastMainContent = currentContent;
+          const stat = statSync(mainLogFile);
+          const last = this.lastMainStat.get(specId);
+          if (!last || stat.mtimeMs !== last.mtime || stat.size !== last.size) {
+            this.lastMainStat.set(specId, { mtime: stat.mtimeMs, size: stat.size });
             mainChanged = true;
           }
         } catch (_error) {
-          // Ignore read/parse errors
+          // Ignore stat errors
         }
       }
 
-      // Check worktree spec dir
+      // Check worktree spec dir via stat
       if (currentWorktreeSpecDir) {
         const worktreeLogFile = path.join(currentWorktreeSpecDir, 'task_logs.json');
         if (existsSync(worktreeLogFile)) {
           try {
-            const currentContent = readFileSync(worktreeLogFile, 'utf-8');
-            if (currentContent !== lastWorktreeContent) {
-              lastWorktreeContent = currentContent;
+            const stat = statSync(worktreeLogFile);
+            const last = this.lastWorktreeStat.get(specId);
+            if (!last || stat.mtimeMs !== last.mtime || stat.size !== last.size) {
+              this.lastWorktreeStat.set(specId, { mtime: stat.mtimeMs, size: stat.size });
               worktreeChanged = true;
             }
           } catch (_error) {
-            // Ignore read/parse errors
+            // Ignore stat errors
           }
         }
       }
@@ -432,6 +435,8 @@ export class TaskLogService extends EventEmitter {
       clearInterval(interval);
       this.pollIntervals.delete(specId);
       this.watchedPaths.delete(specId);
+      this.lastMainStat.delete(specId);
+      this.lastWorktreeStat.delete(specId);
     }
   }
 
@@ -442,6 +447,8 @@ export class TaskLogService extends EventEmitter {
     for (const specId of this.pollIntervals.keys()) {
       this.stopWatching(specId);
     }
+    this.lastMainStat.clear();
+    this.lastWorktreeStat.clear();
   }
 
   /**

@@ -1,4 +1,5 @@
 import { app } from 'electron';
+import chokidar, { FSWatcher } from 'chokidar';
 import { readFileSync, existsSync, mkdirSync, readdirSync, Dirent } from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -37,7 +38,8 @@ export class ProjectStore {
   private storePath: string;
   private data: StoreData;
   private tasksCache: Map<string, TasksCacheEntry> = new Map();
-  private readonly CACHE_TTL_MS = 3000; // 3 seconds TTL for task cache
+  private specsWatchers: Map<string, FSWatcher> = new Map();
+  private readonly CACHE_TTL_MS = 30_000; // 30 seconds TTL for task cache (watchers invalidate sooner)
 
   constructor() {
     // Store in app's userData directory
@@ -145,6 +147,8 @@ export class ProjectStore {
    * Remove a project
    */
   removeProject(projectId: string): boolean {
+    this.unwatchSpecsDir(projectId); // Clean up watcher before removal
+    this.tasksCache.delete(projectId); // Clean up cached tasks for removed project
     const index = this.data.projects.findIndex((p) => p.id === projectId);
     if (index !== -1) {
       this.data.projects.splice(index, 1);
@@ -309,6 +313,7 @@ export class ProjectStore {
 
     // 1. Scan main project specs directory (source of truth for task existence)
     const mainSpecsDir = path.join(project.path, specsBaseDir);
+    this.watchSpecsDir(projectId, mainSpecsDir); // Lazy-start watcher on first cache miss
     const mainSpecIds = new Set<string>();
     if (existsSync(mainSpecsDir)) {
       const mainTasks = this.loadTasksFromSpecsDir(mainSpecsDir, project.path, 'main', projectId, specsBaseDir);
@@ -334,11 +339,10 @@ export class ProjectStore {
               path.join(worktreesDir, worktree.name),
               'worktree',
               projectId,
-              specsBaseDir
+              specsBaseDir,
+              mainSpecIds
             );
-            // Only include worktree tasks if the spec exists in main project
-            const validWorktreeTasks = worktreeTasks.filter(t => mainSpecIds.has(t.specId));
-            allTasks.push(...validWorktreeTasks);
+            allTasks.push(...worktreeTasks);
           }
         }
       } catch (error) {
@@ -405,6 +409,82 @@ export class ProjectStore {
   }
 
   /**
+   * Start watching a project's specs directory for changes.
+   * When implementation_plan.json or task_metadata.json files change,
+   * the tasks cache is automatically invalidated so the next getTasks()
+   * call reads fresh data from disk instead of returning stale results.
+   */
+  private watchSpecsDir(projectId: string, specsDir: string): void {
+    // Return early if already watching this project
+    if (this.specsWatchers.has(projectId)) {
+      return;
+    }
+
+    try {
+      // Watch for changes to plan and metadata files across all spec directories
+      const watcher = chokidar.watch(
+        path.join(specsDir, '**/{implementation_plan.json,task_metadata.json}'),
+        {
+          persistent: true,
+          ignoreInitial: true,
+          awaitWriteFinish: {
+            stabilityThreshold: 300,
+            pollInterval: 100
+          }
+        }
+      );
+
+      // Invalidate cache on any relevant file event
+      watcher.on('change', () => {
+        this.invalidateTasksCache(projectId);
+      });
+
+      watcher.on('add', () => {
+        this.invalidateTasksCache(projectId);
+      });
+
+      watcher.on('unlink', () => {
+        this.invalidateTasksCache(projectId);
+      });
+
+      watcher.on('error', (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`[ProjectStore] Specs watcher error for project ${projectId}:`, message);
+      });
+
+      this.specsWatchers.set(projectId, watcher);
+    } catch (error) {
+      console.error(`[ProjectStore] Failed to start specs watcher for project ${projectId}:`, error);
+    }
+  }
+
+  /**
+   * Stop watching a project's specs directory
+   */
+  private unwatchSpecsDir(projectId: string): void {
+    const watcher = this.specsWatchers.get(projectId);
+    if (watcher) {
+      watcher.close().catch((error: unknown) => {
+        console.error(`[ProjectStore] Error closing specs watcher for project ${projectId}:`, error);
+      });
+      this.specsWatchers.delete(projectId);
+    }
+  }
+
+  /**
+   * Stop all specs directory watchers.
+   * Called during app shutdown to clean up file handles.
+   */
+  unwatchAllSpecs(): void {
+    for (const [projectId, watcher] of this.specsWatchers) {
+      watcher.close().catch((error: unknown) => {
+        console.error(`[ProjectStore] Error closing specs watcher for project ${projectId}:`, error);
+      });
+    }
+    this.specsWatchers.clear();
+  }
+
+  /**
    * Load tasks from a specs directory (helper method for main project and worktrees)
    */
   private loadTasksFromSpecsDir(
@@ -412,7 +492,8 @@ export class ProjectStore {
     _basePath: string,
     location: 'main' | 'worktree',
     projectId: string,
-    _specsBaseDir: string
+    _specsBaseDir: string,
+    filterSpecIds?: Set<string>
   ): Task[] {
     const tasks: Task[] = [];
     let specDirs: Dirent[] = [];
@@ -427,11 +508,27 @@ export class ProjectStore {
     for (const dir of specDirs) {
       if (!dir.isDirectory()) continue;
       if (dir.name === '.gitkeep') continue;
+      if (filterSpecIds && !filterSpecIds.has(dir.name)) continue;
 
       try {
         const specPath = path.join(specsDir, dir.name);
         const planPath = path.join(specPath, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
         const specFilePath = path.join(specPath, AUTO_BUILD_PATHS.SPEC_FILE);
+
+        // Lazy cache for spec.md content — avoids reading the same file twice
+        // (once for description fallback, once for title extraction)
+        let _specContent: string | undefined;
+        const getSpecContent = (): string | null => {
+          if (_specContent === undefined) {
+            if (existsSync(specFilePath)) {
+              try { _specContent = readFileSync(specFilePath, 'utf-8'); }
+              catch { _specContent = ''; }
+            } else {
+              _specContent = '';
+            }
+          }
+          return _specContent || null;
+        };
 
         // Try to read implementation plan
         let plan: ImplementationPlan | null = null;
@@ -473,18 +570,14 @@ export class ProjectStore {
         }
 
         // PRIORITY 3: Final fallback to spec.md Overview (AI-synthesized content)
-        if (!description && existsSync(specFilePath)) {
-          try {
-            const content = readFileSync(specFilePath, 'utf-8');
-            // Extract full Overview section until next heading or end of file
-            // Use \n#{1,6}\s to match valid markdown headings (# to ######) with required space
-            // This avoids truncating at # in code blocks (e.g., Python comments)
-            const overviewMatch = content.match(/## Overview\s*\n+([\s\S]*?)(?=\n#{1,6}\s|$)/);
-            if (overviewMatch) {
-              description = overviewMatch[1].trim();
-            }
-          } catch {
-            // Ignore read errors
+        const specContent = getSpecContent();
+        if (!description && specContent) {
+          // Extract full Overview section until next heading or end of file
+          // Use \n#{1,6}\s to match valid markdown headings (# to ######) with required space
+          // This avoids truncating at # in code blocks (e.g., Python comments)
+          const overviewMatch = specContent.match(/## Overview\s*\n+([\s\S]*?)(?=\n#{1,6}\s|$)/);
+          if (overviewMatch) {
+            description = overviewMatch[1].trim();
           }
         }
 
@@ -538,19 +631,15 @@ export class ProjectStore {
         // For JSON error tasks, use directory name with marker for i18n suffix
         let title = hasJsonError ? `${dir.name}${JSON_ERROR_TITLE_SUFFIX}` : (plan?.feature || plan?.title || dir.name);
         const looksLikeSpecId = /^\d{3}-/.test(title) && !hasJsonError;
-        if (looksLikeSpecId && existsSync(specFilePath)) {
-          try {
-            const specContent = readFileSync(specFilePath, 'utf-8');
-            // Extract title from first # line, handling patterns like:
-            // "# Quick Spec: Title" -> "Title"
-            // "# Specification: Title" -> "Title"
-            // "# Title" -> "Title"
-            const titleMatch = specContent.match(/^#\s+(?:Quick Spec:|Specification:)?\s*(.+)$/m);
-            if (titleMatch?.[1]) {
-              title = titleMatch[1].trim();
-            }
-          } catch {
-            // Keep the original title on error
+        const specContentForTitle = getSpecContent();
+        if (looksLikeSpecId && specContentForTitle) {
+          // Extract title from first # line, handling patterns like:
+          // "# Quick Spec: Title" -> "Title"
+          // "# Specification: Title" -> "Title"
+          // "# Title" -> "Title"
+          const titleMatch = specContentForTitle.match(/^#\s+(?:Quick Spec:|Specification:)?\s*(.+)$/m);
+          if (titleMatch?.[1]) {
+            title = titleMatch[1].trim();
           }
         }
 

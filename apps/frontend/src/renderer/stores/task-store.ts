@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { arrayMove } from '@dnd-kit/sortable';
 import type { Task, TaskStatus, SubtaskStatus, ImplementationPlan, Subtask, TaskMetadata, ExecutionProgress, ExecutionPhase, ReviewReason, TaskDraft, ImageAttachment, TaskOrderState } from '../../shared/types';
-import { debugLog, debugWarn } from '../../shared/utils/debug-logger';
+import { debugLog, debugWarn, isDebugEnabled } from '../../shared/utils/debug-logger';
 import { useProjectStore } from './project-store';
 
 /** Default max parallel tasks when no project setting is configured */
@@ -199,26 +199,28 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   taskOrder: null,
 
   setTasks: (tasks) => {
-    debugLog('[TaskStore.setTasks] Hydrating tasks:', {
-      count: tasks.length,
-      taskIds: tasks.map(t => ({
-        id: t.id,
-        status: t.status,
-        logCount: t.logs?.length || 0,
-        hasExecutionProgress: !!t.executionProgress,
-        phase: t.executionProgress?.phase
-      }))
-    });
+    if (isDebugEnabled()) {
+      debugLog('[TaskStore.setTasks] Hydrating tasks:', {
+        count: tasks.length,
+        taskIds: tasks.map(t => ({
+          id: t.id,
+          status: t.status,
+          logCount: t.logs?.length || 0,
+          hasExecutionProgress: !!t.executionProgress,
+          phase: t.executionProgress?.phase
+        }))
+      });
 
-    // Log detailed info for each task with logs
-    tasks.forEach(task => {
-      if (task.logs && task.logs.length > 0) {
-        debugLog(`[TaskStore.setTasks] Task ${task.id} has ${task.logs.length} logs:`, {
-          firstLogPreview: task.logs[0]?.substring(0, 100),
-          lastLogPreview: task.logs[task.logs.length - 1]?.substring(0, 100)
-        });
-      }
-    });
+      // Log detailed info for each task with logs
+      tasks.forEach(task => {
+        if (task.logs && task.logs.length > 0) {
+          debugLog(`[TaskStore.setTasks] Task ${task.id} has ${task.logs.length} logs:`, {
+            firstLogPreview: task.logs[0]?.substring(0, 100),
+            lastLogPreview: task.logs[task.logs.length - 1]?.substring(0, 100)
+          });
+        }
+      });
+    }
 
     return set({ tasks });
   },
@@ -283,12 +285,14 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       return;
     }
 
-    debugLog('[updateTaskStatus] START:', {
-      taskId,
-      oldStatus,
-      newStatus: status,
-      allInProgress: state.tasks.filter(t => t.status === 'in_progress' && !t.metadata?.archivedAt).map(t => t.id)
-    });
+    if (isDebugEnabled()) {
+      debugLog('[updateTaskStatus] START:', {
+        taskId,
+        oldStatus,
+        newStatus: status,
+        allInProgress: state.tasks.filter(t => t.status === 'in_progress' && !t.metadata?.archivedAt).map(t => t.id)
+      });
+    }
 
     // Perform the state update
     set((state) => {
@@ -339,13 +343,15 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   updateTaskFromPlan: (taskId, plan) =>
     set((state) => {
       // FIX (PR Review): Gate debug logging to prevent production console clutter
-      debugLog('[updateTaskFromPlan] called with plan:', {
-        taskId,
-        feature: plan.feature,
-        phases: plan.phases?.length || 0,
-        totalSubtasks: plan.phases?.reduce((acc, p) => acc + (p.subtasks?.length || 0), 0) || 0
-        // Note: planData removed to avoid verbose output in logs
-      });
+      if (isDebugEnabled()) {
+        debugLog('[updateTaskFromPlan] called with plan:', {
+          taskId,
+          feature: plan.feature,
+          phases: plan.phases?.length || 0,
+          totalSubtasks: plan.phases?.reduce((acc, p) => acc + (p.subtasks?.length || 0), 0) || 0
+          // Note: planData removed to avoid verbose output in logs
+        });
+      }
 
       const index = findTaskIndex(state.tasks, taskId);
       if (index === -1) {
@@ -387,15 +393,17 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             })
           );
 
-          debugLog('[updateTaskFromPlan] Created subtasks:', {
-            taskId,
-            subtaskCount: subtasks.length,
-            subtasks: subtasks.map(s => ({
-              id: s.id,
-              title: s.title,
-              status: s.status
-            }))
-          });
+          if (isDebugEnabled()) {
+            debugLog('[updateTaskFromPlan] Created subtasks:', {
+              taskId,
+              subtaskCount: subtasks.length,
+              subtasks: subtasks.map(s => ({
+                id: s.id,
+                title: s.title,
+                status: s.status
+              }))
+            });
+          }
 
           // NOTE: We do NOT update status from plan anymore.
           // XState is the source of truth for status - it emits TASK_STATUS_CHANGE.
@@ -701,11 +709,13 @@ export async function loadTasks(projectId: string, options?: { forceRefresh?: bo
     });
 
     if (result.success && result.data) {
-      debugLog('[TaskStore.loadTasks] Tasks loaded successfully:', {
-        count: result.data.length,
-        tasksWithLogs: result.data.filter(t => t.logs && t.logs.length > 0).length,
-        totalLogCount: result.data.reduce((sum, t) => sum + (t.logs?.length || 0), 0)
-      });
+      if (isDebugEnabled()) {
+        debugLog('[TaskStore.loadTasks] Tasks loaded successfully:', {
+          count: result.data.length,
+          tasksWithLogs: result.data.filter(t => t.logs && t.logs.length > 0).length,
+          totalLogCount: result.data.reduce((sum, t) => sum + (t.logs?.length || 0), 0)
+        });
+      }
       store.setTasks(result.data);
     } else {
       debugWarn('[TaskStore.loadTasks] Failed to load tasks:', result.error);
