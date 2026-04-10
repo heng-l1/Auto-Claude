@@ -435,11 +435,11 @@ export function Sidebar({
 
         {/* Bottom section with Settings and New Task */}
         <div className={cn("space-y-3 transition-all duration-300", isCollapsed ? "p-2" : "p-4")}>
-          {/* Claude Code Status Badge */}
-          {!isCollapsed && <ClaudeCodeStatusBadge />}
-
           {/* Activity Center */}
           <ActivityCenter onViewChange={(view) => onViewChange?.(view)} onNavigateToProject={onNavigateToProject} isCollapsed={isCollapsed} />
+
+          {/* Claude Code Status Badge */}
+          {!isCollapsed && <ClaudeCodeStatusBadge />}
 
           {/* Settings row */}
           <div className={cn(
