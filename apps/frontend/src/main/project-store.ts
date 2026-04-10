@@ -669,8 +669,8 @@ export class ProjectStore {
           stagedAt,
           location, // Add location metadata (main vs worktree)
           specsPath: specPath, // Add full path to specs directory
-          createdAt: new Date(plan?.created_at || Date.now()),
-          updatedAt: new Date(plan?.updated_at || Date.now())
+          createdAt: new Date(plan?.created_at || plan?.updated_at || Date.now()),
+          updatedAt: new Date(plan?.updated_at || plan?.created_at || Date.now())
         });
       } catch (error) {
         // Log error but continue processing other specs
