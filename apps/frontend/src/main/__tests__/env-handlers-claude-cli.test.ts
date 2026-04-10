@@ -67,6 +67,7 @@ vi.mock('child_process', () => {
 
   return {
     spawn: spawnMock,
+    exec: vi.fn(),
     execFileSync: vi.fn(),
     execFile: mockExecFile
   };
@@ -78,6 +79,7 @@ vi.mock('electron', () => ({
       if (name === 'userData') return path.join('/tmp', 'userData');
       return '/tmp';
     }),
+    on: vi.fn(),
   },
   ipcMain: mockIpcMain,
 }));

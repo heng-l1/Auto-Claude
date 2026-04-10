@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Github, RefreshCw, KeyRound, Info, CheckCircle2 } from 'lucide-react';
+import { Github, RefreshCw, KeyRound, Info, CheckCircle2, ScanSearch } from 'lucide-react';
 import { CollapsibleSection } from './CollapsibleSection';
 import { StatusBadge } from './StatusBadge';
 import { PasswordInput } from './PasswordInput';
@@ -212,6 +212,23 @@ export function GitHubIntegrationSection({
             <Switch
               checked={envConfig.githubAutoSync || false}
               onCheckedChange={(checked) => onUpdateConfig({ githubAutoSync: checked })}
+            />
+          </div>
+
+          {/* Auto PR Review Toggle */}
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <ScanSearch className="h-4 w-4 text-info" />
+                <Label className="font-normal text-foreground">Auto PR Review</Label>
+              </div>
+              <p className="text-xs text-muted-foreground pl-6">
+                Automatically review pull requests when new commits are pushed
+              </p>
+            </div>
+            <Switch
+              checked={envConfig.githubAutoPRReview || false}
+              onCheckedChange={(checked) => onUpdateConfig({ githubAutoPRReview: checked })}
             />
           </div>
         </>

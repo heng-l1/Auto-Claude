@@ -11,6 +11,8 @@ import { parseEnvFile } from './utils';
 import { getClaudeCliInvocation, getClaudeCliInvocationAsync } from '../claude-cli-utils';
 import { debugError } from '../../shared/utils/debug-logger';
 import { getSpawnOptions, getSpawnCommand } from '../env-utils';
+import { AutoPRReviewService } from '../services/auto-pr-review-service';
+import { getGitHubTokenForSubprocess } from './github/utils';
 
 // GitLab environment variable keys
 const GITLAB_ENV_KEYS = {
@@ -70,7 +72,7 @@ async function resolveClaudeCliInvocationAsync(): Promise<ResolvedClaudeCliInvoc
  * Register all env-related IPC handlers
  */
 export function registerEnvHandlers(
-  _getMainWindow: () => BrowserWindow | null
+  getMainWindow: () => BrowserWindow | null
 ): void {
   // ============================================
   // Environment Configuration Operations
@@ -117,6 +119,9 @@ export function registerEnvHandlers(
     }
     if (config.githubAutoSync !== undefined) {
       existingVars['GITHUB_AUTO_SYNC'] = config.githubAutoSync ? 'true' : 'false';
+    }
+    if (config.githubAutoPRReview !== undefined) {
+      existingVars['GITHUB_AUTO_PR_REVIEW'] = config.githubAutoPRReview ? 'true' : 'false';
     }
     // GitLab Integration
     if (config.gitlabEnabled !== undefined) {
@@ -270,6 +275,7 @@ ${existingVars['LINEAR_REALTIME_SYNC'] !== undefined ? `LINEAR_REALTIME_SYNC=${e
 ${existingVars['GITHUB_TOKEN'] ? `GITHUB_TOKEN=${existingVars['GITHUB_TOKEN']}` : '# GITHUB_TOKEN='}
 ${existingVars['GITHUB_REPO'] ? `GITHUB_REPO=${existingVars['GITHUB_REPO']}` : '# GITHUB_REPO=owner/repo'}
 ${existingVars['GITHUB_AUTO_SYNC'] !== undefined ? `GITHUB_AUTO_SYNC=${existingVars['GITHUB_AUTO_SYNC']}` : '# GITHUB_AUTO_SYNC=false'}
+${existingVars['GITHUB_AUTO_PR_REVIEW'] !== undefined ? `GITHUB_AUTO_PR_REVIEW=${existingVars['GITHUB_AUTO_PR_REVIEW']}` : '# GITHUB_AUTO_PR_REVIEW=false'}
 
 # =============================================================================
 # GITLAB INTEGRATION (OPTIONAL)
@@ -450,6 +456,9 @@ ${existingVars['GRAPHITI_DB_PATH'] ? `GRAPHITI_DB_PATH=${existingVars['GRAPHITI_
       }
       if (vars['GITHUB_AUTO_SYNC']?.toLowerCase() === 'true') {
         config.githubAutoSync = true;
+      }
+      if (vars['GITHUB_AUTO_PR_REVIEW']?.toLowerCase() === 'true') {
+        config.githubAutoPRReview = true;
       }
 
       // GitLab config
@@ -637,6 +646,30 @@ ${existingVars['GRAPHITI_DB_PATH'] ? `GRAPHITI_DB_PATH=${existingVars['GRAPHITI_
         // Write to file
         writeFileSync(envPath, newContent, 'utf-8');
 
+        // Wire AutoPRReviewService start/stop based on githubAutoPRReview config
+        if (config.githubAutoPRReview !== undefined) {
+          const autoReviewService = AutoPRReviewService.getInstance();
+
+          if (config.githubAutoPRReview) {
+            // Enable: resolve fresh token and repo, then start polling
+            try {
+              const token = await getGitHubTokenForSubprocess();
+              const finalVars = parseEnvFile(newContent);
+              const repo = config.githubRepo || finalVars['GITHUB_REPO'];
+
+              if (token && repo) {
+                autoReviewService.setMainWindowGetter(getMainWindow);
+                autoReviewService.enableForProject(projectId, project, { token, repo });
+              }
+            } catch (err) {
+              debugError('[ENV_UPDATE] Failed to enable auto PR review:', err);
+            }
+          } else {
+            // Disable: stop polling for this project
+            autoReviewService.disableForProject(projectId);
+          }
+        }
+
         return { success: true };
       } catch (error) {
         return {
@@ -797,5 +830,14 @@ ${existingVars['GRAPHITI_DB_PATH'] ? `GRAPHITI_DB_PATH=${existingVars['GRAPHITI_
       }
     }
   );
+
+  // ============================================
+  // App Shutdown Cleanup
+  // ============================================
+
+  // Stop all AutoPRReviewService polling on app quit
+  app.on('before-quit', () => {
+    AutoPRReviewService.getInstance().stopAll();
+  });
 
 }

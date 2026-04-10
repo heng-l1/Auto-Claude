@@ -5,5 +5,13 @@
       "description": "Ajoutez des noms de processus pour les wrappers SSH ou outils distants à détecter comme sessions distantes (séparés par des virgules)",
       "placeholder": "ex. autossh, sshpass"
     }
+  },
+  "projectSections": {
+    "github": {
+      "autoPRReview": {
+        "label": "Revue auto des PR",
+        "description": "Examiner automatiquement les nouvelles pull requests lorsqu'elles sont prêtes"
+      }
+    }
   }
 }

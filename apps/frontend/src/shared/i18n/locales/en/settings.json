@@ -383,6 +383,10 @@
         "placeholder": "auto-claude (default)",
         "placeholderAuto": "{{username}} (auto-detected)",
         "help": "Tasks will be created on branches like {{prefix}}/task-name"
+      },
+      "autoPRReview": {
+        "label": "Auto PR Review",
+        "description": "Automatically review new pull requests when they are ready"
       }
     },
     "gitlab": {

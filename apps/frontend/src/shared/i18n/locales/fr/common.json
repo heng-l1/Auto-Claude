@@ -35,6 +35,15 @@
     "draftSaved": "Brouillon enregistré",
     "replyPosted": "Réponse publiée",
     "replyError": "Échec de la publication de la réponse",
-    "outdatedThread": "Obsolète"
+    "outdatedThread": "Obsolète",
+    "approve": "Approuver",
+    "approveWithSuggestions": "Approuver avec {{count}} suggestions",
+    "customComment": "Commentaire personnalisé",
+    "approveWithComment": "Approuver avec commentaire",
+    "postComment": "Publier le commentaire",
+    "commentPlaceholder": "Ajouter un commentaire...",
+    "autoApprovePR": "Approuver la PR",
+    "postingApproval": "Approbation en cours...",
+    "suggestions": "avec {{count}} suggestions"
   }
 }

@@ -127,6 +127,7 @@ vi.mock("electron", () => {
       getAppPath: vi.fn(() => TEST_DIR),
       getVersion: vi.fn(() => "0.1.0"),
       isPackaged: false,
+      on: vi.fn(),
     },
     ipcMain: mockIpcMain,
     dialog: {

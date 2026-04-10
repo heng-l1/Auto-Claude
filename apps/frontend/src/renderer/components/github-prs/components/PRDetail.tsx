@@ -64,7 +64,7 @@ interface PRDetailProps {
   onRunFollowupReview: () => void;
   onCheckNewCommits: () => Promise<NewCommitsCheck>;
   onCancelReview: () => void;
-  onPostReview: (selectedFindingIds?: string[], options?: { forceApprove?: boolean }) => Promise<boolean>;
+  onPostReview: (selectedFindingIds?: string[], options?: { forceApprove?: boolean; customComment?: string }) => Promise<boolean>;
   onPostComment: (body: string) => Promise<boolean>;
   onMergePR: (mergeMethod?: 'merge' | 'squash' | 'rebase') => void;
   onAssignPR: (username: string) => void;
@@ -186,6 +186,8 @@ export function PRDetail({
   const [blockedStatusPosted, setBlockedStatusPosted] = useState(false);
   const [blockedStatusError, setBlockedStatusError] = useState<string | null>(null);
   const [isMerging, setIsMerging] = useState(false);
+  const [customComment, setCustomComment] = useState('');
+  const [isPostingComment, setIsPostingComment] = useState(false);
   // Initialize with store value, then sync and update via local checks
   const [newCommitsCheck, setNewCommitsCheck] = useState<NewCommitsCheck | null>(initialNewCommitsCheck ?? null);
   const [analysisExpanded, setAnalysisExpanded] = useState(true);
@@ -688,6 +690,9 @@ export function PRDetail({
     setBlockedStatusPosted(false);
     setBlockedStatusError(null);
     setIsPostingBlockedStatus(false);
+    // Reset custom comment state
+    setCustomComment('');
+    setIsPostingComment(false);
     // Reset branch update state as well
     setBranchUpdateError(null);
     setBranchUpdateSuccess(false);
@@ -935,17 +940,6 @@ export function PRDetail({
     );
   }, [reviewResult]);
 
-  // Check if there are any findings at all (for auto-approve button label)
-  const hasFindings = useMemo(() => {
-    return reviewResult?.findings && reviewResult.findings.length > 0;
-  }, [reviewResult]);
-
-  // Get LOW severity findings for auto-posting
-  const lowSeverityFindings = useMemo(() => {
-    if (!reviewResult?.findings) return [];
-    return reviewResult.findings.filter(f => f.severity === 'low');
-  }, [reviewResult]);
-
   // Compute the overall PR review status for visual display
   type PRStatus = 'not_reviewed' | 'reviewed_pending_post' | 'waiting_for_changes' | 'ready_to_merge' | 'needs_attention' | 'ready_for_followup' | 'followup_issues_remain' | 'reviewing';
   const prStatus: { status: PRStatus; label: string; description: string; icon: React.ReactNode; color: string } = useMemo(() => {
@@ -1156,19 +1150,43 @@ export function PRDetail({
 
     setIsPosting(true);
     try {
-      // Post approval with suggestions in a single review comment
-      // This uses forceApprove to set APPROVE status even with LOW findings
-      const lowFindingIds = lowSeverityFindings.map(f => f.id);
+      // Use currently selected findings for approval
+      // This uses forceApprove to set APPROVE status even with selected findings
+      const findingIds = Array.from(selectedFindingIds);
 
-      const success = await onPostReview(lowFindingIds, { forceApprove: true });
-      if (success && lowFindingIds.length > 0 && pr.number === currentPr) {
-        // Mark findings as posted locally only if PR hasn't changed
-        setPostedFindingIds(prev => new Set([...prev, ...lowFindingIds]));
+      const success = await onPostReview(findingIds.length > 0 ? findingIds : [], {
+        forceApprove: true,
+        ...(customComment.trim() ? { customComment: customComment.trim() } : {}),
+      });
+      if (success && pr.number === currentPr) {
+        if (findingIds.length > 0) {
+          // Mark findings as posted locally only if PR hasn't changed
+          setPostedFindingIds(prev => new Set([...prev, ...findingIds]));
+        }
+        setCustomComment(''); // Clear custom comment on success
       }
     } finally {
       // Clear loading state if PR hasn't changed
       if (pr.number === currentPr) {
         setIsPosting(false);
+      }
+    }
+  };
+
+  // Post standalone comment without changing PR approval status
+  const handlePostStandaloneComment = async () => {
+    if (!customComment.trim()) return;
+
+    const currentPr = pr.number;
+    setIsPostingComment(true);
+    try {
+      const success = await onPostComment(customComment.trim());
+      if (success && pr.number === currentPr) {
+        setCustomComment('');
+      }
+    } finally {
+      if (pr.number === currentPr) {
+        setIsPostingComment(false);
       }
     }
   };
@@ -1480,12 +1498,9 @@ ${t('prReview.blockedStatusMessageFooter')}`;
                   ) : (
                     <>
                       <CheckCheck className="h-4 w-4 mr-2" />
-                      {t('prReview.autoApprovePR')}
-                      {hasFindings && lowSeverityFindings.length > 0 && (
-                        <span className="ml-1 text-xs opacity-80">
-                          {t('prReview.suggestions', { count: lowSeverityFindings.length })}
-                        </span>
-                      )}
+                      {selectedFindingIds.size === 0
+                        ? t('prReview.approve')
+                        : t('prReview.approveWithSuggestions', { count: selectedFindingIds.size })}
                     </>
                   )}
                 </Button>
@@ -1523,6 +1538,48 @@ ${t('prReview.blockedStatusMessageFooter')}`;
                   <span>{t('prReview.discussInTerminal')}</span>
                 </Button>
              )}
+
+             {/* Custom Comment Section */}
+             <div className="w-full space-y-2">
+               <Textarea
+                 value={customComment}
+                 onChange={(e) => setCustomComment(e.target.value)}
+                 placeholder={t('prReview.commentPlaceholder')}
+                 className="min-h-[80px] resize-y"
+                 rows={3}
+               />
+               {customComment.trim() && (
+                 <div className="flex gap-2">
+                   <Button
+                     onClick={handleAutoApprove}
+                     disabled={isPosting || isPostingCleanReview || isPostingComment}
+                     variant="default"
+                     size="sm"
+                     className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                   >
+                     {isPosting ? (
+                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                     ) : (
+                       <CheckCheck className="h-4 w-4 mr-2" />
+                     )}
+                     {t('prReview.approveWithComment')}
+                   </Button>
+                   <Button
+                     onClick={handlePostStandaloneComment}
+                     disabled={isPostingComment || isPosting}
+                     variant="outline"
+                     size="sm"
+                   >
+                     {isPostingComment ? (
+                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                     ) : (
+                       <Send className="h-4 w-4 mr-2" />
+                     )}
+                     {t('prReview.postComment')}
+                   </Button>
+                 </div>
+               )}
+             </div>
 
              {postSuccess && (
                <div className="ml-auto flex items-center gap-2 text-emerald-600 text-sm font-medium animate-pulse">

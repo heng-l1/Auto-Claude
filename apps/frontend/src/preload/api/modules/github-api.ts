@@ -284,7 +284,7 @@ export interface GitHubAPI {
   getPR: (projectId: string, prNumber: number) => Promise<PRData | null>;
   runPRReview: (projectId: string, prNumber: number, notes?: string) => void;
   cancelPRReview: (projectId: string, prNumber: number) => Promise<boolean>;
-  postPRReview: (projectId: string, prNumber: number, selectedFindingIds?: string[], options?: { forceApprove?: boolean }) => Promise<boolean>;
+  postPRReview: (projectId: string, prNumber: number, selectedFindingIds?: string[], options?: { forceApprove?: boolean; customComment?: string }) => Promise<boolean>;
   deletePRReview: (projectId: string, prNumber: number) => Promise<boolean>;
   postPRComment: (projectId: string, prNumber: number, body: string) => Promise<boolean>;
   mergePR: (projectId: string, prNumber: number, mergeMethod?: 'merge' | 'squash' | 'rebase') => Promise<boolean>;
@@ -827,7 +827,7 @@ export const createGitHubAPI = (): GitHubAPI => ({
   cancelPRReview: (projectId: string, prNumber: number): Promise<boolean> =>
     invokeIpc(IPC_CHANNELS.GITHUB_PR_REVIEW_CANCEL, projectId, prNumber),
 
-  postPRReview: (projectId: string, prNumber: number, selectedFindingIds?: string[], options?: { forceApprove?: boolean }): Promise<boolean> =>
+  postPRReview: (projectId: string, prNumber: number, selectedFindingIds?: string[], options?: { forceApprove?: boolean; customComment?: string }): Promise<boolean> =>
     invokeIpc(IPC_CHANNELS.GITHUB_PR_POST_REVIEW, projectId, prNumber, selectedFindingIds, options),
 
   deletePRReview: (projectId: string, prNumber: number): Promise<boolean> =>

@@ -319,6 +319,7 @@ export interface ProjectEnvConfig {
   githubToken?: string;
   githubRepo?: string; // Format: owner/repo
   githubAutoSync?: boolean; // Auto-sync issues on project load
+  githubAutoPRReview?: boolean; // Enable automatic PR review on new commits
   githubAuthMethod?: 'oauth' | 'pat'; // How the token was obtained
 
   // GitLab Integration
