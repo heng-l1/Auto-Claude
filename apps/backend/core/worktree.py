@@ -31,7 +31,6 @@ from typing import TypedDict, TypeVar
 from core.gh_executable import get_gh_executable, invalidate_gh_cache
 from core.git_executable import get_branch_prefix, get_git_executable, get_isolated_git_env, run_git
 from core.git_provider import detect_git_provider
-from core.workspace.git_utils import has_uncommitted_changes
 from core.glab_executable import get_glab_executable, invalidate_glab_cache
 from core.model_config import get_utility_model_config
 from debug import debug_warning
@@ -953,7 +952,9 @@ class WorktreeManager:
             return False
 
         # Warn if project directory has uncommitted changes
-        if has_uncommitted_changes(self.project_dir):
+        # Lazy import to avoid circular import: core.worktree -> core.workspace -> worktree
+        from core.workspace.git_utils import has_uncommitted_changes as _has_uncommitted
+        if _has_uncommitted(self.project_dir):
             debug_warning(
                 "worktree",
                 "Warning: uncommitted changes detected in project directory. "
