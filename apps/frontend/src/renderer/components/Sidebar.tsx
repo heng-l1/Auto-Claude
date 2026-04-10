@@ -441,7 +441,7 @@ export function Sidebar({
           {!isCollapsed && <ClaudeCodeStatusBadge />}
 
           {/* Activity Center */}
-          <ActivityCenter onViewChange={(view) => onViewChange?.(view)} onNavigateToProject={onNavigateToProject} isCollapsed={isCollapsed} />
+          <ActivityCenter onViewChange={(view) => onViewChange?.(view)} onNavigateToProject={onNavigateToProject} onSelectTerminal={onSelectTerminal} isCollapsed={isCollapsed} />
 
           {/* Settings row */}
           <div className={cn(
