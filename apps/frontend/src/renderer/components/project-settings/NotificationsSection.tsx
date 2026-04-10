@@ -55,6 +55,20 @@ export function NotificationsSection({ settings, onUpdateSettings }: Notificatio
           />
         </div>
         <div className="flex items-center justify-between">
+          <Label className="font-normal text-foreground">On Claude Session Complete</Label>
+          <Switch
+            checked={settings.notifications.onClaudeSessionComplete}
+            onCheckedChange={(checked) =>
+              onUpdateSettings({
+                notifications: {
+                  ...settings.notifications,
+                  onClaudeSessionComplete: checked
+                }
+              })
+            }
+          />
+        </div>
+        <div className="flex items-center justify-between">
           <Label className="font-normal text-foreground">Sound</Label>
           <Switch
             checked={settings.notifications.sound}
