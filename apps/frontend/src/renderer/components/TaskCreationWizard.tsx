@@ -194,13 +194,21 @@ export function TaskCreationWizard({
       } else {
         // No draft - reset to clean state for new task creation
         // This ensures no stale data from previous task creation persists
+        const settingsProfileId = settings.selectedAgentProfile || 'auto';
         setTitle('');
         setDescription(initialDescription ? stripAnsiCodes(initialDescription) : '');
         setCategory('');
         setPriority('');
-        setComplexity('');
+        // Sync complexity with settings profile so backend receives correct --complexity
+        if (settingsProfileId === 'complex') {
+          setComplexity('complex');
+        } else if (settingsProfileId === 'quick') {
+          setComplexity('trivial');
+        } else {
+          setComplexity('');
+        }
         setImpact('');
-        setProfileId(settings.selectedAgentProfile || 'auto');
+        setProfileId(settingsProfileId);
         setModel(selectedProfile.model);
         setThinkingLevel(selectedProfile.thinkingLevel);
         setPhaseModels(settings.customPhaseModels || selectedProfile.phaseModels || DEFAULT_PHASE_MODELS);
@@ -452,8 +460,9 @@ export function TaskCreationWizard({
       if (impact) metadata.impact = impact;
       if (model) metadata.model = model;
       if (thinkingLevel) metadata.thinkingLevel = thinkingLevel;
+      metadata.profileId = profileId;
       if (phaseModels && phaseThinking) {
-        metadata.isAutoProfile = true;
+        metadata.isAutoProfile = profileId === 'auto';
         metadata.phaseModels = phaseModels;
         metadata.phaseThinking = phaseThinking;
       }
@@ -496,13 +505,21 @@ export function TaskCreationWizard({
   };
 
   const resetForm = () => {
+    const settingsProfileId = settings.selectedAgentProfile || 'auto';
     setTitle('');
     setDescription('');
     setCategory('');
     setPriority('');
-    setComplexity('');
+    // Sync complexity with settings profile
+    if (settingsProfileId === 'complex') {
+      setComplexity('complex');
+    } else if (settingsProfileId === 'quick') {
+      setComplexity('trivial');
+    } else {
+      setComplexity('');
+    }
     setImpact('');
-    setProfileId(settings.selectedAgentProfile || 'auto');
+    setProfileId(settingsProfileId);
     setModel(selectedProfile.model);
     setThinkingLevel(selectedProfile.thinkingLevel);
     setPhaseModels(settings.customPhaseModels || selectedProfile.phaseModels || DEFAULT_PHASE_MODELS);

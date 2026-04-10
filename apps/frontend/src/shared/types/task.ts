@@ -235,6 +235,7 @@ export interface TaskMetadata {
   thinkingLevel?: ThinkingLevel;  // Thinking budget level (low, medium, high)
   // Auto profile - per-phase model configuration
   isAutoProfile?: boolean;  // True when using Auto (Optimized) profile
+  profileId?: string;  // Agent profile ID ('auto', 'complex', 'balanced', 'quick', 'custom')
   phaseModels?: PhaseModelConfig;  // Per-phase model configuration
   phaseThinking?: PhaseThinkingConfig;  // Per-phase thinking configuration
   phaseUltrathink?: PhaseUltrathinkConfig;  // Per-phase ultrathink override (128K tokens, max effort)

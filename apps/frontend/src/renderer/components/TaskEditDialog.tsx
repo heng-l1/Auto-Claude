@@ -90,6 +90,11 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
 
   // Agent profile / model configuration
   const [profileId, setProfileId] = useState<string>(() => {
+    // Use stored profileId if available (new tasks store this)
+    if (task.metadata?.profileId) {
+      return task.metadata.profileId;
+    }
+    // Legacy fallback: tasks created before profileId was stored
     if (task.metadata?.isAutoProfile) {
       return 'auto';
     }
@@ -97,7 +102,7 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
     const taskThinking = task.metadata?.thinkingLevel;
     if (taskModel && taskThinking) {
       const matchingProfile = DEFAULT_AGENT_PROFILES.find(
-        p => p.model === taskModel && p.thinkingLevel === taskThinking && !p.isAutoProfile
+        p => p.model === taskModel && p.thinkingLevel === taskThinking
       );
       return matchingProfile?.id || 'custom';
     }
@@ -153,10 +158,12 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
       // Reset model configuration
       const taskModel = task.metadata?.model;
       const taskThinking = task.metadata?.thinkingLevel;
+      const storedProfileId = task.metadata?.profileId;
       const isAutoProfile = task.metadata?.isAutoProfile;
 
-      if (isAutoProfile) {
-        setProfileId('auto');
+      if (storedProfileId || isAutoProfile) {
+        // Use stored profileId, or 'auto' as legacy fallback for old tasks
+        setProfileId(storedProfileId || 'auto');
         setModel(taskModel || selectedProfile.model);
         setThinkingLevel(taskThinking || selectedProfile.thinkingLevel);
         setPhaseModels(task.metadata?.phaseModels || DEFAULT_PHASE_MODELS);
@@ -164,7 +171,7 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
         setPhaseUltrathink(task.metadata?.phaseUltrathink || settings.customPhaseUltrathink);
       } else if (taskModel && taskThinking) {
         const matchingProfile = DEFAULT_AGENT_PROFILES.find(
-          p => p.model === taskModel && p.thinkingLevel === taskThinking && !p.isAutoProfile
+          p => p.model === taskModel && p.thinkingLevel === taskThinking
         );
         setProfileId(matchingProfile?.id || 'custom');
         setModel(taskModel);
@@ -252,8 +259,9 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
     if (impact) metadataUpdates.impact = impact;
     if (model) metadataUpdates.model = model as ModelType;
     if (thinkingLevel) metadataUpdates.thinkingLevel = thinkingLevel as ThinkingLevel;
+    metadataUpdates.profileId = profileId;
     if (phaseModels && phaseThinking) {
-      metadataUpdates.isAutoProfile = true;
+      metadataUpdates.isAutoProfile = profileId === 'auto';
       metadataUpdates.phaseModels = phaseModels;
       metadataUpdates.phaseThinking = phaseThinking;
     }
