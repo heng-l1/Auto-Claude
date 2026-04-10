@@ -53,6 +53,7 @@ vi.mock("../notification-service", () => ({
     initialize: vi.fn(),
     notifyReviewNeeded: vi.fn(),
     notifyTaskFailed: vi.fn(),
+    notifyClaudeSessionComplete: vi.fn(),
   },
 }));
 
