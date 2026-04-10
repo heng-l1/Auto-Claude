@@ -531,6 +531,49 @@ describe('ProjectStore', () => {
 
       expect(tasks[0].status).toBe('done');
     });
+
+    it('should maintain createdAt <= updatedAt when plan has updated_at but no created_at', async () => {
+      const specsDir = path.join(TEST_PROJECT_PATH, '.auto-claude', 'specs', '007-no-created-at');
+      mkdirSync(specsDir, { recursive: true });
+
+      const plan = {
+        feature: 'Missing CreatedAt Feature',
+        workflow_type: 'feature',
+        services_involved: [],
+        status: 'in_progress',
+        phases: [
+          {
+            phase: 1,
+            name: 'Phase 1',
+            type: 'implementation',
+            subtasks: [
+              { id: 'subtask-1', description: 'Subtask 1', status: 'pending' }
+            ]
+          }
+        ],
+        final_acceptance: [],
+        // No created_at — only updated_at is present
+        updated_at: '2024-06-15T12:00:00Z',
+        spec_file: 'spec.md'
+      };
+
+      writeFileSync(
+        path.join(specsDir, 'implementation_plan.json'),
+        JSON.stringify(plan)
+      );
+
+      const { ProjectStore } = await import('../project-store');
+      const store = new ProjectStore();
+
+      const project = store.addProject(TEST_PROJECT_PATH);
+      const tasks = store.getTasks(project.id);
+
+      expect(tasks).toHaveLength(1);
+      expect(tasks[0].createdAt).toBeInstanceOf(Date);
+      expect(tasks[0].updatedAt).toBeInstanceOf(Date);
+      // The key invariant: createdAt must never be after updatedAt
+      expect(tasks[0].createdAt.getTime()).toBeLessThanOrEqual(tasks[0].updatedAt.getTime());
+    });
   });
 
   describe('persistence', () => {
