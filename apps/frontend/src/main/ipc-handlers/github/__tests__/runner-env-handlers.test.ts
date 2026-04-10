@@ -139,6 +139,7 @@ function createProject(): Project {
         onTaskFailed: false,
         onReviewNeeded: false,
         onPRReviewComplete: false,
+        onClaudeSessionComplete: false,
         sound: false,
       },
       graphitiMcpEnabled: false,

@@ -6,6 +6,7 @@ import {
   XCircle,
   Eye,
   GitPullRequest,
+  TerminalSquare,
   Inbox
 } from 'lucide-react';
 import { Button } from './ui/button';
@@ -34,6 +35,7 @@ import type { ActivityNotificationType } from '../../shared/types';
 interface ActivityCenterProps {
   onViewChange: (view: SidebarView) => void;
   onNavigateToProject?: (projectId: string, view: SidebarView) => void;
+  onSelectTerminal?: (terminalId: string) => void;
   isCollapsed: boolean;
 }
 
@@ -41,14 +43,16 @@ const notificationIcons: Record<ActivityNotificationType, React.ElementType> = {
   'task-complete': CheckCircle2,
   'task-failed': XCircle,
   'review-needed': Eye,
-  'pr-review-complete': GitPullRequest
+  'pr-review-complete': GitPullRequest,
+  'claude-session-complete': TerminalSquare
 };
 
 const notificationIconColors: Record<ActivityNotificationType, string> = {
   'task-complete': 'text-green-500',
   'task-failed': 'text-red-500',
   'review-needed': 'text-yellow-500',
-  'pr-review-complete': 'text-blue-500'
+  'pr-review-complete': 'text-blue-500',
+  'claude-session-complete': 'text-purple-500'
 };
 
 function getNavigationTarget(type: ActivityNotificationType): SidebarView {
@@ -59,10 +63,12 @@ function getNavigationTarget(type: ActivityNotificationType): SidebarView {
       return 'kanban';
     case 'pr-review-complete':
       return 'github-prs';
+    case 'claude-session-complete':
+      return 'terminals';
   }
 }
 
-export function ActivityCenter({ onViewChange, onNavigateToProject, isCollapsed }: ActivityCenterProps) {
+export function ActivityCenter({ onViewChange, onNavigateToProject, onSelectTerminal, isCollapsed }: ActivityCenterProps) {
   const { t } = useTranslation(['common']);
   const [open, setOpen] = useState(false);
 
@@ -77,7 +83,7 @@ export function ActivityCenter({ onViewChange, onNavigateToProject, isCollapsed 
     return projects.find((p) => p.id === projectId)?.name;
   };
 
-  const handleNotificationClick = (id: string, type: ActivityNotificationType, projectId?: string) => {
+  const handleNotificationClick = (id: string, type: ActivityNotificationType, projectId?: string, terminalId?: string) => {
     markNotificationRead(id);
     const targetView = getNavigationTarget(type);
 
@@ -87,6 +93,12 @@ export function ActivityCenter({ onViewChange, onNavigateToProject, isCollapsed 
     } else {
       onViewChange(targetView);
     }
+
+    // Focus the specific terminal when clicking a claude-session-complete notification
+    if (type === 'claude-session-complete' && terminalId && onSelectTerminal) {
+      onSelectTerminal(terminalId);
+    }
+
     setOpen(false);
   };
 
@@ -194,7 +206,7 @@ export function ActivityCenter({ onViewChange, onNavigateToProject, isCollapsed 
                       !notification.isRead && 'bg-accent/50'
                     )}
                     onClick={() =>
-                      handleNotificationClick(notification.id, notification.type, notification.projectId)
+                      handleNotificationClick(notification.id, notification.type, notification.projectId, notification.terminalId)
                     }
                   >
                     <Icon className={cn('mt-0.5 h-4 w-4 shrink-0', iconColor)} />

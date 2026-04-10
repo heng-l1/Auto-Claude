@@ -10,6 +10,7 @@
     "taskFailed": "Tâche échouée",
     "reviewNeeded": "Révision nécessaire",
     "prReviewComplete": "Revue PR terminée",
+    "claudeSessionComplete": "Session Claude terminée",
     "viewAll": "Tout voir",
     "justNow": "À l'instant",
     "delete": "Supprimer"

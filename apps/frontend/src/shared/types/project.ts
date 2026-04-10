@@ -42,6 +42,8 @@ export interface NotificationSettings {
   onReviewNeeded: boolean;
   /** Desktop notification when a PR review completes */
   onPRReviewComplete: boolean;
+  /** Desktop notification when a Claude terminal session completes */
+  onClaudeSessionComplete: boolean;
   sound: boolean;
 }
 

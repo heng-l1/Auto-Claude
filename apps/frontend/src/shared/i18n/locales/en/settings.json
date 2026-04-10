@@ -337,6 +337,8 @@
     "onReviewNeededDescription": "Notify when QA requires your review",
     "onPRReviewComplete": "On PR Review Complete",
     "onPRReviewCompleteDescription": "Notify when a PR review finishes and is ready to post",
+    "onClaudeSessionComplete": "On Claude Session Complete",
+    "onClaudeSessionCompleteDescription": "Notify when a Claude terminal session finishes",
     "sound": "Sound",
     "soundDescription": "Play sound with notifications"
   },

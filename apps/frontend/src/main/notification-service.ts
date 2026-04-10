@@ -5,7 +5,7 @@ import { notificationStore } from './notification-store';
 import { safeSendToRenderer } from './ipc-handlers/utils';
 import { IPC_CHANNELS } from '../shared/constants';
 
-export type NotificationType = 'task-complete' | 'task-failed' | 'review-needed' | 'pr-review-complete';
+export type NotificationType = 'task-complete' | 'task-failed' | 'review-needed' | 'pr-review-complete' | 'claude-session-complete';
 
 interface NotificationOptions {
   title: string;
@@ -13,6 +13,7 @@ interface NotificationOptions {
   projectId?: string;
   taskId?: string;
   prNumber?: number;
+  terminalId?: string;
 }
 
 /**
@@ -65,6 +66,18 @@ class NotificationService {
   }
 
   /**
+   * Send a notification for Claude terminal session completion
+   */
+  notifyClaudeSessionComplete(terminalName: string, projectId: string, terminalId: string): void {
+    this.sendNotification('claude-session-complete', {
+      title: 'Claude Session Complete',
+      body: `"${terminalName}" has finished its session`,
+      projectId,
+      terminalId
+    });
+  }
+
+  /**
    * Send a notification for PR review completion
    */
   notifyPRReviewComplete(prNumber: number, projectId: string): void {
@@ -84,7 +97,8 @@ class NotificationService {
     const addedNotification = notificationStore.addNotification(type, options.title, options.body, {
       projectId: options.projectId,
       taskId: options.taskId,
-      prNumber: options.prNumber
+      prNumber: options.prNumber,
+      terminalId: options.terminalId
     });
 
     // Push activity notification to renderer
@@ -144,6 +158,7 @@ class NotificationService {
     onTaskFailed: boolean;
     onReviewNeeded: boolean;
     onPRReviewComplete: boolean;
+    onClaudeSessionComplete: boolean;
     sound: boolean;
   } {
     // Try to get project-specific settings
@@ -161,6 +176,7 @@ class NotificationService {
       onTaskFailed: true,
       onReviewNeeded: true,
       onPRReviewComplete: true,
+      onClaudeSessionComplete: true,
       sound: false
     };
   }
@@ -175,6 +191,7 @@ class NotificationService {
       onTaskFailed: boolean;
       onReviewNeeded: boolean;
       onPRReviewComplete: boolean;
+      onClaudeSessionComplete: boolean;
       sound: boolean;
     }
   ): boolean {
@@ -187,6 +204,8 @@ class NotificationService {
         return settings.onReviewNeeded;
       case 'pr-review-complete':
         return settings.onPRReviewComplete;
+      case 'claude-session-complete':
+        return settings.onClaudeSessionComplete;
       default:
         return false;
     }

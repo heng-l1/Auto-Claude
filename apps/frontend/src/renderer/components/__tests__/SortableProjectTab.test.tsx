@@ -24,6 +24,7 @@ function createTestProject(overrides: Partial<Project> = {}): Project {
         onTaskFailed: true,
         onReviewNeeded: true,
         onPRReviewComplete: true,
+        onClaudeSessionComplete: true,
         sound: false
       },
       graphitiMcpEnabled: false
@@ -898,6 +899,7 @@ describe('SortableProjectTab', () => {
             onTaskFailed: true,
             onReviewNeeded: true,
             onPRReviewComplete: true,
+            onClaudeSessionComplete: true,
             sound: false
           },
           graphitiMcpEnabled: false,
@@ -934,6 +936,7 @@ describe('SortableProjectTab', () => {
             onTaskFailed: true,
             onReviewNeeded: true,
             onPRReviewComplete: true,
+            onClaudeSessionComplete: true,
             sound: false
           },
           graphitiMcpEnabled: false,
@@ -959,6 +962,7 @@ describe('SortableProjectTab', () => {
             onTaskFailed: true,
             onReviewNeeded: true,
             onPRReviewComplete: true,
+            onClaudeSessionComplete: true,
             sound: false
           },
           graphitiMcpEnabled: false,
@@ -1029,6 +1033,7 @@ describe('SortableProjectTab', () => {
             onTaskFailed: true,
             onReviewNeeded: true,
             onPRReviewComplete: true,
+            onClaudeSessionComplete: true,
             sound: false
           },
           graphitiMcpEnabled: false,

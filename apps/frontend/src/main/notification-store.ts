@@ -9,6 +9,7 @@ interface NotificationOptions {
   projectId?: string;
   taskId?: string;
   prNumber?: number;
+  terminalId?: string;
 }
 
 interface StoreData {
@@ -79,6 +80,7 @@ export class NotificationStore {
       projectId: opts?.projectId,
       taskId: opts?.taskId,
       prNumber: opts?.prNumber,
+      terminalId: opts?.terminalId,
       isRead: false,
       createdAt: new Date().toISOString(),
     };

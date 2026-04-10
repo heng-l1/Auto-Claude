@@ -13,5 +13,9 @@
         "description": "Examiner automatiquement les nouvelles pull requests lorsqu'elles sont prêtes"
       }
     }
+  },
+  "notifications": {
+    "onClaudeSessionComplete": "À la fin d'une session Claude",
+    "onClaudeSessionCompleteDescription": "Notifier lorsqu'une session Claude dans le terminal se termine"
   }
 }

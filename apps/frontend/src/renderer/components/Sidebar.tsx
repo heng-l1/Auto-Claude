@@ -68,6 +68,7 @@ interface SidebarProps {
   activeView?: SidebarView;
   onViewChange?: (view: SidebarView) => void;
   onNavigateToProject?: (projectId: string, view: SidebarView) => void;
+  onSelectTerminal?: (terminalId: string) => void;
 }
 
 interface NavItem {
@@ -107,7 +108,8 @@ export function Sidebar({
   onNewTaskClick,
   activeView = 'kanban',
   onViewChange,
-  onNavigateToProject
+  onNavigateToProject,
+  onSelectTerminal
 }: SidebarProps) {
   const { t } = useTranslation(['navigation', 'dialogs', 'common']);
   const projects = useProjectStore((state) => state.projects);
@@ -436,7 +438,7 @@ export function Sidebar({
         {/* Bottom section with Settings and New Task */}
         <div className={cn("space-y-3 transition-all duration-300", isCollapsed ? "p-2" : "p-4")}>
           {/* Activity Center */}
-          <ActivityCenter onViewChange={(view) => onViewChange?.(view)} onNavigateToProject={onNavigateToProject} isCollapsed={isCollapsed} />
+          <ActivityCenter onViewChange={(view) => onViewChange?.(view)} onNavigateToProject={onNavigateToProject} onSelectTerminal={onSelectTerminal} isCollapsed={isCollapsed} />
 
           {/* Claude Code Status Badge */}
           {!isCollapsed && <ClaudeCodeStatusBadge />}

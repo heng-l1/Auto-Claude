@@ -6,7 +6,8 @@ export type ActivityNotificationType =
   | 'task-complete'
   | 'task-failed'
   | 'review-needed'
-  | 'pr-review-complete';
+  | 'pr-review-complete'
+  | 'claude-session-complete';
 
 export interface ActivityNotification {
   id: string;
@@ -16,6 +17,7 @@ export interface ActivityNotification {
   projectId?: string;
   taskId?: string;
   prNumber?: number;
+  terminalId?: string;
   isRead: boolean;
   createdAt: string;  // ISO 8601 string
 }
