@@ -36,6 +36,8 @@ export interface TerminalProcess {
   prDiscussionContext?: { prNumber: number; repo: string };
   /** The current foreground process name (e.g., 'ssh', 'tmux', 'screen', 'mosh') */
   foregroundProcess?: string;
+  /** Timestamp (Date.now()) of the last Claude invoke; used to suppress false exit detection during Claude startup */
+  lastInvokeTime?: number;
 }
 
 /**

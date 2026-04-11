@@ -17,6 +17,8 @@ import { getEmailFromConfigDir } from '../claude-profile/profile-utils';
 import * as OutputParser from './output-parser';
 import * as SessionHandler from './session-handler';
 import * as PtyManager from './pty-manager';
+import { notificationService } from '../notification-service';
+import { projectStore } from '../project-store';
 import { safeSendToRenderer } from '../ipc-handlers/utils';
 import { notificationService } from '../notification-service';
 import { projectStore } from '../project-store';
@@ -1236,6 +1238,20 @@ export function handleClaudeExit(
 }
 
 /**
+ * Handle Claude becoming idle (busy → idle transition)
+ * Fires notification when Claude finishes responding.
+ */
+export function handleClaudeBecameIdle(terminal: TerminalProcess): void {
+  if (terminal.projectPath) {
+    const projects = projectStore.getProjects();
+    const project = projects.find(p => p.path === terminal.projectPath);
+    if (project) {
+      notificationService.notifyClaudeSessionComplete(terminal.title, project.id, terminal.id);
+    }
+  }
+}
+
+/**
  * Shared command execution logic for profile-based invocation
  * Returns true if command was executed via configDir or temp-file method
  */
@@ -1444,6 +1460,9 @@ export function invokeClaude(
   const previousProfileId = terminal.claudeProfileId;
 
   try {
+    // Set lastInvokeTime BEFORE isClaudeMode so exit detection has
+    // a valid grace-period timestamp as soon as it activates.
+    terminal.lastInvokeTime = Date.now();
     terminal.isClaudeMode = true;
     // Store YOLO mode setting so it persists across profile switches
     terminal.dangerouslySkipPermissions = dangerouslySkipPermissions;
@@ -1558,6 +1577,9 @@ export function resumeClaude(
   const wasClaudeMode = terminal.isClaudeMode;
 
   try {
+    // Set lastInvokeTime BEFORE isClaudeMode so exit detection has
+    // a valid grace-period timestamp as soon as it activates.
+    terminal.lastInvokeTime = Date.now();
     terminal.isClaudeMode = true;
     SessionHandler.releaseSessionId(terminal.id);
 
@@ -1653,6 +1675,9 @@ export async function invokeClaudeAsync(
     // Compute env vars for effort max mode
     const envVars = effortMax ? { [EFFORT_MAX_ENV_VAR]: EFFORT_MAX_VALUE } : undefined;
 
+    // Set lastInvokeTime BEFORE isClaudeMode so exit detection has
+    // a valid grace-period timestamp as soon as it activates.
+    terminal.lastInvokeTime = Date.now();
     terminal.isClaudeMode = true;
     // Store YOLO mode setting so it persists across profile switches
     terminal.dangerouslySkipPermissions = dangerouslySkipPermissions;
@@ -1777,6 +1802,9 @@ export async function resumeClaudeAsync(
   const wasClaudeMode = terminal.isClaudeMode;
 
   try {
+    // Set lastInvokeTime BEFORE isClaudeMode so exit detection has
+    // a valid grace-period timestamp as soon as it activates.
+    terminal.lastInvokeTime = Date.now();
     terminal.isClaudeMode = true;
     SessionHandler.releaseSessionId(terminal.id);
 

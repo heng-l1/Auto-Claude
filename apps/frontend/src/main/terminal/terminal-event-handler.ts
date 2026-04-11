@@ -68,12 +68,17 @@ export function handleTerminalData(
         lastBusyState.set(terminal.id, isBusy);
         callbacks.onClaudeBusyChange(terminal, isBusy);
       }
+
+      // Clear invocation grace period once Claude is confirmed running
+      if (terminal.lastInvokeTime) {
+        terminal.lastInvokeTime = undefined;
+      }
     }
 
     // Detect Claude exit (returned to shell prompt)
-    // detectClaudeExit() handles busy-state gating internally:
-    // definitive exit patterns bypass it, shell prompt patterns respect it
-    if (OutputParser.detectClaudeExit(data)) {
+    // Skip during invocation grace period to avoid false positives from shell output
+    const recentlyInvoked = terminal.lastInvokeTime && (Date.now() - terminal.lastInvokeTime < 5000);
+    if (!recentlyInvoked && busyState !== 'busy' && OutputParser.detectClaudeExit(data)) {
       callbacks.onClaudeExit(terminal);
       // Clear busy state tracking since Claude has exited
       lastBusyState.delete(terminal.id);
@@ -117,6 +122,9 @@ export function createEventCallbacks(
     },
     onClaudeBusyChange: (terminal, isBusy) => {
       safeSendToRenderer(getWindow, IPC_CHANNELS.TERMINAL_CLAUDE_BUSY, terminal.id, isBusy);
+      if (!isBusy) {
+        ClaudeIntegration.handleClaudeBecameIdle(terminal);
+      }
     },
     onClaudeExit: (terminal) => {
       ClaudeIntegration.handleClaudeExit(terminal, getWindow);
