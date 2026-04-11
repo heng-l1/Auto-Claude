@@ -5,7 +5,6 @@ Spec Writing and Critique Phase Implementations
 Phases for spec document creation and quality assurance.
 """
 
-import json
 from pathlib import Path
 
 from .. import validator, writer
@@ -155,8 +154,8 @@ Create:
     async def phase_self_critique(self) -> PhaseResult:
         """Self-critique the spec using extended thinking."""
         spec_file = self.spec_dir / "spec.md"
-        research_file = self.spec_dir / "research.json"
-        critique_file = self.spec_dir / "critique_report.json"
+        research_file = self.spec_dir / "research.md"
+        critique_file = self.spec_dir / "critique_report.md"
 
         if not spec_file.exists():
             self.ui.print_status("No spec.md to critique", "error")
@@ -165,15 +164,10 @@ Create:
             )
 
         if critique_file.exists():
-            with open(critique_file, encoding="utf-8") as f:
-                critique = json.load(f)
-                if critique.get("issues_fixed", False) or critique.get(
-                    "no_issues_found", False
-                ):
-                    self.ui.print_status("Self-critique already completed", "success")
-                    return PhaseResult(
-                        "self_critique", True, [str(critique_file)], [], 0
-                    )
+            self.ui.print_status("Self-critique already completed", "success")
+            return PhaseResult(
+                "self_critique", True, [str(critique_file)], [], 0
+            )
 
         errors = []
         for attempt in range(MAX_RETRIES):
@@ -195,15 +189,9 @@ Use EXTENDED THINKING (ultrathink) to deeply analyze the spec.md:
 
 For each issue found:
 - Fix it directly in spec.md
-- Document what was fixed in critique_report.json
+- Document what was fixed in critique_report.md
 
-Output critique_report.json with:
-{{
-  "issues_found": [...],
-  "issues_fixed": true/false,
-  "no_issues_found": true/false,
-  "critique_summary": "..."
-}}
+Output critique_report.md as Markdown with sections for Summary, Issues Found (with severity/category/description), and Status.
 """
             success, output = await self.run_agent_fn(
                 "spec_critic.md",
