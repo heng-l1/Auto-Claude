@@ -182,11 +182,11 @@ class RequirementsPhaseMixin:
 
     async def phase_research(self) -> PhaseResult:
         """Research external integrations and validate assumptions."""
-        research_file = self.spec_dir / "research.json"
+        research_file = self.spec_dir / "research.md"
         requirements_file = self.spec_dir / "requirements.json"
 
         if research_file.exists():
-            self.ui.print_status("research.json already exists", "success")
+            self.ui.print_status("research.md already exists", "success")
             return PhaseResult("research", True, [str(research_file)], [], 0)
 
         if not requirements_file.exists():
@@ -216,7 +216,7 @@ Research each external dependency to validate:
 - Configuration requirements
 - Known issues or gotchas
 
-Output your findings to research.json.
+Output your findings to research.md.
 """
             success, output = await self.run_agent_fn(
                 "spec_researcher.md",
@@ -225,7 +225,7 @@ Output your findings to research.json.
             )
 
             if success and research_file.exists():
-                self.ui.print_status("Created research.json", "success")
+                self.ui.print_status("Created research.md", "success")
                 return PhaseResult("research", True, [str(research_file)], [], attempt)
 
             if success and not research_file.exists():
