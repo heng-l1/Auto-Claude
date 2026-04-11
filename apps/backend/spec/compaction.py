@@ -129,11 +129,11 @@ def gather_phase_outputs(spec_dir: Path, phase_name: str) -> str:
     phase_outputs: dict[str, list[str]] = {
         "discovery": ["context.json"],
         "requirements": ["requirements.json"],
-        "research": ["research.json"],
+        "research": ["research.md"],
         "context": ["context.json"],
         "quick_spec": ["spec.md"],
         "spec_writing": ["spec.md"],
-        "self_critique": ["spec.md", "critique_notes.md"],
+        "self_critique": ["spec.md", "critique_report.md"],
         "planning": ["implementation_plan.json"],
         "validation": [],  # No output files to summarize
     }
