@@ -543,7 +543,7 @@ class TestPhaseResearch:
         mock_spec_validator,
     ):
         """Research phase returns early if file exists."""
-        (spec_dir / "research.json").write_text(json.dumps({"findings": []}))
+        (spec_dir / "research.md").write_text("# Research Findings\n\nNo research needed.\n")
 
         executor = PhaseExecutor(
             project_dir=temp_dir,
@@ -585,7 +585,7 @@ class TestPhaseResearch:
         result = await executor.phase_research()
 
         assert result.success is True
-        assert (spec_dir / "research.json").exists()
+        assert (spec_dir / "research.md").exists()
 
 
 class TestPhaseSpecWriting:
@@ -722,10 +722,7 @@ class TestPhaseSelfCritique:
     ):
         """Self-critique returns early if already completed."""
         (spec_dir / "spec.md").write_text("# Test Spec")
-        (spec_dir / "critique_report.json").write_text(json.dumps({
-            "issues_fixed": True,
-            "no_issues_found": False,
-        }))
+        (spec_dir / "critique_report.md").write_text("# Critique Report\n\n## Status\n\n**Issues fixed**: Yes\n")
 
         executor = PhaseExecutor(
             project_dir=temp_dir,

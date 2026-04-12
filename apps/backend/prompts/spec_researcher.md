@@ -11,9 +11,9 @@ You are the **Research Agent** in the Auto-Build spec creation pipeline. Your ON
 **Inputs**:
 - `requirements.json` - User requirements with mentioned integrations
 
-**Output**: `research.json` - Validated research findings
+**Output**: `research.md` - Validated research findings
 
-You MUST create `research.json` with validated information about each integration.
+You MUST create `research.md` with validated information about each integration.
 
 ---
 
@@ -143,61 +143,52 @@ For any technical claims in requirements.json:
 
 ---
 
-## PHASE 3: CREATE RESEARCH.JSON
+## PHASE 3: CREATE RESEARCH.MD
 
 Output your findings:
 
 ```bash
-cat > research.json << 'EOF'
-{
-  "integrations_researched": [
-    {
-      "name": "[library/service name]",
-      "type": "library|service|infrastructure",
-      "verified_package": {
-        "name": "[exact package name]",
-        "install_command": "[pip install X / npm install X]",
-        "version": "[version if specific]",
-        "verified": true
-      },
-      "api_patterns": {
-        "imports": ["from X import Y"],
-        "initialization": "[code snippet]",
-        "key_functions": ["function1()", "function2()"],
-        "verified_against": "[documentation URL or source]"
-      },
-      "configuration": {
-        "env_vars": ["VAR1", "VAR2"],
-        "config_files": ["config.json"],
-        "dependencies": ["other packages needed"]
-      },
-      "infrastructure": {
-        "requires_docker": true,
-        "docker_image": "[image name]",
-        "ports": [1234],
-        "volumes": ["/data"]
-      },
-      "gotchas": [
-        "[Known issue 1]",
-        "[Known issue 2]"
-      ],
-      "research_sources": [
-        "[URL or documentation reference]"
-      ]
-    }
-  ],
-  "unverified_claims": [
-    {
-      "claim": "[what was claimed]",
-      "reason": "[why it couldn't be verified]",
-      "risk_level": "low|medium|high"
-    }
-  ],
-  "recommendations": [
-    "[Any recommendations based on research]"
-  ],
-  "created_at": "[ISO timestamp]"
-}
+cat > research.md << 'EOF'
+# Research Findings
+
+## Integrations Researched
+
+### [Library/Service Name]
+- **Type**: library|service|infrastructure
+- **Package**: `[exact package name]`
+- **Install**: `pip install X` / `npm install X`
+- **Version**: [version if specific]
+- **Verified**: Yes/No
+
+#### API Patterns
+- **Imports**: `from X import Y`
+- **Initialization**: [code snippet]
+- **Key functions**: `function1()`, `function2()`
+- **Verified against**: [documentation URL or source]
+
+#### Configuration
+- **Environment variables**: `VAR1`, `VAR2`
+- **Config files**: `config.json`
+- **Dependencies**: [other packages needed]
+
+#### Infrastructure
+- **Requires Docker**: Yes/No
+- **Docker image**: [image name]
+- **Ports**: [1234]
+- **Volumes**: [/data]
+
+#### Gotchas
+- [Known issue 1]
+- [Known issue 2]
+
+#### Research Sources
+- [URL or documentation reference]
+
+## Unverified Claims
+- [claim]: [why it couldn't be verified] (Risk: low|medium|high)
+
+## Recommendations
+- [Any recommendations based on research]
 EOF
 ```
 
@@ -225,7 +216,7 @@ Key Findings:
 Recommendations:
 - [Recommendation 1]
 
-research.json created successfully.
+research.md created successfully.
 ```
 
 ---
@@ -280,59 +271,49 @@ Input: {
 → Returns installation, imports, initialization code
 ```
 
-**Step 2: Compile Findings to research.json**
+**Step 2: Compile Findings to research.md**
 
-```json
-{
-  "integrations_researched": [
-    {
-      "name": "Graphiti",
-      "type": "library",
-      "verified_package": {
-        "name": "graphiti-core",
-        "install_command": "pip install graphiti-core",
-        "version": ">=0.5.0",
-        "verified": true
-      },
-      "api_patterns": {
-        "imports": [
-          "from graphiti_core import Graphiti",
-          "from graphiti_core.nodes import EpisodeType"
-        ],
-        "initialization": "graphiti = Graphiti(graph_driver=driver)",
-        "key_functions": [
-          "add_episode(name, episode_body, source, group_id)",
-          "search(query, limit, group_ids)"
-        ],
-        "verified_against": "Context7 MCP + GitHub README"
-      },
-      "configuration": {
-        "env_vars": ["OPENAI_API_KEY"],
-        "dependencies": ["real_ladybug"]
-      },
-      "infrastructure": {
-        "requires_docker": false,
-        "embedded_database": "LadybugDB"
-      },
-      "gotchas": [
-        "Requires OpenAI API key for embeddings",
-        "Must call build_indices_and_constraints() before use",
-        "LadybugDB is embedded - no separate database server needed"
-      ],
-      "research_sources": [
-        "Context7 MCP: /zep/graphiti",
-        "https://github.com/getzep/graphiti",
-        "https://pypi.org/project/graphiti-core/"
-      ]
-    }
-  ],
-  "unverified_claims": [],
-  "recommendations": [
-    "LadybugDB is embedded and requires no Docker or separate database setup"
-  ],
-  "context7_libraries_used": ["/zep/graphiti"],
-  "created_at": "2024-12-10T12:00:00Z"
-}
+```markdown
+# Research Findings
+
+## Integrations Researched
+
+### Graphiti
+- **Type**: library
+- **Package**: `graphiti-core`
+- **Install**: `pip install graphiti-core`
+- **Version**: >=0.5.0
+- **Verified**: Yes
+
+#### API Patterns
+- **Imports**: `from graphiti_core import Graphiti`, `from graphiti_core.nodes import EpisodeType`
+- **Initialization**: `graphiti = Graphiti(graph_driver=driver)`
+- **Key functions**: `add_episode(name, episode_body, source, group_id)`, `search(query, limit, group_ids)`
+- **Verified against**: Context7 MCP + GitHub README
+
+#### Configuration
+- **Environment variables**: `OPENAI_API_KEY`
+- **Dependencies**: real_ladybug
+
+#### Infrastructure
+- **Requires Docker**: No
+- **Embedded database**: LadybugDB
+
+#### Gotchas
+- Requires OpenAI API key for embeddings
+- Must call build_indices_and_constraints() before use
+- LadybugDB is embedded - no separate database server needed
+
+#### Research Sources
+- Context7 MCP: /zep/graphiti
+- https://github.com/getzep/graphiti
+- https://pypi.org/project/graphiti-core/
+
+## Unverified Claims
+None.
+
+## Recommendations
+- LadybugDB is embedded and requires no Docker or separate database setup
 ```
 
 ---

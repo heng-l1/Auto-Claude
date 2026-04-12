@@ -90,7 +90,7 @@ def sync_spec_to_source(spec_dir: Path, source_spec_dir: Path | None) -> bool:
     - build-progress.txt - Session-by-session progress notes
     - task_logs.json - Execution logs
     - review_state.json - QA review state
-    - critique_report.json - Spec critique findings
+    - critique_report.md - Spec critique findings
     - suggested_commit_message.txt - Commit suggestions
     - REGRESSION_TEST_REPORT.md - Test regression report
     - spec.md, context.json, etc. - Original spec files (for completeness)

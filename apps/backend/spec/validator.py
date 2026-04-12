@@ -11,42 +11,24 @@ from pathlib import Path
 
 
 def create_minimal_research(spec_dir: Path, reason: str = "No research needed") -> Path:
-    """Create minimal research.json file."""
-    research_file = spec_dir / "research.json"
-
-    with open(research_file, "w", encoding="utf-8") as f:
-        json.dump(
-            {
-                "integrations_researched": [],
-                "research_skipped": True,
-                "reason": reason,
-                "created_at": datetime.now().isoformat(),
-            },
-            f,
-            indent=2,
-        )
-
+    """Create minimal research.md file."""
+    research_file = spec_dir / "research.md"
+    research_file.write_text(
+        f"# Research\n\n**Research skipped**: {reason}\n",
+        encoding="utf-8",
+    )
     return research_file
 
 
 def create_minimal_critique(
     spec_dir: Path, reason: str = "Critique not required"
 ) -> Path:
-    """Create minimal critique_report.json file."""
-    critique_file = spec_dir / "critique_report.json"
-
-    with open(critique_file, "w", encoding="utf-8") as f:
-        json.dump(
-            {
-                "issues_found": [],
-                "no_issues_found": True,
-                "critique_summary": reason,
-                "created_at": datetime.now().isoformat(),
-            },
-            f,
-            indent=2,
-        )
-
+    """Create minimal critique_report.md file."""
+    critique_file = spec_dir / "critique_report.md"
+    critique_file.write_text(
+        f"# Critique Report\n\n**No issues found**: {reason}\n",
+        encoding="utf-8",
+    )
     return critique_file
 
 
