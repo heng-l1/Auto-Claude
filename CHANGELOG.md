@@ -2,6 +2,45 @@
 
 All notable changes to Auto Claude will be documented in this file.
 
+## 1.0.7 - Activity Center, Worktree Rebase & PR Review Enhancements
+
+### ✨ New Features
+- **Activity center** — Notification history popover with persistent storage, IPC events, and per-project navigation
+- **Claude session notifications** — Get notified when Claude terminal sessions complete, with configurable toggle in settings
+- **Worktree auto-rebase** — Existing worktrees automatically rebase onto base branch during setup
+- **Per-subtask review gates** — Granular review control at the subtask level
+- **PR review comment responses** — Respond to PR review comments directly from the app
+- **Separate file-level and inline PR comments** — Split review comments into file-level and inline categories
+- **Complexity-based thinking floor** — Minimum thinking level enforced based on task complexity classification
+- **Terminal session memory** — Save terminal sessions to the Graphiti memory system
+
+### 🛠️ Improvements
+- Convert spec pipeline reports from JSON to Markdown format
+- Remove file-level findings heading prefix from review body
+- Replace auto-download with GitHub release link for updates
+- Redirect task terminal buttons to agent terminals
+- Kanban board performance optimization (debug guards, stat-based change detection, file watcher caching)
+- Move activity center above Claude Code status badge
+- Wire complexity passthrough from frontend to backend CLI
+- Add terminal_session, qa_result, historical_context memory types
+- Sync complexity classification when agent profile changes
+
+### 🐛 Bug Fixes
+- Fix Claude button reappearance after exit (split exit patterns into definitive and shell prompt arrays)
+- Fix stale findings and approve buttons after review
+- Fix auth terminal stuck after login (ANSI stripping, idle output fallback, profile cleanup)
+- Fix full-screen terminal blocking other projects (stale expandedTerminalId)
+- Fix missing setters in useTaskDetail hook
+- Fix PR filter bar text cutoff (flex-wrap layout)
+- Fix task timestamp fallback logic (createdAt/updatedAt cross-field)
+- Fix Claude session notification bugs
+- Fix memory type bugs and enable terminal sessions
+- Fix stuck subtasks after rebase from main
+- Fix duplicate notification push in activity center
+- Fix browser-mock missing Activity Center API methods
+
+---
+
 ## 1.0.6 - Multi-Agent Improvements & UI Polish
 
 ### ✨ New Features

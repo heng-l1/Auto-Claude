@@ -1,6 +1,6 @@
 {
   "name": "auto-claude-ui",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "type": "module",
   "description": "Desktop UI for Auto Claude autonomous coding framework",
   "homepage": "https://github.com/heng-l1/Auto-Claude",
