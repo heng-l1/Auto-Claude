@@ -1141,7 +1141,7 @@ def handle_merge_preview_command(
             "files": all_changed_files,
             "conflicts": conflicts,
             "gitConflicts": {
-                "hasConflicts": git_conflicts["has_conflicts"],
+                "hasConflicts": len(non_lock_conflicting_files) > 0,
                 "conflictingFiles": non_lock_conflicting_files,
                 "needsRebase": git_conflicts["needs_rebase"],
                 "commitsBehind": git_conflicts["commits_behind"],
