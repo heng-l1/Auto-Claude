@@ -1242,6 +1242,9 @@ export function handleClaudeExit(
  * Fires notification when Claude finishes responding.
  */
 export function handleClaudeBecameIdle(terminal: TerminalProcess): void {
+  // Skip during invocation grace period to avoid false idle notification on session startup
+  if (terminal.lastInvokeTime && (Date.now() - terminal.lastInvokeTime < 5000)) return;
+
   if (terminal.projectPath) {
     const projects = projectStore.getProjects();
     const project = projects.find(p => p.path === terminal.projectPath);
