@@ -31,6 +31,14 @@ const mockBrowserWindow = {
 };
 
 vi.mock('electron', () => ({
+  app: {
+    getPath: vi.fn(() => '/tmp/test'),
+    getAppPath: vi.fn(() => '/tmp/test-app'),
+    getVersion: vi.fn(() => '0.1.0'),
+    isPackaged: false,
+    on: vi.fn(),
+    quit: vi.fn()
+  },
   ipcMain: mockIpcMain,
   BrowserWindow: vi.fn()
 }));
