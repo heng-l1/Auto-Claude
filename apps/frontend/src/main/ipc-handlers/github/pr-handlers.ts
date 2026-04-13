@@ -2595,7 +2595,7 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
 
           // Build review body: file-level findings go into body, inline comments go into comments array
           const body = fileLevelEntries.length > 0
-            ? "### File-Level Findings\n\n" + fileLevelEntries.join("\n")
+            ? fileLevelEntries.join("\n")
             : "";
 
           // Determine review status based on selected findings (or force approve)
