@@ -70,5 +70,12 @@
     "paste": "Paste",
     "selectAll": "Select All",
     "clearTerminal": "Clear Terminal"
+  },
+  "tmuxTabChoice": {
+    "title": "What kind of tab do you want to open?",
+    "description": "The current session is running tmux. Would you like to create a new tmux window or open a new terminal?",
+    "newTmuxTab": "New tmux Window",
+    "useDefaultProfile": "New Terminal",
+    "rememberChoice": "Remember my choice"
   }
 }

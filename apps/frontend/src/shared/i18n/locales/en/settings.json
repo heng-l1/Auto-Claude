@@ -301,6 +301,13 @@
       "description": "Maximum power: combines YOLO mode (skip all permissions) with max effort level for Claude.",
       "warning": "YOLO Max enables both permission bypass AND maximum compute effort.",
       "badge": "MAX"
+    },
+    "tmuxTabPreference": {
+      "label": "Tmux tab behavior",
+      "description": "Choose what happens when you open a new tab while tmux is running",
+      "askEveryTime": "Ask every time",
+      "alwaysTmuxWindow": "Always create tmux window",
+      "alwaysDefaultProfile": "Always open new terminal"
     }
   },
   "updates": {
