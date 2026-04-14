@@ -48,7 +48,7 @@ interface UseGitHubPRsResult {
   postReview: (
     prNumber: number,
     selectedFindingIds?: string[],
-    options?: { forceApprove?: boolean }
+    options?: { forceApprove?: boolean; customComment?: string }
   ) => Promise<boolean>;
   postComment: (prNumber: number, body: string) => Promise<boolean>;
   mergePR: (prNumber: number, mergeMethod?: "merge" | "squash" | "rebase") => Promise<boolean>;
@@ -602,7 +602,7 @@ export function useGitHubPRs(
     async (
       prNumber: number,
       selectedFindingIds?: string[],
-      options?: { forceApprove?: boolean }
+      options?: { forceApprove?: boolean; customComment?: string }
     ): Promise<boolean> => {
       if (!projectId) return false;
 

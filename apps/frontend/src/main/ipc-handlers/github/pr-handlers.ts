@@ -2513,7 +2513,7 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
       projectId: string,
       prNumber: number,
       selectedFindingIds?: string[],
-      options?: { forceApprove?: boolean }
+      options?: { forceApprove?: boolean; customComment?: string }
     ): Promise<boolean> => {
       debugLog("postPRReview handler called", {
         projectId,
@@ -2594,9 +2594,13 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
           const { inlineComments, fileLevelEntries } = buildReviewComments(findings, fileLineMap);
 
           // Build review body: file-level findings go into body, inline comments go into comments array
-          const body = fileLevelEntries.length > 0
+          const fileLevelBody = fileLevelEntries.length > 0
             ? fileLevelEntries.join("\n")
             : "";
+
+          // Include custom comment in review body when provided (e.g. "Approve with Comment")
+          const bodyParts = [fileLevelBody, options?.customComment?.trim()].filter(Boolean);
+          const body = bodyParts.join("\n\n");
 
           // Determine review status based on selected findings (or force approve)
           let overallStatus = result.overallStatus;

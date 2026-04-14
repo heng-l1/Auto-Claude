@@ -221,7 +221,7 @@ export function GitHubPRs({ onOpenSettings, isActive = false, onDiscussInTermina
   const handlePostReview = useCallback(
     async (
       selectedFindingIds?: string[],
-      options?: { forceApprove?: boolean }
+      options?: { forceApprove?: boolean; customComment?: string }
     ): Promise<boolean> => {
       if (selectedPRNumber && reviewResult) {
         return await postReview(selectedPRNumber, selectedFindingIds, options);
