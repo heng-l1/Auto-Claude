@@ -1290,13 +1290,15 @@ function executeProfileCommand(options: ExecuteProfileCommandOptions): boolean {
     logPrefix,
   } = options;
 
-  if (!needsEnvOverride || !activeProfile || activeProfile.isDefault) {
-    return false; // Use default method
+  if (!activeProfile) {
+    return false; // No profile available
   }
 
-  // Prefer configDir over token because CLAUDE_CONFIG_DIR lets Claude Code
-  // read full Keychain credentials including subscriptionType ("max") and rateLimitTier.
-  // Using CLAUDE_CODE_OAUTH_TOKEN alone lacks tier info, causing "Claude API" display.
+  // Always use configDir method if the profile has one — this ensures
+  // CLAUDE_CONFIG_DIR is set so Claude reads the correct config
+  // (including User MCPs from the profile's config directory).
+  // Also preferred over token-only auth because configDir lets Claude Code
+  // read full Keychain credentials including subscriptionType and rateLimitTier.
   if (activeProfile.configDir) {
     const command = buildClaudeShellCommand(
       cwdCommand,
@@ -1312,6 +1314,11 @@ function executeProfileCommand(options: ExecuteProfileCommandOptions): boolean {
     finalizeClaudeInvoke(terminal, activeProfile, projectPath, startTime, getWindow, onSessionCapture);
     debugLog(`${logPrefix} ========== INVOKE CLAUDE COMPLETE (configDir) ==========`);
     return true;
+  }
+
+  // For profiles without configDir, only use env override when switching profiles
+  if (!needsEnvOverride || activeProfile.isDefault) {
+    return false; // Use default method
   }
 
   // Legacy fallback: use temp-file method if only token is available
@@ -1371,13 +1378,15 @@ async function executeProfileCommandAsync(options: ExecuteProfileCommandOptions)
     logPrefix,
   } = options;
 
-  if (!needsEnvOverride || !activeProfile || activeProfile.isDefault) {
-    return false; // Use default method
+  if (!activeProfile) {
+    return false; // No profile available
   }
 
-  // Prefer configDir over token because CLAUDE_CONFIG_DIR lets Claude Code
-  // read full Keychain credentials including subscriptionType ("max") and rateLimitTier.
-  // Using CLAUDE_CODE_OAUTH_TOKEN alone lacks tier info, causing "Claude API" display.
+  // Always use configDir method if the profile has one — this ensures
+  // CLAUDE_CONFIG_DIR is set so Claude reads the correct config
+  // (including User MCPs from the profile's config directory).
+  // Also preferred over token-only auth because configDir lets Claude Code
+  // read full Keychain credentials including subscriptionType and rateLimitTier.
   if (activeProfile.configDir) {
     const command = buildClaudeShellCommand(
       cwdCommand,
@@ -1393,6 +1402,11 @@ async function executeProfileCommandAsync(options: ExecuteProfileCommandOptions)
     finalizeClaudeInvoke(terminal, activeProfile, projectPath, startTime, getWindow, onSessionCapture);
     debugLog(`${logPrefix} ========== INVOKE CLAUDE COMPLETE (configDir) ==========`);
     return true;
+  }
+
+  // For profiles without configDir, only use env override when switching profiles
+  if (!needsEnvOverride || activeProfile.isDefault) {
+    return false; // Use default method
   }
 
   // Legacy fallback: use temp-file method if only token is available
