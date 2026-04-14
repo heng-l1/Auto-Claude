@@ -498,9 +498,9 @@ async def save_session_memory(
         "subtasks_completed": subtasks_completed,
         "discoveries": discoveries
         or {
-            "files_understood": {},
-            "patterns_found": [],
-            "gotchas_encountered": [],
+            "file_insights": [],
+            "patterns_discovered": [],
+            "gotchas_discovered": [],
         },
         "what_worked": [f"Implemented subtask: {subtask_id}"] if success else [],
         "what_failed": [] if success else [f"Failed to complete subtask: {subtask_id}"],
@@ -549,7 +549,12 @@ async def save_session_memory(
                     debug("memory", "Saving to Graphiti...")
 
                 # Use structured insights if we have rich extracted data
-                if discoveries and discoveries.get("file_insights"):
+                if discoveries and (
+                    discoveries.get("file_insights")
+                    or discoveries.get("patterns_discovered")
+                    or discoveries.get("gotchas_discovered")
+                    or discoveries.get("approach_outcome")
+                ):
                     # Rich insights from insight_extractor
                     if is_debug_enabled():
                         debug(
