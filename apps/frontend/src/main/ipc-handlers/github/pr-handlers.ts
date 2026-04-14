@@ -2082,9 +2082,105 @@ export async function runPRReview(
     }
   }
 
+  // Load past review memory from file storage (non-blocking, skip if unavailable)
+  let memoryFilePath: string | null = null;
+  try {
+    const memoryDir = path.join(githubDir, "memory", project.name || "unknown");
+    const indexPath = path.join(memoryDir, "reviews_index.json");
+
+    if (fs.existsSync(indexPath)) {
+      const indexContent = fs.readFileSync(indexPath, "utf-8");
+      const index = JSON.parse(sanitizeNetworkData(indexContent));
+      const reviews = Array.isArray(index.reviews) ? index.reviews : [];
+
+      // Get up to 5 recent reviews excluding the current PR
+      const pastReviews = reviews
+        .filter((r: { pr_number: number }) => r.pr_number !== prNumber)
+        .slice(0, 5);
+
+      if (pastReviews.length > 0) {
+        const MAX_MEMORY_BYTES = 50 * 1024; // ~50KB cap to avoid prompt bloat
+        let memoryContent = "# Past PR Review Memory\n\n";
+        memoryContent += `The following insights are from ${pastReviews.length} recent PR reviews in this repository.\n\n`;
+
+        for (const entry of pastReviews) {
+          if (Buffer.byteLength(memoryContent, "utf-8") >= MAX_MEMORY_BYTES) {
+            memoryContent += "\n[Memory truncated — limit reached]\n";
+            break;
+          }
+
+          try {
+            const reviewPath = path.join(memoryDir, `pr_${entry.pr_number}_review.json`);
+            if (!fs.existsSync(reviewPath)) continue;
+
+            const reviewContent = fs.readFileSync(reviewPath, "utf-8");
+            const memory = JSON.parse(sanitizeNetworkData(reviewContent));
+
+            memoryContent += `## PR #${memory.pr_number} — ${memory.summary?.verdict || "unknown"}\n`;
+            memoryContent += `Reviewed: ${memory.timestamp || "unknown"}\n`;
+
+            if (memory.key_findings?.length > 0) {
+              memoryContent += "Key findings:\n";
+              for (const finding of memory.key_findings.slice(0, 5)) {
+                memoryContent += `- [${finding.severity}] ${finding.title}: ${finding.description}\n`;
+              }
+            }
+
+            if (memory.patterns?.length > 0) {
+              memoryContent += "Patterns observed:\n";
+              for (const pattern of memory.patterns) {
+                memoryContent += `- ${pattern}\n`;
+              }
+            }
+
+            if (memory.gotchas?.length > 0) {
+              memoryContent += "Gotchas:\n";
+              for (const gotcha of memory.gotchas) {
+                memoryContent += `- ${gotcha}\n`;
+              }
+            }
+
+            memoryContent += "\n";
+          } catch (err) {
+            debugLog("Failed to load past review for memory", {
+              prNumber: entry.pr_number,
+              error: err instanceof Error ? err.message : err,
+            });
+          }
+        }
+
+        // Only write if we have meaningful content beyond the header
+        if (memoryContent.length > 100) {
+          // Final size cap — truncate by characters if still over limit
+          if (Buffer.byteLength(memoryContent, "utf-8") > MAX_MEMORY_BYTES) {
+            memoryContent = memoryContent.slice(0, MAX_MEMORY_BYTES);
+            memoryContent += "\n[Memory truncated — limit reached]\n";
+          }
+
+          fs.mkdirSync(githubDir, { recursive: true });
+          memoryFilePath = path.join(githubDir, "tmp_review_memory.txt");
+          fs.writeFileSync(memoryFilePath, memoryContent, "utf-8");
+          debugLog("Wrote review memory to temp file", {
+            memoryFilePath,
+            reviewCount: pastReviews.length,
+            sizeBytes: Buffer.byteLength(memoryContent, "utf-8"),
+          });
+        }
+      }
+    }
+  } catch (err) {
+    debugLog("Failed to load past review memory", {
+      error: err instanceof Error ? err.message : err,
+    });
+    memoryFilePath = null;
+  }
+
   const additionalArgs = [prNumber.toString()];
   if (notesFilePath) {
     additionalArgs.push("--notes-file", notesFilePath);
+  }
+  if (memoryFilePath) {
+    additionalArgs.push("--memory-file", memoryFilePath);
   }
 
   const args = buildRunnerArgs(
@@ -2246,6 +2342,10 @@ export async function runPRReview(
     // Clean up temp notes file
     if (notesFilePath) {
       try { fs.unlinkSync(notesFilePath); } catch { /* ignore cleanup errors */ }
+    }
+    // Clean up temp memory file
+    if (memoryFilePath) {
+      try { fs.unlinkSync(memoryFilePath); } catch { /* ignore cleanup errors */ }
     }
     // Clean up the registry when done (success or error)
     runningReviews.delete(reviewKey);
