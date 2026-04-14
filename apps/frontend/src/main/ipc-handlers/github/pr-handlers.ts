@@ -1917,7 +1917,8 @@ export async function runPRReview(
   project: Project,
   prNumber: number,
   mainWindow: BrowserWindow,
-  stateManager: PRReviewStateManager
+  stateManager: PRReviewStateManager,
+  notes?: string
 ): Promise<PRReviewResult> {
   // Comprehensive validation of GitHub module
   const validation = await validateGitHubModule(project);
@@ -1939,11 +1940,34 @@ export async function runPRReview(
   );
 
   const { model, thinkingLevel } = getGitHubPRSettings();
+
+  // Write notes to temp file if provided
+  const githubDir = getGitHubDir(project);
+  let notesFilePath: string | null = null;
+  if (notes && notes.trim()) {
+    try {
+      fs.mkdirSync(githubDir, { recursive: true });
+      notesFilePath = path.join(githubDir, "tmp_review_notes.txt");
+      fs.writeFileSync(notesFilePath, notes.trim(), "utf-8");
+      debugLog("Wrote review notes to temp file", { notesFilePath });
+    } catch (err) {
+      debugLog("Failed to write review notes temp file", {
+        error: err instanceof Error ? err.message : err,
+      });
+      notesFilePath = null;
+    }
+  }
+
+  const additionalArgs = [prNumber.toString()];
+  if (notesFilePath) {
+    additionalArgs.push("--notes-file", notesFilePath);
+  }
+
   const args = buildRunnerArgs(
     getRunnerPath(backendPath),
     project.path,
     "review-pr",
-    [prNumber.toString()],
+    additionalArgs,
     { model, thinkingLevel }
   );
 
@@ -2095,6 +2119,10 @@ export async function runPRReview(
 
     return result.data!;
   } finally {
+    // Clean up temp notes file
+    if (notesFilePath) {
+      try { fs.unlinkSync(notesFilePath); } catch { /* ignore cleanup errors */ }
+    }
     // Clean up the registry when done (success or error)
     runningReviews.delete(reviewKey);
     debugLog("Unregistered review process", { reviewKey });
@@ -2381,7 +2409,7 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
   );
 
   // Run AI review
-  ipcMain.on(IPC_CHANNELS.GITHUB_PR_REVIEW, async (_, projectId: string, prNumber: number) => {
+  ipcMain.on(IPC_CHANNELS.GITHUB_PR_REVIEW, async (_, projectId: string, prNumber: number, notes?: string) => {
     debugLog("runPRReview handler called", { projectId, prNumber });
     const mainWindow = getMainWindow();
     if (!mainWindow) {
@@ -2443,7 +2471,7 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
           sendProgress(fetchingProgress);
           prReviewStateManager?.handleProgress(projectId, prNumber, fetchingProgress);
 
-          const result = await runPRReview(project, prNumber, mainWindow, stateManager);
+          const result = await runPRReview(project, prNumber, mainWindow, stateManager, notes);
 
           if (result.overallStatus === "in_progress") {
             // Review is already running externally (detected by BotDetector).
