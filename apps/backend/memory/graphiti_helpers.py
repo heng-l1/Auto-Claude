@@ -145,17 +145,49 @@ async def save_to_graphiti_async(
 
         # Also save codebase discoveries if present
         discoveries = insights.get("discoveries", {})
-        files_understood = discoveries.get("files_understood", {})
+
+        # Support both legacy and new key formats for file insights
+        files_understood = discoveries.get("files_understood") or discoveries.get(
+            "file_insights"
+        )
         if files_understood:
-            await graphiti.save_codebase_discoveries(files_understood)
+            # file_insights is a list of dicts; files_understood is a dict
+            if isinstance(files_understood, dict):
+                await graphiti.save_codebase_discoveries(files_understood)
+            elif isinstance(files_understood, list):
+                # Convert list of file insight dicts to {path: purpose} dict
+                file_dict = {}
+                for fi in files_understood:
+                    if isinstance(fi, dict):
+                        file_dict[fi.get("path", "unknown")] = fi.get("purpose", "")
+                    else:
+                        file_dict[str(fi)] = ""
+                if file_dict:
+                    await graphiti.save_codebase_discoveries(file_dict)
 
-        # Save patterns
-        for pattern in discoveries.get("patterns_found", []):
-            await graphiti.save_pattern(pattern)
+        # Support both legacy and new key formats for patterns
+        for pattern in (
+            discoveries.get("patterns_found")
+            or discoveries.get("patterns_discovered")
+            or []
+        ):
+            pattern_text = (
+                pattern.get("pattern", "") if isinstance(pattern, dict) else str(pattern)
+            )
+            if pattern_text:
+                await graphiti.save_pattern(pattern_text)
 
-        # Save gotchas
-        for gotcha in discoveries.get("gotchas_encountered", []):
-            await graphiti.save_gotcha(gotcha)
+        # Support both legacy and new key formats for gotchas
+        for gotcha in (
+            discoveries.get("gotchas_encountered")
+            or discoveries.get("gotchas_discovered")
+            or []
+        ):
+            gotcha_text = (
+                gotcha.get("gotcha", "") if isinstance(gotcha, dict) else str(gotcha)
+            )
+            if gotcha_text:
+                await graphiti.save_gotcha(gotcha_text)
 
         return result
 
