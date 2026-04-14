@@ -323,6 +323,8 @@ export interface AppSettings {
   autoNameClaudeTerminals?: boolean;
   /** Custom process names to detect as remote sessions (merged with defaults) */
   customRemoteProcesses?: string[];
+  /** Remembered tmux tab dialog preference: undefined = show dialog */
+  tmuxTabPreference?: 'tmux-window' | 'default-profile';
   // Track which version warnings have been shown (e.g., ["2.7.5"])
   seenVersionWarnings?: string[];
   // Sidebar collapsed state (icons only when true)
