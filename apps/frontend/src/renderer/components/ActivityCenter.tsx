@@ -192,7 +192,7 @@ export function ActivityCenter({ onViewChange, onNavigateToProject, onSelectTerm
             <p className="text-sm">{t('common:activityCenter.noNotifications')}</p>
           </div>
         ) : (
-          <ScrollArea className="max-h-[400px]">
+          <ScrollArea className="max-h-[400px]" viewportClassName="max-h-[400px]">
             <div className="flex flex-col">
               {notifications.map((notification) => {
                 const Icon = notificationIcons[notification.type];
