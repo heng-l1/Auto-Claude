@@ -820,7 +820,9 @@ function writeReviewToFileStorage(
 async function savePRReviewToMemory(
   result: PRReviewResult,
   repo: string,
-  isFollowup: boolean = false
+  isFollowup: boolean = false,
+  githubDir?: string,
+  repoName?: string
 ): Promise<void> {
   const settings = readSettingsFile();
   if (!settings?.memoryEnabled) {
@@ -910,6 +912,11 @@ async function savePRReviewToMemory(
       memoryContent.summary.verdict_reasoning = `Resolved: ${result.resolvedFindings.length}, Unresolved: ${result.unresolvedFindings.length}`;
     }
 
+    // Write to file-based storage if project context is available
+    if (githubDir && repoName) {
+      writeReviewToFileStorage(githubDir, repoName, result.prNumber, memoryContent, isFollowup);
+    }
+
     // Save to memory as a pr_review episode
     const episodeName = `PR #${result.prNumber} ${isFollowup ? "Follow-up " : ""}Review - ${repo}`;
     const saveResult = await memoryService.addEpisode(
@@ -926,6 +933,34 @@ async function savePRReviewToMemory(
       });
     } else {
       debugLog("Failed to save PR review to memory", { error: saveResult.error });
+    }
+
+    // Also save to global memory for cross-repo preference learning
+    try {
+      const { getGlobalMemoryDir } = await import("../../config-paths");
+      const globalDbPath = getGlobalMemoryDir();
+      const globalMemoryService = getMemoryService({
+        dbPath: globalDbPath,
+        database: "global_preferences",
+      });
+
+      const globalResult = await globalMemoryService.addEpisode(
+        `PR Review Preferences - ${repo} #${result.prNumber}`,
+        memoryContent,
+        "pr_review",
+        "pr_review_preferences"
+      );
+
+      if (globalResult.success) {
+        debugLog("PR review saved to global memory", {
+          prNumber: result.prNumber,
+          episodeId: globalResult.id,
+        });
+      }
+    } catch (globalError) {
+      debugLog("Failed to save PR review to global memory (non-blocking)", {
+        error: globalError instanceof Error ? globalError.message : globalError,
+      });
     }
   } catch (error) {
     // Don't fail the review if memory save fails
@@ -2202,7 +2237,7 @@ export async function runPRReview(
     logCollector.finalize(true);
 
     // Save PR review insights to memory (async, non-blocking)
-    savePRReviewToMemory(result.data!, repo, false).catch((err) => {
+    savePRReviewToMemory(result.data!, repo, false, getGitHubDir(project), project.name || "unknown").catch((err) => {
       debugLog("Failed to save PR review to memory", { error: err.message });
     });
 
@@ -3708,7 +3743,7 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
             logCollector.finalize(true);
 
             // Save follow-up PR review insights to memory (async, non-blocking)
-            savePRReviewToMemory(result.data!, repo, true).catch((err) => {
+            savePRReviewToMemory(result.data!, repo, true, getGitHubDir(project), project.name || "unknown").catch((err) => {
               debugLog("Failed to save follow-up PR review to memory", { error: err.message });
             });
 
