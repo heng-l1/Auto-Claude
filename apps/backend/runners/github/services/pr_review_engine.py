@@ -126,6 +126,7 @@ class PRReviewEngine:
         review_pass: ReviewPass,
         context: PRContext,
         reviewer_notes: str | None = None,
+        memory_context: str | None = None,
     ) -> dict | list[PRReviewFinding]:
         """Run a single review pass and return findings or scan result.
 
@@ -135,6 +136,9 @@ class PRReviewEngine:
             reviewer_notes: Optional human-provided notes, observations, or focus areas
                            to inject into the review prompt. When provided, these appear
                            as a high-priority guidance section for the AI reviewer.
+            memory_context: Optional past review memory/insights to inject into the
+                           review prompt. When provided, these appear as a reference
+                           section with patterns and lessons from prior reviews.
         """
         from core.client import create_client
 
@@ -240,6 +244,23 @@ class PRReviewEngine:
         else:
             full_prompt = pass_prompt + "\n\n---\n\n" + pr_context
 
+        # Inject past review memory after notes section if provided
+        if memory_context and memory_context.strip():
+            memory_section = (
+                "### Past Review Memory\n"
+                "The following insights are from previous reviews of this repository.\n"
+                "Use these patterns and lessons learned to inform your analysis:\n\n"
+                f"{memory_context.strip()}\n"
+            )
+            # Rebuild prompt with memory section inserted before pr_context
+            # Order: pass_prompt → [notes_section] → memory_section → pr_context
+            prefix = full_prompt[: -len(pr_context)]
+            full_prompt = prefix + memory_section + "\n\n" + pr_context
+            safe_print(
+                f"[AI] Injected past review memory ({len(memory_context)} chars) into {review_pass.value} pass",
+                flush=True,
+            )
+
         project_root = (
             self.project_dir.parent.parent
             if self.project_dir.name == "backend"
@@ -295,6 +316,7 @@ class PRReviewEngine:
         self,
         context: PRContext,
         reviewer_notes: str | None = None,
+        memory_context: str | None = None,
     ) -> tuple[
         list[PRReviewFinding], list[StructuralIssue], list[AICommentTriage], dict
     ]:
@@ -308,6 +330,9 @@ class PRReviewEngine:
             context: PR context with files, diff, and metadata.
             reviewer_notes: Optional human-provided notes, observations, or focus areas
                            to inject into each review pass prompt.
+            memory_context: Optional past review memory/insights to inject into each
+                           review pass prompt. Provides patterns and lessons from
+                           prior reviews of the same repository.
 
         Returns:
             Tuple of (findings, structural_issues, ai_triages, quick_scan_summary)
@@ -334,7 +359,7 @@ class PRReviewEngine:
                 progress_callback=self.progress_callback,
             )
 
-            result = await orchestrator.review(context, reviewer_notes=reviewer_notes)
+            result = await orchestrator.review(context, reviewer_notes=reviewer_notes, memory_context=memory_context)
 
             safe_print(
                 f"[PR Review Engine] Parallel orchestrator returned {len(result.findings)} findings",
@@ -363,7 +388,7 @@ class PRReviewEngine:
             pr_number=context.pr_number,
         )
         scan_result = await self.run_review_pass(
-            ReviewPass.QUICK_SCAN, context, reviewer_notes=reviewer_notes
+            ReviewPass.QUICK_SCAN, context, reviewer_notes=reviewer_notes, memory_context=memory_context
         )
 
         # Determine which passes to run in parallel
@@ -388,7 +413,7 @@ class PRReviewEngine:
                 flush=True,
             )
             findings = await self.run_review_pass(
-                ReviewPass.SECURITY, context, reviewer_notes=reviewer_notes
+                ReviewPass.SECURITY, context, reviewer_notes=reviewer_notes, memory_context=memory_context
             )
             safe_print(f"[AI] Security pass complete: {len(findings)} findings")
             return ("security", findings)
@@ -398,7 +423,7 @@ class PRReviewEngine:
                 "[AI] Pass 3/6: Quality Review - Checking code quality...", flush=True
             )
             findings = await self.run_review_pass(
-                ReviewPass.QUALITY, context, reviewer_notes=reviewer_notes
+                ReviewPass.QUALITY, context, reviewer_notes=reviewer_notes, memory_context=memory_context
             )
             safe_print(f"[AI] Quality pass complete: {len(findings)} findings")
             return ("quality", findings)
@@ -430,7 +455,7 @@ class PRReviewEngine:
                 "[AI] Pass 6/6: Deep Analysis - Reviewing business logic...", flush=True
             )
             findings = await self.run_review_pass(
-                ReviewPass.DEEP_ANALYSIS, context, reviewer_notes=reviewer_notes
+                ReviewPass.DEEP_ANALYSIS, context, reviewer_notes=reviewer_notes, memory_context=memory_context
             )
             safe_print(f"[AI] Deep analysis complete: {len(findings)} findings")
             return ("deep", findings)
