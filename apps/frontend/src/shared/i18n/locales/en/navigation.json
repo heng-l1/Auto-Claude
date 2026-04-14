@@ -34,7 +34,8 @@
     "title": "Update Available",
     "version": "Version {{version}} is available",
     "viewOnGitHub": "View on GitHub",
-    "dismiss": "Dismiss"
+    "dismiss": "Dismiss",
+    "skipVersion": "Skip This Version"
   },
   "claudeCode": {
     "checking": "Checking Claude Code...",
