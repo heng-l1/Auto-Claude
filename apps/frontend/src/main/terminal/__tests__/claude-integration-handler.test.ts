@@ -502,6 +502,59 @@ describe('claude-integration-handler', () => {
       expect(terminal.claudeSessionId).toBeUndefined();
       expect(mockPersistSession).not.toHaveBeenCalled();
     });
+
+    it('uses configDir from active profile when profileId is undefined (agent terminal regression)', async () => {
+      // Regression test for #110: When profileId is undefined (agent terminal launched
+      // via "Invoke Claude"), the active default profile's configDir must still be set
+      // as CLAUDE_CONFIG_DIR so Claude reads User MCPs from the profile's config directory.
+      // Before the fix, needsEnvOverride was false (no profileId), so the guard clause
+      // `if (!needsEnvOverride || activeProfile.isDefault) return false` bailed before
+      // ever reaching the configDir code path.
+      const command = '/opt/claude/bin/claude';
+      const profileManager = {
+        getActiveProfile: vi.fn(() => ({
+          id: 'default',
+          name: 'Default',
+          isDefault: true,
+          configDir: '/home/user/.claude-profile',
+        })),
+        getProfile: vi.fn(),
+        getProfileToken: vi.fn(() => null),
+        markProfileUsed: vi.fn(),
+      };
+
+      mockGetClaudeCliInvocation.mockReturnValue({
+        command,
+        env: { PATH: '/opt/claude/bin:/usr/bin' },
+      });
+      mockGetClaudeProfileManager.mockReturnValue(profileManager);
+
+      const terminal = createMockTerminal({ id: 'term-agent' });
+
+      const { invokeClaude } = await import('../claude-integration-handler');
+      // profileId is undefined — simulates agent terminal launch via "Invoke Claude"
+      invokeClaude(terminal, '/tmp/project', undefined, () => null, vi.fn());
+
+      const written = mockWriteToPty.mock.calls[0][1] as string;
+      const clearCmd = getClearCommand(platform);
+      const histPrefix = getHistoryPrefix(platform);
+      const configDir = getConfigDirCommand(platform, '/home/user/.claude-profile');
+
+      // Key assertion: CLAUDE_CONFIG_DIR must be set even when profileId is undefined
+      // and the active profile is the default profile with configDir
+      expect(written).toContain(histPrefix);
+      expect(written).toContain(configDir);
+      expect(written).toContain(clearCmd);
+      expectPathPrefix(written, platform, '/opt/claude/bin:/usr/bin', command);
+      expect(written).toContain(getQuotedCommand(platform, command));
+      // getActiveProfile should be used (not getProfile) since profileId is undefined
+      expect(profileManager.getActiveProfile).toHaveBeenCalled();
+      expect(profileManager.getProfile).not.toHaveBeenCalled();
+      expect(profileManager.markProfileUsed).toHaveBeenCalledWith('default');
+      expect(mockPersistSession).toHaveBeenCalledWith(terminal);
+      // Should NOT write a temp file — configDir is used instead
+      expect(vi.mocked(writeFileSync)).not.toHaveBeenCalled();
+    });
   });
 
   it('throws when invokeClaude cannot resolve the CLI invocation', async () => {
@@ -823,6 +876,58 @@ describe('invokeClaudeAsync', () => {
 
       const capturedTime = mockOnSessionCapture.mock.calls[0][2];
       expect(capturedTime).toBeGreaterThanOrEqual(startTime);
+    });
+
+    it('should use configDir from active profile when profileId is undefined (agent terminal regression)', async () => {
+      // Regression test for #110: When profileId is undefined (agent terminal launched
+      // via "Invoke Claude"), the active default profile's configDir must still be set
+      // as CLAUDE_CONFIG_DIR so Claude reads User MCPs from the profile's config directory.
+      // Before the fix, needsEnvOverride was false (no profileId), so the guard clause
+      // `if (!needsEnvOverride || activeProfile.isDefault) return false` bailed before
+      // ever reaching the configDir code path.
+      const command = '/opt/claude/bin/claude';
+      const profileManager = {
+        getActiveProfile: vi.fn(() => ({
+          id: 'default',
+          name: 'Default',
+          isDefault: true,
+          configDir: '/home/user/.claude-profile',
+        })),
+        getProfile: vi.fn(),
+        getProfileToken: vi.fn(() => null),
+        markProfileUsed: vi.fn(),
+      };
+
+      mockGetClaudeCliInvocationAsync.mockResolvedValue({
+        command,
+        env: { PATH: '/opt/claude/bin:/usr/bin' },
+      });
+      mockInitializeClaudeProfileManager.mockResolvedValue(profileManager);
+
+      const terminal = createMockTerminal({ id: 'term-agent-async' });
+
+      const { invokeClaudeAsync } = await import('../claude-integration-handler');
+      // profileId is undefined — simulates agent terminal launch via "Invoke Claude"
+      await invokeClaudeAsync(terminal, '/tmp/project', undefined, () => null, vi.fn());
+
+      const written = mockWriteToPty.mock.calls[0][1] as string;
+      const clearCmd = getClearCommand(platform);
+      const histPrefix = getHistoryPrefix(platform);
+      const configDir = getConfigDirCommand(platform, '/home/user/.claude-profile');
+
+      // Key assertion: CLAUDE_CONFIG_DIR must be set even when profileId is undefined
+      // and the active profile is the default profile with configDir
+      expect(written).toContain(histPrefix);
+      expect(written).toContain(configDir);
+      expect(written).toContain(clearCmd);
+      expect(written).toContain(getQuotedCommand(platform, command));
+      // getActiveProfile should be used (not getProfile) since profileId is undefined
+      expect(profileManager.getActiveProfile).toHaveBeenCalled();
+      expect(profileManager.getProfile).not.toHaveBeenCalled();
+      expect(profileManager.markProfileUsed).toHaveBeenCalledWith('default');
+      expect(mockPersistSession).toHaveBeenCalledWith(terminal);
+      // Should NOT write a temp file — configDir is used instead
+      expect(vi.mocked(writeFileSync)).not.toHaveBeenCalled();
     });
   });
 });
