@@ -133,20 +133,22 @@ export function ActivityCenter({ onViewChange, onNavigateToProject, onSelectTerm
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        {isCollapsed ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
+      {isCollapsed ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>
               {triggerButton}
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              <span>{t('common:activityCenter.title')}</span>
-            </TooltipContent>
-          </Tooltip>
-        ) : (
-          triggerButton
-        )}
-      </PopoverTrigger>
+            </PopoverTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            <span>{t('common:activityCenter.title')}</span>
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        <PopoverTrigger asChild>
+          {triggerButton}
+        </PopoverTrigger>
+      )}
 
       <PopoverContent
         className="w-[360px] p-0"
