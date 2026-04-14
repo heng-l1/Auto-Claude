@@ -719,6 +719,95 @@ interface PRReviewMemoryEntry {
 }
 
 /**
+ * Write a PR review to file-based storage.
+ *
+ * Writes pr_{prNumber}_review.json with snake_case fields (matching the format
+ * expected by the MEMORY_GET handler) and maintains a reviews_index.json with
+ * deduplication by PR number and a cap of 200 entries (most recent first).
+ *
+ * @param githubDir The project's .auto-claude/github/ directory
+ * @param repoName The project name (NOT owner/repo format)
+ * @param prNumber The PR number
+ * @param reviewData The review data in camelCase format
+ * @param isFollowup Whether this is a follow-up review
+ */
+function writeReviewToFileStorage(
+  githubDir: string,
+  repoName: string,
+  prNumber: number,
+  reviewData: PRReviewMemoryEntry,
+  isFollowup: boolean
+): void {
+  const memoryDir = path.join(githubDir, "memory", repoName);
+
+  // Create directory recursively if needed
+  fs.mkdirSync(memoryDir, { recursive: true });
+
+  // Convert camelCase to snake_case for disk format
+  // The MEMORY_GET handler (lines 3819-3828) reads these snake_case fields
+  // and converts back to camelCase for the in-memory PRReviewMemoryEntry
+  const snakeCaseData = {
+    pr_number: reviewData.prNumber,
+    repo: reviewData.repo,
+    timestamp: reviewData.timestamp,
+    summary: reviewData.summary,
+    key_findings: reviewData.keyFindings,
+    patterns: reviewData.patterns,
+    gotchas: reviewData.gotchas,
+    is_followup: isFollowup,
+  };
+
+  // Write individual review file
+  const reviewPath = path.join(memoryDir, `pr_${prNumber}_review.json`);
+  fs.writeFileSync(reviewPath, JSON.stringify(snakeCaseData, null, 2), "utf-8");
+
+  // Update reviews_index.json with dedup and cap
+  const indexPath = path.join(memoryDir, "reviews_index.json");
+  let index: { reviews: Array<{ pr_number: number; timestamp: string; verdict: string }> } = {
+    reviews: [],
+  };
+
+  try {
+    if (fs.existsSync(indexPath)) {
+      const indexContent = fs.readFileSync(indexPath, "utf-8");
+      index = JSON.parse(sanitizeNetworkData(indexContent));
+      if (!Array.isArray(index.reviews)) {
+        index.reviews = [];
+      }
+    }
+  } catch (err) {
+    debugLog("Failed to read reviews_index.json, starting fresh", {
+      error: err instanceof Error ? err.message : err,
+    });
+    index = { reviews: [] };
+  }
+
+  // Remove existing entry for same PR number (dedup)
+  index.reviews = index.reviews.filter((r) => r.pr_number !== prNumber);
+
+  // Add new entry at front (most recent first)
+  index.reviews.unshift({
+    pr_number: prNumber,
+    timestamp: reviewData.timestamp,
+    verdict: reviewData.verdict,
+  });
+
+  // Cap at 200 entries
+  if (index.reviews.length > 200) {
+    index.reviews = index.reviews.slice(0, 200);
+  }
+
+  fs.writeFileSync(indexPath, JSON.stringify(index, null, 2), "utf-8");
+
+  debugLog("Wrote PR review to file storage", {
+    prNumber,
+    repoName,
+    isFollowup,
+    reviewPath,
+  });
+}
+
+/**
  * Save PR review insights to the Electron memory layer (LadybugDB)
  *
  * Called after a PR review completes to persist learnings for cross-session context.
