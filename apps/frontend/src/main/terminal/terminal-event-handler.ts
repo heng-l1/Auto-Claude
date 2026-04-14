@@ -69,10 +69,10 @@ export function handleTerminalData(
         callbacks.onClaudeBusyChange(terminal, isBusy);
       }
 
-      // Clear invocation grace period once Claude is confirmed running
-      if (terminal.lastInvokeTime) {
-        terminal.lastInvokeTime = undefined;
-      }
+      // Note: lastInvokeTime is intentionally NOT cleared here.
+      // It must persist so handleClaudeBecameIdle() can suppress the
+      // false "session complete" notification on the first busy→idle
+      // transition during startup. The 5s grace period expires naturally.
     }
 
     // Detect Claude exit (returned to shell prompt)
