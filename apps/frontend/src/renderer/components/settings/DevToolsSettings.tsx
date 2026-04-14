@@ -417,6 +417,29 @@ export function DevToolsSettings({ settings, onSettingsChange }: DevToolsSetting
           />
         </div>
 
+        {/* Tmux Tab Preference */}
+        <div className="space-y-3 pt-4">
+          <Label htmlFor="tmux-tab-preference" className="text-sm font-medium">
+            {t('devtools.tmuxTabPreference.label')}
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            {t('devtools.tmuxTabPreference.description')}
+          </p>
+          <Select
+            value={settings.tmuxTabPreference || 'ask'}
+            onValueChange={(v) => onSettingsChange({ ...settings, tmuxTabPreference: v === 'ask' ? undefined : v as 'tmux-window' | 'default-profile' })}
+          >
+            <SelectTrigger id="tmux-tab-preference">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ask">{t('devtools.tmuxTabPreference.askEveryTime')}</SelectItem>
+              <SelectItem value="tmux-window">{t('devtools.tmuxTabPreference.alwaysTmuxWindow')}</SelectItem>
+              <SelectItem value="default-profile">{t('devtools.tmuxTabPreference.alwaysDefaultProfile')}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
         {/* YOLO Mode Toggle */}
         <div className="space-y-3 rounded-md border border-amber-500/30 bg-amber-500/5 p-4">
           <div className="flex items-center justify-between">

@@ -4,6 +4,13 @@
       "label": "Processus distants personnalisés",
       "description": "Ajoutez des noms de processus pour les wrappers SSH ou outils distants à détecter comme sessions distantes (séparés par des virgules)",
       "placeholder": "ex. autossh, sshpass"
+    },
+    "tmuxTabPreference": {
+      "label": "Comportement des onglets tmux",
+      "description": "Choisissez ce qui se passe lorsque vous ouvrez un nouvel onglet pendant que tmux est en cours d'exécution",
+      "askEveryTime": "Demander à chaque fois",
+      "alwaysTmuxWindow": "Toujours créer une fenêtre tmux",
+      "alwaysDefaultProfile": "Toujours ouvrir un nouveau terminal"
     }
   },
   "projectSections": {
