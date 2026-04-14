@@ -3920,6 +3920,100 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
   );
 
   // ============================================================================
+  // PR Notes Handlers (user notes persisted per PR)
+  // ============================================================================
+
+  // Save user notes for a PR
+  ipcMain.handle(
+    IPC_CHANNELS.GITHUB_PR_NOTES_SAVE,
+    async (_, projectId: string, prNumber: number, notes: string): Promise<boolean> => {
+      debugLog("savePRNotes handler called", { projectId, prNumber });
+      const result = await withProjectOrNull(projectId, async (project) => {
+        const prDir = path.join(getGitHubDir(project), "pr");
+
+        try {
+          // Ensure pr directory exists
+          if (!fs.existsSync(prDir)) {
+            fs.mkdirSync(prDir, { recursive: true });
+          }
+
+          const notesPath = path.join(prDir, `notes_${prNumber}.json`);
+
+          // Load existing data for history preservation
+          let history: Array<{ notes: string; timestamp: string }> = [];
+          if (fs.existsSync(notesPath)) {
+            try {
+              const existing = JSON.parse(sanitizeNetworkData(fs.readFileSync(notesPath, "utf-8")));
+              // Preserve existing history and add current notes to it
+              history = Array.isArray(existing.history) ? existing.history : [];
+              if (existing.notes) {
+                history.unshift({
+                  notes: existing.notes,
+                  timestamp: existing.updated_at || new Date().toISOString(),
+                });
+              }
+              // Keep only last 50 entries
+              history = history.slice(0, 50);
+            } catch {
+              // If existing file is corrupt, start fresh
+              debugLog("Failed to parse existing notes file, starting fresh", { prNumber });
+            }
+          }
+
+          const notesData = {
+            pr_number: prNumber,
+            notes,
+            file_paths: [],
+            updated_at: new Date().toISOString(),
+            history,
+          };
+
+          fs.writeFileSync(notesPath, JSON.stringify(notesData, null, 2), "utf-8");
+          debugLog("PR notes saved", { prNumber });
+          return true;
+        } catch (error) {
+          debugLog("Failed to save PR notes", {
+            prNumber,
+            error: error instanceof Error ? error.message : error,
+          });
+          return false;
+        }
+      });
+      return result ?? false;
+    }
+  );
+
+  // Load user notes for a PR
+  ipcMain.handle(
+    IPC_CHANNELS.GITHUB_PR_NOTES_LOAD,
+    async (_, projectId: string, prNumber: number): Promise<string | null> => {
+      debugLog("loadPRNotes handler called", { projectId, prNumber });
+      const result = await withProjectOrNull(projectId, async (project) => {
+        const notesPath = path.join(getGitHubDir(project), "pr", `notes_${prNumber}.json`);
+
+        try {
+          if (!fs.existsSync(notesPath)) {
+            debugLog("No PR notes found", { prNumber });
+            return null;
+          }
+
+          const content = fs.readFileSync(notesPath, "utf-8");
+          const notesData = JSON.parse(sanitizeNetworkData(content));
+          debugLog("PR notes loaded", { prNumber });
+          return notesData.notes || null;
+        } catch (error) {
+          debugLog("Failed to load PR notes", {
+            prNumber,
+            error: error instanceof Error ? error.message : error,
+          });
+          return null;
+        }
+      });
+      return result ?? null;
+    }
+  );
+
+  // ============================================================================
   // PR Conflict Resolution Handler
   // ============================================================================
 
