@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { ExternalLink, X } from "lucide-react";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
+import { useSettingsStore, saveSettings } from "../stores/settings-store";
 import type { AppUpdateAvailableEvent } from "../../shared/types";
 
 // Poll for updates every 5 minutes
@@ -21,6 +22,7 @@ interface UpdateBannerProps {
  */
 export function UpdateBanner({ className }: UpdateBannerProps) {
   const { t } = useTranslation(["navigation", "common"]);
+  const settings = useSettingsStore((state) => state.settings);
   const [updateInfo, setUpdateInfo] = useState<AppUpdateAvailableEvent | null>(null);
   const [isDismissed, setIsDismissed] = useState(false);
 
@@ -37,6 +39,11 @@ export function UpdateBanner({ className }: UpdateBannerProps) {
         if (currentVersionRef.current !== newVersion) {
           setIsDismissed(false);
           currentVersionRef.current = newVersion;
+        }
+        // Auto-clear skipped version when a different version is detected
+        const skippedVersion = useSettingsStore.getState().settings.skippedUpdateVersion;
+        if (skippedVersion && skippedVersion !== newVersion) {
+          saveSettings({ skippedUpdateVersion: undefined });
         }
         setUpdateInfo({
           version: newVersion,
@@ -68,6 +75,11 @@ export function UpdateBanner({ className }: UpdateBannerProps) {
         setIsDismissed(false);
         currentVersionRef.current = info.version;
       }
+      // Auto-clear skipped version when a different version is detected
+      const skippedVersion = useSettingsStore.getState().settings.skippedUpdateVersion;
+      if (skippedVersion && skippedVersion !== info.version) {
+        saveSettings({ skippedUpdateVersion: undefined });
+      }
       setUpdateInfo(info);
     });
 
@@ -87,8 +99,16 @@ export function UpdateBanner({ className }: UpdateBannerProps) {
     setIsDismissed(true);
   };
 
-  // Don't render if no update or dismissed
-  if (!updateInfo || isDismissed) {
+  // Handle skip this version
+  const handleSkipVersion = () => {
+    setIsDismissed(true);
+    if (updateInfo) {
+      saveSettings({ skippedUpdateVersion: updateInfo.version });
+    }
+  };
+
+  // Don't render if no update, dismissed, or user skipped this version
+  if (!updateInfo || isDismissed || settings.skippedUpdateVersion === updateInfo.version) {
     return null;
   }
 
@@ -122,15 +142,25 @@ export function UpdateBanner({ className }: UpdateBannerProps) {
         {t("navigation:updateBanner.version", { version: updateInfo.version })}
       </p>
 
-      {/* Action button */}
-      <Button
-        size="sm"
-        className="w-full h-7 text-xs gap-1.5"
-        onClick={handleViewOnGitHub}
-      >
-        <ExternalLink className="h-3 w-3" aria-hidden="true" />
-        {t("navigation:updateBanner.viewOnGitHub")}
-      </Button>
+      {/* Action buttons */}
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          className="flex-1 h-7 text-xs gap-1.5"
+          onClick={handleViewOnGitHub}
+        >
+          <ExternalLink className="h-3 w-3" aria-hidden="true" />
+          {t("navigation:updateBanner.viewOnGitHub")}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 text-xs"
+          onClick={handleSkipVersion}
+        >
+          {t("navigation:updateBanner.skipVersion")}
+        </Button>
+      </div>
     </div>
   );
 }

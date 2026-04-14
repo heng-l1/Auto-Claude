@@ -325,6 +325,8 @@ export interface AppSettings {
   customRemoteProcesses?: string[];
   // Track which version warnings have been shown (e.g., ["2.7.5"])
   seenVersionWarnings?: string[];
+  // Version the user chose to skip in the update banner (e.g., "3.1.0")
+  skippedUpdateVersion?: string;
   // Sidebar collapsed state (icons only when true)
   sidebarCollapsed?: boolean;
   // GPU acceleration for terminal rendering (WebGL)
