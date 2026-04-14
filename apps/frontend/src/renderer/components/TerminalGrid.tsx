@@ -31,8 +31,10 @@ import { cn } from '../lib/utils';
 import { useTerminalStore } from '../stores/terminal-store';
 import { useTaskStore } from '../stores/task-store';
 import { useFileExplorerStore } from '../stores/file-explorer-store';
+import { useSettingsStore } from '../stores/settings-store';
 import { TERMINAL_DOM_UPDATE_DELAY_MS, PANEL_CLEANUP_GRACE_PERIOD_MS } from '../../shared/constants';
 import type { SessionDateInfo } from '../../shared/types';
+import { TmuxTabChoiceDialog } from './terminal/TmuxTabChoiceDialog';
 
 interface TerminalGridProps {
   projectPath?: string;
@@ -132,6 +134,16 @@ export function TerminalGrid({ projectPath, onNewTaskClick, isActive = false }: 
   // File explorer state
   const fileExplorerOpen = useFileExplorerStore((state) => state.isOpen);
   const toggleFileExplorer = useFileExplorerStore((state) => state.toggle);
+
+  // Tmux tab dialog state
+  const [showTmuxDialog, setShowTmuxDialog] = useState(false);
+  const tmuxTabPreference = useSettingsStore((state) => state.settings.tmuxTabPreference);
+
+  // Detect whether the active terminal has tmux as the foreground process
+  const activeTerminalIsTmux = useMemo(() => {
+    const active = terminals.find(t => t.id === activeTerminalId);
+    return active?.foregroundProcess === 'tmux';
+  }, [terminals, activeTerminalId]);
 
   // Session history state
   const [sessionDates, setSessionDates] = useState<SessionDateInfo[]>([]);
@@ -309,6 +321,42 @@ export function TerminalGrid({ projectPath, onNewTaskClick, isActive = false }: 
     }
   }, [removeTerminal, expandedTerminalId]);
 
+  // Tmux-aware terminal creation: intercepts add-terminal flow when tmux is detected
+  const handleAddTerminal = useCallback(() => {
+    if (!activeTerminalIsTmux) {
+      if (canAddTerminal(projectPath)) {
+        addTerminal(projectPath, projectPath);
+      }
+      return;
+    }
+    // Active terminal is tmux — check saved preference
+    if (tmuxTabPreference === 'tmux-window') {
+      if (activeTerminalId) {
+        window.electronAPI.sendTerminalInput(activeTerminalId, 'tmux new-window\r');
+      }
+    } else if (tmuxTabPreference === 'default-profile') {
+      if (canAddTerminal(projectPath)) {
+        addTerminal(projectPath, projectPath);
+      }
+    } else {
+      // No preference saved — show dialog
+      setShowTmuxDialog(true);
+    }
+  }, [activeTerminalIsTmux, activeTerminalId, tmuxTabPreference, canAddTerminal, projectPath, addTerminal]);
+
+  // Dialog callbacks for tmux tab choice
+  const handleTmuxWindowChoice = useCallback(() => {
+    if (activeTerminalId) {
+      window.electronAPI.sendTerminalInput(activeTerminalId, 'tmux new-window\r');
+    }
+  }, [activeTerminalId]);
+
+  const handleDefaultProfileChoice = useCallback(() => {
+    if (canAddTerminal(projectPath)) {
+      addTerminal(projectPath, projectPath);
+    }
+  }, [addTerminal, canAddTerminal, projectPath]);
+
   // Handle keyboard shortcut for new terminal (only when this view is active)
   useEffect(() => {
     if (!isActive) return;
@@ -317,9 +365,7 @@ export function TerminalGrid({ projectPath, onNewTaskClick, isActive = false }: 
       // Ctrl+T or Cmd+T for new terminal
       if ((e.ctrlKey || e.metaKey) && e.key === 't') {
         e.preventDefault();
-        if (canAddTerminal(projectPath)) {
-          addTerminal(projectPath, projectPath);
-        }
+        handleAddTerminal();
       }
       // Ctrl+W or Cmd+W to close active terminal
       if ((e.ctrlKey || e.metaKey) && e.key === 'w' && activeTerminalId) {
@@ -330,13 +376,7 @@ export function TerminalGrid({ projectPath, onNewTaskClick, isActive = false }: 
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isActive, addTerminal, canAddTerminal, projectPath, activeTerminalId, handleCloseTerminal]);
-
-  const handleAddTerminal = useCallback(() => {
-    if (canAddTerminal(projectPath)) {
-      addTerminal(projectPath, projectPath);
-    }
-  }, [addTerminal, canAddTerminal, projectPath]);
+  }, [isActive, handleAddTerminal, activeTerminalId, handleCloseTerminal]);
 
   // Toggle terminal expand state
   const handleToggleExpand = useCallback((terminalId: string) => {
@@ -564,7 +604,7 @@ export function TerminalGrid({ projectPath, onNewTaskClick, isActive = false }: 
               size="sm"
               className="h-7 text-xs gap-1.5"
               onClick={handleAddTerminal}
-              disabled={!canAddTerminal(projectPath)}
+              disabled={!canAddTerminal(projectPath) && !(activeTerminalIsTmux && tmuxTabPreference !== 'default-profile')}
             >
               <Plus className="h-3 w-3" />
               New Terminal
@@ -677,6 +717,13 @@ export function TerminalGrid({ projectPath, onNewTaskClick, isActive = false }: 
             </div>
           )}
         </DragOverlay>
+        <TmuxTabChoiceDialog
+          open={showTmuxDialog}
+          onOpenChange={setShowTmuxDialog}
+          onChooseTmuxWindow={handleTmuxWindowChoice}
+          onChooseDefaultProfile={handleDefaultProfileChoice}
+          canCreateNewTerminal={canAddTerminal(projectPath)}
+        />
       </div>
     </DndContext>
   );
