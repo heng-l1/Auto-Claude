@@ -20,8 +20,6 @@ import * as PtyManager from './pty-manager';
 import { notificationService } from '../notification-service';
 import { projectStore } from '../project-store';
 import { safeSendToRenderer } from '../ipc-handlers/utils';
-import { notificationService } from '../notification-service';
-import { projectStore } from '../project-store';
 import { debugLog, debugError } from '../../shared/utils/debug-logger';
 import { escapeShellArg, escapeForWindowsDoubleQuote, buildCdCommand } from '../../shared/utils/shell-escape';
 import { getClaudeCliInvocation, getClaudeCliInvocationAsync } from '../claude-cli-utils';
