@@ -25,6 +25,7 @@ import { Progress } from './ui/progress';
 import { ScrollArea } from './ui/scroll-area';
 import type { Task, WorktreeCreatePRResult } from '../../shared/types';
 import { useTaskStore } from '../stores/task-store';
+import { useSettingsStore } from '../stores/settings-store';
 
 /**
  * Check if an error message indicates a worktree-related issue (missing worktree, no branch, etc.)
@@ -70,6 +71,7 @@ export function BulkPRDialog({
   onComplete
 }: BulkPRDialogProps) {
   const { t } = useTranslation(['taskReview', 'common', 'tasks']);
+  const prAgentEnabled = useSettingsStore((state) => state.settings.prAgentEnabled);
 
   // Common options for all PRs
   const [targetBranch, setTargetBranch] = useState('');
@@ -225,6 +227,11 @@ export function BulkPRDialog({
           <DialogTitle className="flex items-center gap-2">
             <GitPullRequest className="h-5 w-5 text-primary" />
             {t('taskReview:bulkPR.title')}
+            {prAgentEnabled && (
+              <span className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium text-primary">
+                {t('taskReview:bulkPR.aiAssisted')}
+              </span>
+            )}
           </DialogTitle>
           <DialogDescription>
             {step === 'options' && t('taskReview:bulkPR.description', { count: tasks.length })}

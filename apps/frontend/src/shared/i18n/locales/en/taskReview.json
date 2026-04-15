@@ -132,7 +132,8 @@
     "skipped": "skipped",
     "alreadyExisted": "already existed",
     "noWorktree": "No worktree found for this task",
-    "resultsDescriptionWithSkipped": "{{success}} succeeded, {{skipped}} skipped, {{failed}} failed"
+    "resultsDescriptionWithSkipped": "{{success}} succeeded, {{skipped}} skipped, {{failed}} failed",
+    "aiAssisted": "AI-assisted"
   },
   "diffViewer": {
     "title": "Code Changes",
