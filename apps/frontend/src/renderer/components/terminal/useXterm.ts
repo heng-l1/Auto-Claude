@@ -283,10 +283,21 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
     const raf = typeof requestAnimationFrame !== 'undefined'
       ? requestAnimationFrame
       : (cb: FrameRequestCallback) => setTimeout(() => cb(Date.now()), 0) as unknown as number;
+    const cancelRaf = typeof cancelAnimationFrame !== 'undefined'
+      ? cancelAnimationFrame
+      : (id: number) => clearTimeout(id);
+
+    // Effect-scoped cancellation flag. Unlike isDisposedRef (which is shared
+    // across effect invocations and gets reset), this is local to THIS effect
+    // run. It prevents stale timers from calling open() on a disposed xterm
+    // after the effect is cleaned up and a new xterm is created.
+    let effectCancelled = false;
+    let pendingRaf = 0;
+    let pendingTimeout = 0;
 
     const performInitialFit = () => {
-      raf(() => {
-        if (isDisposedRef.current || !terminalRef.current) return;
+      pendingRaf = raf(() => {
+        if (effectCancelled || isDisposedRef.current || !terminalRef.current) return;
 
         // Check if container has valid dimensions
         const rect = terminalRef.current.getBoundingClientRect();
@@ -437,7 +448,7 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
           }
         } else {
           // Container not ready yet (likely hidden via display:none), retry
-          setTimeout(performInitialFit, 50);
+          pendingTimeout = window.setTimeout(performInitialFit, 50);
         }
       });
     };
@@ -471,7 +482,11 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
     });
 
     return () => {
-      // Cleanup handled by parent component
+      // Cancel the deferred open/fit chain to prevent stale timers from
+      // calling xterm.open() on a disposed instance after effect re-run.
+      effectCancelled = true;
+      cancelRaf(pendingRaf);
+      clearTimeout(pendingTimeout);
     };
   }, [terminalId, onResize, onDimensionsReady, fontSettings.cursorAccentColor, fontSettings.cursorBlink, fontSettings.cursorStyle, fontSettings.fontFamily.join, fontSettings.fontSize, fontSettings.fontWeight, fontSettings.letterSpacing, fontSettings.lineHeight, fontSettings.scrollback]);
 
