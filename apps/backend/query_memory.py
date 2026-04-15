@@ -79,6 +79,18 @@ def output_error(message: str):
     output_json(False, error=message)
 
 
+def _load_fts_extension(conn):
+    """Load the FTS extension if available. Required for tables with FTS indexes."""
+    try:
+        conn.execute("INSTALL fts")
+    except Exception:
+        pass
+    try:
+        conn.execute("LOAD EXTENSION fts")
+    except Exception:
+        pass
+
+
 def _is_lock_error(error: Exception) -> bool:
     """Check if an error indicates database lock contention."""
     error_msg = str(error).lower()
@@ -111,6 +123,7 @@ def get_db_connection(db_path: str, database: str):
             try:
                 db = kuzu.Database(str(full_path))
                 conn = kuzu.Connection(db)
+                _load_fts_extension(conn)
                 return conn, None
             except Exception as e:
                 if _is_lock_error(e) and attempt < max_retries:
@@ -592,6 +605,7 @@ def cmd_add_episode(args):
         # Open database (creates it if it doesn't exist)
         db = kuzu.Database(str(full_path))
         conn = kuzu.Connection(db)
+        _load_fts_extension(conn)
 
         # Always try to create the Episodic table if it doesn't exist
         # This handles both new databases and existing databases without the table

@@ -277,21 +277,30 @@ export function PRList({
             >
               <div className="flex items-start gap-3">
                 {onToggleCheck && (
-                  <button
-                    type="button"
+                  <div
+                    role="checkbox"
+                    aria-checked={isChecked}
+                    tabIndex={0}
                     onClick={(e) => {
                       e.stopPropagation();
                       onToggleCheck(pr.number);
                     }}
+                    onKeyDown={(e) => {
+                      if (e.key === ' ' || e.key === 'Enter') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onToggleCheck(pr.number);
+                      }
+                    }}
                     className={cn(
-                      'mt-0.5 h-5 w-5 shrink-0 rounded border-2 transition-colors flex items-center justify-center',
+                      'mt-0.5 h-5 w-5 shrink-0 rounded border-2 transition-colors flex items-center justify-center cursor-pointer',
                       isChecked
                         ? 'bg-primary border-primary text-primary-foreground'
                         : 'border-foreground/50 hover:border-foreground'
                     )}
                   >
                     {isChecked && <Check className="h-3.5 w-3.5" />}
-                  </button>
+                  </div>
                 )}
                 <GitPullRequest className="h-5 w-5 mt-0.5 text-success shrink-0" />
                 <div className="flex-1 min-w-0">
