@@ -197,27 +197,85 @@ function TaskDetailModalContent({ open, task, onOpenChange, onOpenInbuiltTermina
   };
 
   const handleCreatePR = async (options: WorktreeCreatePROptions) => {
-    state.setIsCreatingPR(true);
-    try {
-      const result = await window.electronAPI.createWorktreePR(task.id, options);
-      if (result.success && result.data) {
-        // Update single task in store with new status and prUrl (more efficient than reloading all tasks)
-        if (result.data.success && result.data.prUrl && !result.data.alreadyExists) {
+    // Immediately move task to pr_created status so it appears in the PR column
+    // This makes PR creation non-blocking — the user doesn't have to wait
+    useTaskStore.getState().updateTask(task.id, {
+      status: 'pr_created'
+    });
+
+    // Show confirmation toast and close the dialog
+    toast({
+      title: t('taskReview:pr.success.started'),
+      description: t('taskReview:pr.success.startedDescription'),
+      duration: 4000,
+    });
+    state.setShowPRDialog(false);
+
+    // Fire PR creation in the background — don't await
+    window.electronAPI.createWorktreePR(task.id, options)
+      .then((result) => {
+        if (result.success && result.data) {
+          if (result.data.success && result.data.prUrl && !result.data.alreadyExists) {
+            // PR created successfully — update metadata with PR URL
+            useTaskStore.getState().updateTask(task.id, {
+              status: 'pr_created',
+              metadata: { ...task.metadata, prUrl: result.data.prUrl }
+            });
+            toast({
+              title: t('taskReview:pr.success.created'),
+              description: result.data.prUrl,
+              duration: 6000,
+            });
+          } else if (result.data.alreadyExists && result.data.prUrl) {
+            // PR already exists — still a valid state, update metadata
+            useTaskStore.getState().updateTask(task.id, {
+              status: 'pr_created',
+              metadata: { ...task.metadata, prUrl: result.data.prUrl }
+            });
+            toast({
+              title: t('taskReview:pr.success.alreadyExists'),
+              duration: 4000,
+            });
+          } else {
+            // PR creation failed — move back to human_review
+            useTaskStore.getState().updateTask(task.id, {
+              status: 'human_review'
+            });
+            toast({
+              variant: 'destructive',
+              title: t('taskReview:pr.errors.failed'),
+              description: result.data.error || t('taskReview:pr.errors.unknown'),
+              duration: 8000,
+            });
+          }
+        } else {
+          // IPC-level failure — move back to human_review
           useTaskStore.getState().updateTask(task.id, {
-            status: 'done',
-            metadata: { ...task.metadata, prUrl: result.data.prUrl }
+            status: 'human_review'
+          });
+          toast({
+            variant: 'destructive',
+            title: t('taskReview:pr.errors.failed'),
+            description: result.error || t('taskReview:pr.errors.unknown'),
+            duration: 8000,
           });
         }
-        return result.data;
-      }
-      // Propagate IPC error; let CreatePRDialog use its i18n fallback
-      return { success: false, error: result.error, prUrl: undefined, alreadyExists: false };
-    } catch (error) {
-      // Propagate actual error message; let CreatePRDialog handle i18n fallback for undefined
-      return { success: false, error: error instanceof Error ? error.message : undefined, prUrl: undefined, alreadyExists: false };
-    } finally {
-      state.setIsCreatingPR(false);
-    }
+      })
+      .catch((err) => {
+        // Unexpected error — move back to human_review
+        useTaskStore.getState().updateTask(task.id, {
+          status: 'human_review'
+        });
+        toast({
+          variant: 'destructive',
+          title: t('taskReview:pr.errors.failed'),
+          description: err instanceof Error ? err.message : t('taskReview:pr.errors.unknown'),
+          duration: 8000,
+        });
+      });
+
+    // Return immediately so the dialog can close
+    return { success: true, prUrl: undefined, alreadyExists: false };
   };
 
   const handleClose = () => {

@@ -68,11 +68,14 @@
     "errors": {
       "unknown": "An unknown error occurred while creating the pull request",
       "invalidBranchName": "Branch name contains invalid characters. Use only letters, numbers, hyphens (-), underscores (_), and forward slashes (/).",
-      "emptyTitle": "Pull request title cannot be empty."
+      "emptyTitle": "Pull request title cannot be empty.",
+      "failed": "PR creation failed"
     },
     "success": {
       "created": "Pull request created successfully!",
-      "alreadyExists": "A pull request already exists for this branch"
+      "alreadyExists": "A pull request already exists for this branch",
+      "started": "PR creation started",
+      "startedDescription": "Your task has been moved to the PR column. You'll be notified when the PR is ready."
     },
     "actions": {
       "retry": "Retry",

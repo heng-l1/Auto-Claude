@@ -3,6 +3,13 @@
     "requireReviewPerSubtaskLabel": "Examiner chaque sous-t\u00e2che avant de continuer",
     "requireReviewPerSubtaskDescription": "Mettre en pause apr\u00e8s chaque sous-t\u00e2che pour examiner les modifications avant de passer \u00e0 la suivante."
   },
+  "columns": {
+    "pr_created": "Revue de PR"
+  },
+  "kanban": {
+    "emptyPRCreated": "Aucune PR en revue",
+    "emptyPRCreatedHint": "Les t\u00e2ches avec des PR ouvertes apparaissent ici"
+  },
   "reviewReason": {
     "subtaskReview": "Examen de sous-t\u00e2che"
   }
