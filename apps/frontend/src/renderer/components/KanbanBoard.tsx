@@ -55,12 +55,11 @@ function isValidDropColumn(id: string): id is typeof TASK_STATUS_COLUMNS[number]
 
 /**
  * Get the visual column for a task status.
- * pr_created tasks are displayed in the 'done' column, so we map them accordingly.
+ * pr_created tasks are displayed in their own 'pr_created' column (PR review phase).
  * error tasks are displayed in the 'human_review' column (errors need human attention).
  * This is used to compare visual positions during drag-and-drop operations.
  */
 function getVisualColumn(status: TaskStatus): typeof TASK_STATUS_COLUMNS[number] {
-  if (status === 'pr_created') return 'done';
   if (status === 'error') return 'human_review';
   return status;
 }
@@ -215,6 +214,12 @@ const getEmptyStateContent = (status: TaskStatus, t: (key: string) => string): {
         icon: <Eye className="h-6 w-6 text-muted-foreground/50" />,
         message: t('kanban.emptyHumanReview'),
         subtext: t('kanban.emptyHumanReviewHint')
+      };
+    case 'pr_created':
+      return {
+        icon: <GitPullRequest className="h-6 w-6 text-muted-foreground/50" />,
+        message: t('kanban.emptyPRCreated'),
+        subtext: t('kanban.emptyPRCreatedHint')
       };
     case 'done':
       return {
@@ -736,7 +741,7 @@ export function KanbanBoard({ tasks, onTaskClick, onNewTaskClick, onRefresh, isR
   const taskOrder = useTaskStore((state) => state.taskOrder);
 
   const tasksByStatus = useMemo(() => {
-    // Note: pr_created tasks are shown in the 'done' column since they're essentially complete
+    // Note: pr_created tasks are shown in their own column (PR review phase)
     // Note: error tasks are shown in the 'human_review' column since they need human attention
     const grouped: Record<typeof TASK_STATUS_COLUMNS[number], Task[]> = {
       backlog: [],
@@ -744,11 +749,12 @@ export function KanbanBoard({ tasks, onTaskClick, onNewTaskClick, onRefresh, isR
       in_progress: [],
       ai_review: [],
       human_review: [],
+      pr_created: [],
       done: []
     };
 
     filteredTasks.forEach((task) => {
-      // Map pr_created tasks to the done column, error tasks to human_review
+      // Map error tasks to human_review column
       const targetColumn = getVisualColumn(task.status);
       if (grouped[targetColumn]) {
         grouped[targetColumn].push(task);

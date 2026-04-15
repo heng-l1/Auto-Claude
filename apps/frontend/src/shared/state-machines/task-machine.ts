@@ -152,12 +152,18 @@ export const taskMachine = createMachine(
       },
       creating_pr: {
         on: {
-          PR_CREATED: 'pr_created'
+          PR_CREATED: 'pr_created',
+          // PR creation failed - allow going back to human_review
+          USER_STOPPED: { target: 'human_review', actions: 'setReviewReasonStopped' }
         }
       },
       pr_created: {
         on: {
-          MARK_DONE: 'done'
+          MARK_DONE: 'done',
+          // Allow returning to coding to address PR review comments
+          USER_RESUMED: { target: 'coding', actions: 'clearReviewReason' },
+          // Allow re-creating PR (e.g., after force push)
+          CREATE_PR: 'creating_pr'
         }
       },
       done: {

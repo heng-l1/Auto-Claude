@@ -323,6 +323,13 @@ AGENT_CONFIGS = {
         "auto_claude_tools": [],
         "thinking_default": "medium",
     },
+    "pr_creation_agent": {
+        # Creates PRs from completed task branches — reads diff/spec, runs gh CLI
+        "tools": BASE_READ_TOOLS + ["Bash"],
+        "mcp_servers": [],
+        "auto_claude_tools": [],
+        "thinking_default": "medium",
+    },
     # ═══════════════════════════════════════════════════════════════════════
     # ANALYSIS PHASES
     # ═══════════════════════════════════════════════════════════════════════

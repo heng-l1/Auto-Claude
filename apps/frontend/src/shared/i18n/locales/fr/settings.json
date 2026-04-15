@@ -24,5 +24,19 @@
   "notifications": {
     "onClaudeSessionComplete": "À la fin d'une session Claude",
     "onClaudeSessionCompleteDescription": "Notifier lorsqu'une session Claude dans le terminal se termine"
+  },
+  "agentProfile": {
+    "phases": {
+      "pr": {
+        "label": "Création de PR",
+        "description": "Création de pull requests assistée par IA"
+      }
+    }
+  },
+  "general": {
+    "prAgent": {
+      "label": "Agent IA de création de PR",
+      "description": "Utiliser un agent Claude pour créer des pull requests avec un contexte riche à partir des spécifications, rapports QA et conventions du projet"
+    }
   }
 }

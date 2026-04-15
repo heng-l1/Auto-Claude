@@ -77,6 +77,8 @@
     "emptyAiReviewHint": "AI will review completed tasks",
     "emptyHumanReview": "Nothing to review",
     "emptyHumanReviewHint": "Tasks await your approval here",
+    "emptyPRCreated": "No PRs in review",
+    "emptyPRCreatedHint": "Tasks with open PRs appear here",
     "emptyDone": "No completed tasks",
     "emptyDoneHint": "Approved tasks appear here",
     "emptyDefault": "No tasks",

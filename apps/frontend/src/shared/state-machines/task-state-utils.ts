@@ -89,7 +89,7 @@ export function mapStateToLegacy(
     case 'error':
       return { status: 'human_review', reviewReason: 'errors' };
     case 'creating_pr':
-      return { status: 'human_review', reviewReason: 'completed' };
+      return { status: 'pr_created' };
     case 'pr_created':
       return { status: 'pr_created' };
     case 'done':

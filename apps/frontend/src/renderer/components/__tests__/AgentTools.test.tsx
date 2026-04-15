@@ -203,7 +203,7 @@ describe('AgentTools - Agent Profile Resolution', () => {
 
     it('should resolve feature-based agent settings correctly', () => {
       const phaseModels = DEFAULT_PHASE_MODELS;
-      const phaseThinking = { spec: 'medium' as const, planning: 'medium' as const, coding: 'medium' as const, qa: 'medium' as const };
+      const phaseThinking = { spec: 'medium' as const, planning: 'medium' as const, coding: 'medium' as const, qa: 'medium' as const, pr: 'medium' as const };
       const featureModels = DEFAULT_FEATURE_MODELS;
       const featureThinking = DEFAULT_FEATURE_THINKING;
 
@@ -260,7 +260,7 @@ describe('AgentTools - Agent Profile Resolution', () => {
 
     it('should resolve fixed settings correctly', () => {
       const phaseModels = DEFAULT_PHASE_MODELS;
-      const phaseThinking = { spec: 'medium' as const, planning: 'medium' as const, coding: 'medium' as const, qa: 'medium' as const };
+      const phaseThinking = { spec: 'medium' as const, planning: 'medium' as const, coding: 'medium' as const, qa: 'medium' as const, pr: 'medium' as const };
       const featureModels = DEFAULT_FEATURE_MODELS;
       const featureThinking = DEFAULT_FEATURE_THINKING;
 

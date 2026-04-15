@@ -59,14 +59,16 @@ export const AUTO_PHASE_MODELS: PhaseModelConfig = {
   spec: 'opus',
   planning: 'opus',
   coding: 'opus',
-  qa: 'opus'
+  qa: 'opus',
+  pr: 'opus'
 };
 
 export const AUTO_PHASE_THINKING: import('../types/settings').PhaseThinkingConfig = {
   spec: 'high',   // Deep thinking for comprehensive spec creation
   planning: 'high',     // High thinking for planning complex features
   coding: 'low',        // Faster coding iterations
-  qa: 'low'             // Efficient QA review
+  qa: 'low',            // Efficient QA review
+  pr: 'low'             // Fast PR creation
 };
 
 // Complex Tasks - Opus with high thinking across all phases
@@ -74,14 +76,16 @@ export const COMPLEX_PHASE_MODELS: PhaseModelConfig = {
   spec: 'opus',
   planning: 'opus',
   coding: 'opus',
-  qa: 'opus'
+  qa: 'opus',
+  pr: 'opus'
 };
 
 export const COMPLEX_PHASE_THINKING: import('../types/settings').PhaseThinkingConfig = {
   spec: 'high',
   planning: 'high',
   coding: 'high',
-  qa: 'high'
+  qa: 'high',
+  pr: 'high'
 };
 
 // Balanced - Sonnet with medium thinking across all phases
@@ -89,14 +93,16 @@ export const BALANCED_PHASE_MODELS: PhaseModelConfig = {
   spec: 'sonnet',
   planning: 'sonnet',
   coding: 'sonnet',
-  qa: 'sonnet'
+  qa: 'sonnet',
+  pr: 'sonnet'
 };
 
 export const BALANCED_PHASE_THINKING: import('../types/settings').PhaseThinkingConfig = {
   spec: 'medium',
   planning: 'medium',
   coding: 'medium',
-  qa: 'medium'
+  qa: 'medium',
+  pr: 'medium'
 };
 
 // Quick Edits - Haiku with low thinking across all phases
@@ -104,14 +110,16 @@ export const QUICK_PHASE_MODELS: PhaseModelConfig = {
   spec: 'haiku',
   planning: 'haiku',
   coding: 'haiku',
-  qa: 'haiku'
+  qa: 'haiku',
+  pr: 'haiku'
 };
 
 export const QUICK_PHASE_THINKING: import('../types/settings').PhaseThinkingConfig = {
   spec: 'low',
   planning: 'low',
   coding: 'low',
-  qa: 'low'
+  qa: 'low',
+  pr: 'low'
 };
 
 // Default phase configuration (used for fallback, matches 'Balanced' profile for cost-effectiveness)
@@ -216,7 +224,7 @@ export function sanitizeThinkingLevel(val: string): string {
 }
 
 // Phase keys for iterating over phase model/thinking configuration
-export const PHASE_KEYS: readonly (keyof PhaseModelConfig)[] = ['spec', 'planning', 'coding', 'qa'] as const;
+export const PHASE_KEYS: readonly (keyof PhaseModelConfig)[] = ['spec', 'planning', 'coding', 'qa', 'pr'] as const;
 
 // ============================================
 // Memory Backends
