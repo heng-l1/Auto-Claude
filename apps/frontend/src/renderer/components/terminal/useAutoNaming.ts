@@ -1,6 +1,20 @@
 import { useCallback, useRef } from 'react';
+import { useClaudeProfileStore } from '../../stores/claude-profile-store';
 import { useSettingsStore } from '../../stores/settings-store';
 import { useTerminalStore } from '../../stores/terminal-store';
+
+/**
+ * Get the default Claude terminal title based on the active profile.
+ * Uses getState() for synchronous access outside React render cycle.
+ * Mirrors the title logic from claude-integration-handler.ts.
+ */
+function getDefaultClaudeTitle(): string {
+  const { profiles, activeProfileId } = useClaudeProfileStore.getState();
+  const activeProfile = profiles.find((p) => p.id === activeProfileId);
+  return activeProfile && !activeProfile.isDefault
+    ? `Claude (${activeProfile.name})`
+    : 'Claude';
+}
 
 interface UseAutoNamingOptions {
   terminalId: string;
@@ -102,6 +116,19 @@ export function useAutoNaming({ terminalId, cwd }: UseAutoNamingOptions) {
   }, [autoNameTerminals, autoNameClaudeTerminals, terminal?.isClaudeMode, terminal?.title, terminal?.cwd, cwd, terminalId, updateTerminal, setClaudeNamedOnce]);
 
   const handleCommandEnter = useCallback((command: string) => {
+    // Reset title on /clear in Claude-mode terminals
+    if (terminal?.isClaudeMode && command.trim() === '/clear') {
+      if (autoNameTimeoutRef.current) {
+        clearTimeout(autoNameTimeoutRef.current);
+        autoNameTimeoutRef.current = null;
+      }
+      const defaultTitle = getDefaultClaudeTitle();
+      updateTerminal(terminalId, { title: defaultTitle });
+      window.electronAPI.setTerminalTitle(terminalId, defaultTitle);
+      setClaudeNamedOnce(terminalId, false);
+      return;
+    }
+
     lastCommandRef.current = command;
 
     if (autoNameTimeoutRef.current) {
@@ -111,7 +138,7 @@ export function useAutoNaming({ terminalId, cwd }: UseAutoNamingOptions) {
     autoNameTimeoutRef.current = setTimeout(() => {
       triggerAutoNaming();
     }, 1500);
-  }, [triggerAutoNaming]);
+  }, [terminal?.isClaudeMode, terminalId, updateTerminal, setClaudeNamedOnce, triggerAutoNaming]);
 
   const cleanup = useCallback(() => {
     if (autoNameTimeoutRef.current) {
