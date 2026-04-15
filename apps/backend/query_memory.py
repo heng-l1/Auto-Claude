@@ -79,8 +79,23 @@ def output_error(message: str):
     output_json(False, error=message)
 
 
+def _is_lock_error(error: Exception) -> bool:
+    """Check if an error indicates database lock contention."""
+    error_msg = str(error).lower()
+    return "could not set lock" in error_msg or (
+        "lock" in error_msg and ("file" in error_msg or "database" in error_msg)
+    )
+
+
 def get_db_connection(db_path: str, database: str):
-    """Get a database connection."""
+    """Get a database connection with retry logic for lock contention."""
+    import time
+    import random
+
+    max_retries = 5
+    initial_backoff = 0.5
+    max_backoff = 8.0
+
     try:
         # Try to import kuzu (might be real_ladybug via monkeypatch or native)
         try:
@@ -92,9 +107,25 @@ def get_db_connection(db_path: str, database: str):
         if not full_path.exists():
             return None, f"Database not found at {full_path}"
 
-        db = kuzu.Database(str(full_path))
-        conn = kuzu.Connection(db)
-        return conn, None
+        for attempt in range(max_retries + 1):
+            try:
+                db = kuzu.Database(str(full_path))
+                conn = kuzu.Connection(db)
+                return conn, None
+            except Exception as e:
+                if _is_lock_error(e) and attempt < max_retries:
+                    backoff = min(initial_backoff * (2 ** attempt), max_backoff)
+                    jitter = backoff * 0.2 * (2 * random.random() - 1)
+                    wait_time = max(0.01, backoff + jitter)
+                    print(
+                        json.dumps({"debug": f"DB lock contention (attempt {attempt + 1}/{max_retries}), retrying in {wait_time:.2f}s"}),
+                        file=sys.stderr,
+                    )
+                    time.sleep(wait_time)
+                    continue
+                return None, str(e)
+
+        return None, "Failed to acquire database lock after retries"
     except Exception as e:
         return None, str(e)
 

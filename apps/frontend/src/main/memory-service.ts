@@ -530,10 +530,10 @@ export class MemoryService {
    * Get all memories from the database
    */
   async getAllMemories(limit: number = 20): Promise<MemoryEpisode[]> {
-    const [episodic, entities] = await Promise.all([
-      this.getEpisodicMemories(limit),
-      this.getEntityMemories(limit),
-    ]);
+    // Serialize queries — LadybugDB uses exclusive file locks,
+    // so parallel subprocesses would contend on the same lock file.
+    const episodic = await this.getEpisodicMemories(limit);
+    const entities = await this.getEntityMemories(limit);
 
     const memories = [...episodic, ...entities];
 
