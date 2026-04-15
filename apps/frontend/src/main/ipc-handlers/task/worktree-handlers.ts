@@ -110,6 +110,9 @@ const PRINTABLE_CHARS_REGEX = /^[\x20-\x7E\u00A0-\uFFFF]*$/;
 // Timeout for PR creation operations (2 minutes for network operations)
 const PR_CREATION_TIMEOUT_MS = 120000;
 
+// Timeout for PR creation via agent path (3 minutes - agent needs time to compose rich PR descriptions)
+const PR_AGENT_TIMEOUT_MS = 180000;
+
 /**
  * Read utility feature settings (for commit message, merge resolver) from settings file
  */
@@ -147,6 +150,27 @@ function getUtilitySettings(): { model: string; modelId: string; thinkingLevel: 
     thinkingLevel: DEFAULT_FEATURE_THINKING.utility,
     thinkingBudget: THINKING_BUDGET_MAP[DEFAULT_FEATURE_THINKING.utility]
   };
+}
+
+/**
+ * Check if the PR creation agent is enabled in user settings.
+ * When enabled, PR creation routes through Claude agent for rich, context-aware descriptions.
+ * When disabled, PR creation uses direct CLI (gh pr create) for speed.
+ */
+function isPRAgentEnabled(): boolean {
+  const settingsPath = path.join(app.getPath('userData'), 'settings.json');
+
+  try {
+    if (existsSync(settingsPath)) {
+      const content = readFileSync(settingsPath, 'utf-8');
+      const settings: AppSettings = { ...DEFAULT_APP_SETTINGS, ...JSON.parse(content) };
+      return settings.prAgentEnabled ?? DEFAULT_APP_SETTINGS.prAgentEnabled;
+    }
+  } catch (error) {
+    console.warn('[isPRAgentEnabled] Failed to parse settings.json:', error);
+  }
+
+  return DEFAULT_APP_SETTINGS.prAgentEnabled;
 }
 
 const execAsync = promisify(exec);
@@ -1620,19 +1644,21 @@ async function updateTaskStatusAfterPRCreation(
 
 /**
  * Build arguments for the create-pr Python script
+ * @param useAgent - When true, uses --create-pr-agent flag for AI-powered PR descriptions
  */
 function buildCreatePRArgs(
   runScript: string,
   specId: string,
   projectPath: string,
   options: WorktreeCreatePROptions | undefined,
-  taskBaseBranch: string | undefined
+  taskBaseBranch: string | undefined,
+  useAgent: boolean = false
 ): { args: string[]; validationError?: string } {
   const args = [
     runScript,
     '--spec', specId,
     '--project-dir', projectPath,
-    '--create-pr'
+    useAgent ? '--create-pr-agent' : '--create-pr'
   ];
 
   // Add optional arguments with validation
@@ -3596,6 +3622,11 @@ export function registerWorktreeHandlers(
         }
         debug('Worktree path:', worktreePath);
 
+        // Determine whether to use agent-based or direct CLI PR creation
+        const useAgent = isPRAgentEnabled();
+        const timeoutMs = useAgent ? PR_AGENT_TIMEOUT_MS : PR_CREATION_TIMEOUT_MS;
+        debug('PR creation mode:', useAgent ? 'agent (create-pr-agent)' : 'direct (create-pr)', 'timeout:', timeoutMs, 'ms');
+
         // Build arguments using helper function
         const taskBaseBranch = getTaskBaseBranch(specDir);
         const { args, validationError } = buildCreatePRArgs(
@@ -3603,7 +3634,8 @@ export function registerWorktreeHandlers(
           task.specId,
           project.path,
           options,
-          taskBaseBranch
+          taskBaseBranch,
+          useAgent
         );
         if (validationError) {
           return { success: false, error: validationError };
@@ -3650,9 +3682,10 @@ export function registerWorktreeHandlers(
           let stderr = '';
 
           // Set up timeout to kill hung processes
+          // Agent path gets longer timeout (3 min) since it composes rich descriptions
           timeoutId = setTimeout(() => {
             if (!resolved) {
-              debug('TIMEOUT: Create PR process exceeded', PR_CREATION_TIMEOUT_MS, 'ms, killing...');
+              debug('TIMEOUT: Create PR process exceeded', timeoutMs, 'ms, killing...');
               resolved = true;
 
               // Platform-specific process termination with fallback
@@ -3666,7 +3699,7 @@ export function registerWorktreeHandlers(
                 error: 'PR creation timed out. Check if the PR was created on GitHub.'
               });
             }
-          }, PR_CREATION_TIMEOUT_MS);
+          }, timeoutMs);
 
           createPRProcess.stdout.on('data', (data: Buffer) => {
             const chunk = data.toString('utf-8');
