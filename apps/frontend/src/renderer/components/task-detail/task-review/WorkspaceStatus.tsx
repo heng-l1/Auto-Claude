@@ -96,6 +96,7 @@ export function WorkspaceStatus({
   const { t } = useTranslation(['taskReview', 'common', 'tasks']);
   const { settings } = useSettingsStore();
   const preferredIDE = settings.preferredIDE || 'vscode';
+  const preferredTerminal = settings.preferredTerminal || 'system';
 
   // Merge progress state
   const [mergeProgress, setMergeProgress] = useState<MergeProgress | null>(null);
@@ -222,6 +223,19 @@ export function WorkspaceStatus({
     }
   };
 
+  const handleOpenInTerminal = async () => {
+    if (!worktreeStatus.worktreePath) return;
+    try {
+      await window.electronAPI.worktreeOpenInTerminal(
+        worktreeStatus.worktreePath,
+        preferredTerminal,
+        settings.customTerminalPath
+      );
+    } catch (err) {
+      console.error('Failed to open in terminal:', err);
+    }
+  };
+
   const hasGitConflicts = mergePreview?.gitConflicts?.hasConflicts;
   const hasUncommittedChanges = mergePreview?.uncommittedChanges?.hasChanges;
   const uncommittedCount = mergePreview?.uncommittedChanges?.count || 0;
@@ -332,7 +346,7 @@ export function WorkspaceStatus({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => onOpenInbuiltTerminal?.(taskId, worktreeStatus.worktreePath!, { worktreeBranch: worktreeStatus.branch, worktreeBaseBranch: worktreeStatus.baseBranch })}
+              onClick={handleOpenInTerminal}
               className="h-7 px-2 text-xs"
             >
               <Terminal className="h-3.5 w-3.5 mr-1" />
