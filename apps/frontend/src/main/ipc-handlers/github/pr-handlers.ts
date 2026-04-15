@@ -23,6 +23,7 @@ import { getGitHubConfig, githubFetch, normalizeRepoReference } from "./utils";
 import { readSettingsFile } from "../../settings-utils";
 import { getAugmentedEnv } from "../../env-utils";
 import { getMemoryService, getDefaultDbPath } from "../../memory-service";
+import { parseEnvFile } from "../utils";
 import type { Project, AppSettings } from "../../../shared/types";
 import { createContextLogger } from "./utils/logger";
 import { withProjectOrNull } from "./utils/project-middleware";
@@ -808,6 +809,30 @@ function writeReviewToFileStorage(
 }
 
 /**
+ * Check if memory is enabled via global app settings (memoryEnabled)
+ * or via the project's .env file (GRAPHITI_ENABLED).
+ * The Settings page writes to the project .env while onboarding
+ * writes to global app settings — we need to check both.
+ */
+function isMemoryEnabled(githubDir?: string): boolean {
+  const settings = readSettingsFile();
+  if (settings?.memoryEnabled) return true;
+
+  // Check project-level GRAPHITI_ENABLED from the .env file
+  if (githubDir) {
+    try {
+      const envPath = path.join(githubDir, "..", ".env");
+      if (fs.existsSync(envPath)) {
+        const envVars = parseEnvFile(fs.readFileSync(envPath, "utf-8"));
+        if (envVars["GRAPHITI_ENABLED"]?.toLowerCase() === "true") return true;
+      }
+    } catch { /* ignore read errors */ }
+  }
+
+  return false;
+}
+
+/**
  * Save PR review insights to the Electron memory layer (LadybugDB)
  *
  * Called after a PR review completes to persist learnings for cross-session context.
@@ -824,8 +849,7 @@ async function savePRReviewToMemory(
   githubDir?: string,
   repoName?: string
 ): Promise<void> {
-  const settings = readSettingsFile();
-  if (!settings?.memoryEnabled && !settings?.globalMemoryEnabled) {
+  if (!isMemoryEnabled(githubDir)) {
     debugLog("Memory not enabled, skipping PR review memory save");
     return;
   }
@@ -980,8 +1004,7 @@ export async function savePRDiscussionToMemory(
   prNumber: number,
   repo: string
 ): Promise<void> {
-  const settings = readSettingsFile();
-  if (!settings?.memoryEnabled && !settings?.globalMemoryEnabled) {
+  if (!isMemoryEnabled()) {
     debugLog("Memory not enabled, skipping PR discussion memory save");
     return;
   }
