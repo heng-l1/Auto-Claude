@@ -1321,6 +1321,138 @@ def handle_create_pr_command(
         return result
 
 
+def handle_create_pr_agent_command(
+    project_dir: Path,
+    spec_name: str,
+    target_branch: str | None = None,
+    title: str | None = None,
+    draft: bool = False,
+) -> CreatePRResult:
+    """
+    Handle the --create-pr-agent command: use a Claude agent to push branch and create a PR.
+
+    Unlike handle_create_pr_command() which calls gh/glab directly, this invokes a
+    Claude agent that composes a rich PR title and description from spec context,
+    QA reports, and project conventions before creating the PR.
+
+    Args:
+        project_dir: Path to the project directory
+        spec_name: Name of the spec (e.g., "001-feature-name")
+        target_branch: Target branch for PR (defaults to base branch)
+        title: Custom PR title (defaults to agent-generated)
+        draft: Whether to create as draft PR
+
+    Returns:
+        CreatePRResult with success status, pr_url, and any errors
+    """
+    import asyncio
+
+    print_banner()
+    print("\n" + "=" * 70)
+    print("  CREATE PULL REQUEST (AI Agent)")
+    print("=" * 70)
+
+    # Check if worktree exists
+    worktree_path = get_existing_build_worktree(project_dir, spec_name)
+    if not worktree_path:
+        print(f"\n{icon(Icons.ERROR)} No build found for spec: {spec_name}")
+        print("\nA completed build worktree is required to create a PR.")
+        print("Run your build first, then use --create-pr-agent.")
+        error_result: CreatePRResult = {
+            "success": False,
+            "error": "No build found for this spec",
+        }
+        return error_result
+
+    # Resolve spec directory
+    spec_dir = project_dir / ".auto-claude" / "specs" / spec_name
+    if not spec_dir.exists():
+        # Fallback: try without dot prefix
+        spec_dir = project_dir / "auto-claude" / "specs" / spec_name
+    if not spec_dir.exists():
+        print(f"\n{icon(Icons.ERROR)} Spec directory not found for: {spec_name}")
+        error_result: CreatePRResult = {
+            "success": False,
+            "error": f"Spec directory not found for: {spec_name}",
+        }
+        return error_result
+
+    print(f"\n{icon(Icons.BRANCH)} Running AI agent to push branch and create PR...")
+    print(f"   Spec: {spec_name}")
+    print(f"   Target: {target_branch or 'main'}")
+    if title:
+        print(f"   Title: {title}")
+    if draft:
+        print("   Mode: Draft PR")
+    print()
+
+    # Run the PR creation agent
+    try:
+        from runners.pr_creation_runner import run_pr_creation_agent
+
+        raw_result = asyncio.run(
+            run_pr_creation_agent(
+                project_dir=project_dir,
+                spec_dir=spec_dir,
+                spec_name=spec_name,
+                target_branch=target_branch,
+                title=title,
+                draft=draft,
+            )
+        )
+    except Exception as e:
+        debug_error(MODULE, f"Exception during PR creation agent: {e}")
+        error_result: CreatePRResult = {
+            "success": False,
+            "error": str(e),
+            "message": "Failed to run PR creation agent",
+        }
+        print(f"\n{icon(Icons.ERROR)} Failed to run PR creation agent: {e}")
+        print(json.dumps(error_result))
+        return error_result
+
+    # Convert agent result to CreatePRResult
+    result: CreatePRResult = {
+        "success": raw_result.get("success", False),
+        "pr_url": raw_result.get("pr_url"),
+        "already_exists": raw_result.get("already_exists", False),
+        "error": raw_result.get("error"),
+        "message": raw_result.get("message"),
+        "pushed": raw_result.get("pushed", False),
+        "remote": raw_result.get("remote", ""),
+        "branch": raw_result.get("branch", ""),
+    }
+
+    if result.get("success"):
+        pr_url = result.get("pr_url")
+        already_exists = result.get("already_exists", False)
+
+        if already_exists:
+            print(f"\n{icon(Icons.SUCCESS)} PR already exists!")
+        else:
+            print(f"\n{icon(Icons.SUCCESS)} PR created successfully!")
+
+        if pr_url:
+            print(f"\n{icon(Icons.LINK)} {pr_url}")
+        else:
+            print(f"\n{icon(Icons.INFO)} Check GitHub for the PR URL")
+
+        print("\nNext steps:")
+        print("  1. Review the PR on GitHub")
+        print("  2. Request reviews from your team")
+        print("  3. Merge when approved")
+
+        # Output JSON for frontend parsing
+        print(json.dumps(result))
+        return result
+    else:
+        error = result.get("error", "Unknown error")
+        print(f"\n{icon(Icons.ERROR)} Failed to create PR: {error}")
+        # Output JSON for frontend parsing
+        print(json.dumps(result))
+        return result
+
+
 def cleanup_old_worktrees_command(
     project_dir: Path, days: int = 30, dry_run: bool = False
 ) -> dict:
