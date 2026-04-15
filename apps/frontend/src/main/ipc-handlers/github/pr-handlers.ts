@@ -825,7 +825,7 @@ async function savePRReviewToMemory(
   repoName?: string
 ): Promise<void> {
   const settings = readSettingsFile();
-  if (!settings?.memoryEnabled) {
+  if (!settings?.memoryEnabled && !settings?.globalMemoryEnabled) {
     debugLog("Memory not enabled, skipping PR review memory save");
     return;
   }
@@ -981,7 +981,7 @@ export async function savePRDiscussionToMemory(
   repo: string
 ): Promise<void> {
   const settings = readSettingsFile();
-  if (!settings?.memoryEnabled) {
+  if (!settings?.memoryEnabled && !settings?.globalMemoryEnabled) {
     debugLog("Memory not enabled, skipping PR discussion memory save");
     return;
   }
