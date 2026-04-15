@@ -244,7 +244,11 @@
     "autoClaudePathDescription": "Relative path to auto-claude directory in projects",
     "autoClaudePathPlaceholder": "auto-claude (default)",
     "autoNameTerminals": "Automatically name terminals",
-    "autoNameTerminalsDescription": "Use AI to generate descriptive names for terminal tabs based on their activity"
+    "autoNameTerminalsDescription": "Use AI to generate descriptive names for terminal tabs based on their activity",
+    "prAgent": {
+      "label": "AI PR Creation Agent",
+      "description": "Use a Claude agent to create pull requests with rich context from specs, QA reports, and project conventions"
+    }
   },
   "theme": {
     "title": "Appearance",
@@ -450,6 +454,10 @@
       "qa": {
         "label": "QA Review",
         "description": "Quality assurance and validation"
+      },
+      "pr": {
+        "label": "PR Creation",
+        "description": "AI-powered pull request creation"
       }
     }
   },
