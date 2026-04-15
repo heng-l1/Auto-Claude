@@ -164,6 +164,23 @@ export function GeneralSettings({ settings, onSettingsChange, section }: General
                 />
               </div>
             </div>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between max-w-md">
+                <div className="space-y-1">
+                  <Label htmlFor="prAgentEnabled" className="text-sm font-medium text-foreground">
+                    {t('general.prAgent.label')}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('general.prAgent.description')}
+                  </p>
+                </div>
+                <Switch
+                  id="prAgentEnabled"
+                  checked={settings.prAgentEnabled ?? false}
+                  onCheckedChange={(checked) => onSettingsChange({ ...settings, prAgentEnabled: checked })}
+                />
+              </div>
+            </div>
             {/* Feature Model Configuration */}
             <div className="space-y-4 pt-4 border-t border-border">
               <div className="space-y-1">
