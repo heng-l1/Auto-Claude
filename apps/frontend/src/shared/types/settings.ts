@@ -170,6 +170,7 @@ export interface PhaseModelConfig {
   planning: ModelTypeShort;   // Implementation planning
   coding: ModelTypeShort;     // Actual coding implementation
   qa: ModelTypeShort;         // QA review and fixing
+  pr: ModelTypeShort;         // PR creation agent
 }
 
 // Thinking level configuration per phase
@@ -178,6 +179,7 @@ export interface PhaseThinkingConfig {
   planning: ThinkingLevel;
   coding: ThinkingLevel;
   qa: ThinkingLevel;
+  pr: ThinkingLevel;
 }
 
 // Per-phase ultrathink override (128K thinking tokens, max effort)
@@ -187,6 +189,7 @@ export interface PhaseUltrathinkConfig {
   planning?: boolean;
   coding?: boolean;
   qa?: boolean;
+  pr?: boolean;
 }
 
 // Feature-specific model configuration (for non-pipeline features)
@@ -238,7 +241,7 @@ export interface GlobalMcpServers {
  * Determines where an agent's model and thinking settings come from
  */
 export type AgentSettingsSource =
-  | { type: 'phase'; phase: 'spec' | 'planning' | 'coding' | 'qa' }
+  | { type: 'phase'; phase: 'spec' | 'planning' | 'coding' | 'qa' | 'pr' }
   | { type: 'feature'; feature: 'insights' | 'ideation' | 'roadmap' | 'githubIssues' | 'githubPrs' | 'utility' }
   | { type: 'fixed'; model: ModelTypeShort; thinking: ThinkingLevel };
 
@@ -335,6 +338,8 @@ export interface AppSettings {
   globalCustomMcpServers?: CustomMcpServer[];
   // Global per-agent MCP overrides (add/remove MCPs from specific agents across all projects)
   globalAgentMcpOverrides?: AgentMcpOverrides;
+  // AI-powered PR creation agent (uses Claude to compose rich PR descriptions from spec/QA context)
+  prAgentEnabled?: boolean;
 }
 
 // GPU acceleration mode for terminal WebGL rendering
