@@ -70,5 +70,12 @@
     "paste": "Coller",
     "selectAll": "Tout sélectionner",
     "clearTerminal": "Effacer le terminal"
+  },
+  "tmuxTabChoice": {
+    "title": "Quel type d'onglet souhaitez-vous ouvrir ?",
+    "description": "La session actuelle utilise tmux. Souhaitez-vous créer une nouvelle fenêtre tmux ou ouvrir un nouveau terminal ?",
+    "newTmuxTab": "Nouvelle fenêtre tmux",
+    "useDefaultProfile": "Nouveau terminal",
+    "rememberChoice": "Se souvenir de mon choix"
   }
 }
