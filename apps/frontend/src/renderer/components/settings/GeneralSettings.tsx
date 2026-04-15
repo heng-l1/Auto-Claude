@@ -176,7 +176,7 @@ export function GeneralSettings({ settings, onSettingsChange, section }: General
                 </div>
                 <Switch
                   id="prAgentEnabled"
-                  checked={settings.prAgentEnabled ?? false}
+                  checked={settings.prAgentEnabled !== false}
                   onCheckedChange={(checked) => onSettingsChange({ ...settings, prAgentEnabled: checked })}
                 />
               </div>

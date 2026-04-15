@@ -322,7 +322,7 @@ def get_phase_model(
 
     Args:
         spec_dir: Path to the spec directory
-        phase: Execution phase (spec, planning, coding, qa)
+        phase: Execution phase (spec, planning, coding, qa, pr)
         cli_model: Model from CLI argument (optional)
 
     Returns:
@@ -363,7 +363,7 @@ def get_phase_model_betas(
 
     Args:
         spec_dir: Path to the spec directory
-        phase: Execution phase (spec, planning, coding, qa)
+        phase: Execution phase (spec, planning, coding, qa, pr)
         cli_model: Model from CLI argument (optional)
 
     Returns:
@@ -404,7 +404,7 @@ def get_phase_thinking(
 
     Args:
         spec_dir: Path to the spec directory
-        phase: Execution phase (spec, planning, coding, qa)
+        phase: Execution phase (spec, planning, coding, qa, pr)
         cli_thinking: Thinking level from CLI argument (optional)
 
     Returns:
@@ -450,7 +450,7 @@ def get_phase_thinking_budget(
 
     Args:
         spec_dir: Path to the spec directory
-        phase: Execution phase (spec, planning, coding, qa)
+        phase: Execution phase (spec, planning, coding, qa, pr)
         cli_thinking: Thinking level from CLI argument (optional)
 
     Returns:
@@ -471,7 +471,7 @@ def get_phase_config(
 
     Args:
         spec_dir: Path to the spec directory
-        phase: Execution phase (spec, planning, coding, qa)
+        phase: Execution phase (spec, planning, coding, qa, pr)
         cli_model: Model from CLI argument (optional)
         cli_thinking: Thinking level from CLI argument (optional)
 
@@ -535,7 +535,7 @@ def get_phase_client_thinking_kwargs(
 
     Args:
         spec_dir: Path to the spec directory
-        phase: Execution phase (spec, planning, coding, qa)
+        phase: Execution phase (spec, planning, coding, qa, pr)
         phase_model: Resolved full model ID for this phase
         cli_thinking: Thinking level from CLI argument (optional)
 

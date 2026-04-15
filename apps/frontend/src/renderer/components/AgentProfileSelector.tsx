@@ -73,7 +73,8 @@ const PHASE_LABEL_KEYS: Record<keyof PhaseModelConfig, { label: string; descript
   spec: { label: 'agentProfile.phases.spec.label', description: 'agentProfile.phases.spec.description' },
   planning: { label: 'agentProfile.phases.planning.label', description: 'agentProfile.phases.planning.description' },
   coding: { label: 'agentProfile.phases.coding.label', description: 'agentProfile.phases.coding.description' },
-  qa: { label: 'agentProfile.phases.qa.label', description: 'agentProfile.phases.qa.description' }
+  qa: { label: 'agentProfile.phases.qa.label', description: 'agentProfile.phases.qa.description' },
+  pr: { label: 'agentProfile.phases.pr.label', description: 'agentProfile.phases.pr.description' }
 };
 
 export function AgentProfileSelector({
