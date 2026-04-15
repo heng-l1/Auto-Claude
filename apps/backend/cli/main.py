@@ -159,6 +159,11 @@ Environment Variables:
         action="store_true",
         help="Push branch and create a GitHub Pull Request",
     )
+    build_group.add_argument(
+        "--create-pr-agent",
+        action="store_true",
+        help="Push branch and create PR using AI agent",
+    )
 
     # PR options
     parser.add_argument(
@@ -432,6 +437,20 @@ def _run_cli() -> None:
             draft=args.pr_draft,
         )
         # JSON output is already printed by handle_create_pr_command
+        if not result.get("success"):
+            sys.exit(1)
+        return
+
+    if args.create_pr_agent:
+        from cli.workspace_commands import handle_create_pr_agent_command
+
+        result = handle_create_pr_agent_command(
+            project_dir=project_dir,
+            spec_name=spec_dir.name,
+            target_branch=args.pr_target,
+            title=args.pr_title,
+            draft=args.pr_draft,
+        )
         if not result.get("success"):
             sys.exit(1)
         return
