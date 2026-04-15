@@ -73,7 +73,9 @@ export const DEFAULT_APP_SETTINGS = {
   // GPU acceleration for terminal rendering
   // Default to 'off' until WebGL stability is proven across all GPU drivers.
   // Users can opt-in via Settings > Display > GPU Acceleration.
-  gpuAcceleration: 'off' as const
+  gpuAcceleration: 'off' as const,
+  // PR creation agent - auto-generate PRs from completed tasks (enabled by default)
+  prAgentEnabled: true
 };
 
 // ============================================
