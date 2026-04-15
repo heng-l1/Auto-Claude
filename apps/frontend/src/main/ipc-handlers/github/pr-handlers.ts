@@ -23,6 +23,7 @@ import { getGitHubConfig, githubFetch, normalizeRepoReference } from "./utils";
 import { readSettingsFile } from "../../settings-utils";
 import { getAugmentedEnv } from "../../env-utils";
 import { getMemoryService, getDefaultDbPath } from "../../memory-service";
+import { parseEnvFile } from "../utils";
 import type { Project, AppSettings } from "../../../shared/types";
 import { createContextLogger } from "./utils/logger";
 import { withProjectOrNull } from "./utils/project-middleware";
@@ -719,6 +720,119 @@ interface PRReviewMemoryEntry {
 }
 
 /**
+ * Write a PR review to file-based storage.
+ *
+ * Writes pr_{prNumber}_review.json with snake_case fields (matching the format
+ * expected by the MEMORY_GET handler) and maintains a reviews_index.json with
+ * deduplication by PR number and a cap of 200 entries (most recent first).
+ *
+ * @param githubDir The project's .auto-claude/github/ directory
+ * @param repoName The project name (NOT owner/repo format)
+ * @param prNumber The PR number
+ * @param reviewData The review data in camelCase format
+ * @param isFollowup Whether this is a follow-up review
+ */
+function writeReviewToFileStorage(
+  githubDir: string,
+  repoName: string,
+  prNumber: number,
+  reviewData: PRReviewMemoryEntry,
+  isFollowup: boolean
+): void {
+  const memoryDir = path.join(githubDir, "memory", repoName);
+
+  // Create directory recursively if needed
+  fs.mkdirSync(memoryDir, { recursive: true });
+
+  // Convert camelCase to snake_case for disk format
+  // The MEMORY_GET handler (lines 3819-3828) reads these snake_case fields
+  // and converts back to camelCase for the in-memory PRReviewMemoryEntry
+  const snakeCaseData = {
+    pr_number: reviewData.prNumber,
+    repo: reviewData.repo,
+    timestamp: reviewData.timestamp,
+    summary: reviewData.summary,
+    key_findings: reviewData.keyFindings,
+    patterns: reviewData.patterns,
+    gotchas: reviewData.gotchas,
+    is_followup: isFollowup,
+  };
+
+  // Write individual review file
+  const reviewPath = path.join(memoryDir, `pr_${prNumber}_review.json`);
+  fs.writeFileSync(reviewPath, JSON.stringify(snakeCaseData, null, 2), "utf-8");
+
+  // Update reviews_index.json with dedup and cap
+  const indexPath = path.join(memoryDir, "reviews_index.json");
+  let index: { reviews: Array<{ pr_number: number; timestamp: string; verdict: string }> } = {
+    reviews: [],
+  };
+
+  try {
+    if (fs.existsSync(indexPath)) {
+      const indexContent = fs.readFileSync(indexPath, "utf-8");
+      index = JSON.parse(sanitizeNetworkData(indexContent));
+      if (!Array.isArray(index.reviews)) {
+        index.reviews = [];
+      }
+    }
+  } catch (err) {
+    debugLog("Failed to read reviews_index.json, starting fresh", {
+      error: err instanceof Error ? err.message : err,
+    });
+    index = { reviews: [] };
+  }
+
+  // Remove existing entry for same PR number (dedup)
+  index.reviews = index.reviews.filter((r) => r.pr_number !== prNumber);
+
+  // Add new entry at front (most recent first)
+  index.reviews.unshift({
+    pr_number: prNumber,
+    timestamp: reviewData.timestamp,
+    verdict: reviewData.verdict,
+  });
+
+  // Cap at 200 entries
+  if (index.reviews.length > 200) {
+    index.reviews = index.reviews.slice(0, 200);
+  }
+
+  fs.writeFileSync(indexPath, JSON.stringify(index, null, 2), "utf-8");
+
+  debugLog("Wrote PR review to file storage", {
+    prNumber,
+    repoName,
+    isFollowup,
+    reviewPath,
+  });
+}
+
+/**
+ * Check if memory is enabled via global app settings (memoryEnabled)
+ * or via the project's .env file (GRAPHITI_ENABLED).
+ * The Settings page writes to the project .env while onboarding
+ * writes to global app settings — we need to check both.
+ */
+function isMemoryEnabled(githubDir?: string): boolean {
+  const settings = readSettingsFile();
+  if (settings?.memoryEnabled) return true;
+
+  // Check project-level GRAPHITI_ENABLED from the .env file
+  if (githubDir) {
+    try {
+      const envPath = path.join(githubDir, "..", ".env");
+      if (fs.existsSync(envPath)) {
+        const envVars = parseEnvFile(fs.readFileSync(envPath, "utf-8"));
+        if (envVars["GRAPHITI_ENABLED"]?.toLowerCase() === "true") return true;
+      }
+    } catch { /* ignore read errors */ }
+  }
+
+  return false;
+}
+
+/**
  * Save PR review insights to the Electron memory layer (LadybugDB)
  *
  * Called after a PR review completes to persist learnings for cross-session context.
@@ -731,10 +845,11 @@ interface PRReviewMemoryEntry {
 async function savePRReviewToMemory(
   result: PRReviewResult,
   repo: string,
-  isFollowup: boolean = false
+  isFollowup: boolean = false,
+  githubDir?: string,
+  repoName?: string
 ): Promise<void> {
-  const settings = readSettingsFile();
-  if (!settings?.memoryEnabled) {
+  if (!isMemoryEnabled(githubDir)) {
     debugLog("Memory not enabled, skipping PR review memory save");
     return;
   }
@@ -821,6 +936,11 @@ async function savePRReviewToMemory(
       memoryContent.summary.verdict_reasoning = `Resolved: ${result.resolvedFindings.length}, Unresolved: ${result.unresolvedFindings.length}`;
     }
 
+    // Write to file-based storage if project context is available
+    if (githubDir && repoName) {
+      writeReviewToFileStorage(githubDir, repoName, result.prNumber, memoryContent, isFollowup);
+    }
+
     // Save to memory as a pr_review episode
     const episodeName = `PR #${result.prNumber} ${isFollowup ? "Follow-up " : ""}Review - ${repo}`;
     const saveResult = await memoryService.addEpisode(
@@ -837,6 +957,34 @@ async function savePRReviewToMemory(
       });
     } else {
       debugLog("Failed to save PR review to memory", { error: saveResult.error });
+    }
+
+    // Also save to global memory for cross-repo preference learning
+    try {
+      const { getGlobalMemoryDir } = await import("../../config-paths");
+      const globalDbPath = getGlobalMemoryDir();
+      const globalMemoryService = getMemoryService({
+        dbPath: globalDbPath,
+        database: "global_preferences",
+      });
+
+      const globalResult = await globalMemoryService.addEpisode(
+        `PR Review Preferences - ${repo} #${result.prNumber}`,
+        memoryContent,
+        "pr_review",
+        "pr_review_preferences"
+      );
+
+      if (globalResult.success) {
+        debugLog("PR review saved to global memory", {
+          prNumber: result.prNumber,
+          episodeId: globalResult.id,
+        });
+      }
+    } catch (globalError) {
+      debugLog("Failed to save PR review to global memory (non-blocking)", {
+        error: globalError instanceof Error ? globalError.message : globalError,
+      });
     }
   } catch (error) {
     // Don't fail the review if memory save fails
@@ -856,8 +1004,7 @@ export async function savePRDiscussionToMemory(
   prNumber: number,
   repo: string
 ): Promise<void> {
-  const settings = readSettingsFile();
-  if (!settings?.memoryEnabled) {
+  if (!isMemoryEnabled()) {
     debugLog("Memory not enabled, skipping PR discussion memory save");
     return;
   }
@@ -1917,7 +2064,8 @@ export async function runPRReview(
   project: Project,
   prNumber: number,
   mainWindow: BrowserWindow,
-  stateManager: PRReviewStateManager
+  stateManager: PRReviewStateManager,
+  notes?: string
 ): Promise<PRReviewResult> {
   // Comprehensive validation of GitHub module
   const validation = await validateGitHubModule(project);
@@ -1939,11 +2087,130 @@ export async function runPRReview(
   );
 
   const { model, thinkingLevel } = getGitHubPRSettings();
+
+  // Write notes to temp file if provided
+  const githubDir = getGitHubDir(project);
+  let notesFilePath: string | null = null;
+  if (notes && notes.trim()) {
+    try {
+      fs.mkdirSync(githubDir, { recursive: true });
+      notesFilePath = path.join(githubDir, "tmp_review_notes.txt");
+      fs.writeFileSync(notesFilePath, notes.trim(), "utf-8");
+      debugLog("Wrote review notes to temp file", { notesFilePath });
+    } catch (err) {
+      debugLog("Failed to write review notes temp file", {
+        error: err instanceof Error ? err.message : err,
+      });
+      notesFilePath = null;
+    }
+  }
+
+  // Load past review memory from file storage (non-blocking, skip if unavailable)
+  let memoryFilePath: string | null = null;
+  try {
+    const memoryDir = path.join(githubDir, "memory", project.name || "unknown");
+    const indexPath = path.join(memoryDir, "reviews_index.json");
+
+    if (fs.existsSync(indexPath)) {
+      const indexContent = fs.readFileSync(indexPath, "utf-8");
+      const index = JSON.parse(sanitizeNetworkData(indexContent));
+      const reviews = Array.isArray(index.reviews) ? index.reviews : [];
+
+      // Get up to 5 recent reviews excluding the current PR
+      const pastReviews = reviews
+        .filter((r: { pr_number: number }) => r.pr_number !== prNumber)
+        .slice(0, 5);
+
+      if (pastReviews.length > 0) {
+        const MAX_MEMORY_BYTES = 50 * 1024; // ~50KB cap to avoid prompt bloat
+        let memoryContent = "# Past PR Review Memory\n\n";
+        memoryContent += `The following insights are from ${pastReviews.length} recent PR reviews in this repository.\n\n`;
+
+        for (const entry of pastReviews) {
+          if (Buffer.byteLength(memoryContent, "utf-8") >= MAX_MEMORY_BYTES) {
+            memoryContent += "\n[Memory truncated — limit reached]\n";
+            break;
+          }
+
+          try {
+            const reviewPath = path.join(memoryDir, `pr_${entry.pr_number}_review.json`);
+            if (!fs.existsSync(reviewPath)) continue;
+
+            const reviewContent = fs.readFileSync(reviewPath, "utf-8");
+            const memory = JSON.parse(sanitizeNetworkData(reviewContent));
+
+            memoryContent += `## PR #${memory.pr_number} — ${memory.summary?.verdict || "unknown"}\n`;
+            memoryContent += `Reviewed: ${memory.timestamp || "unknown"}\n`;
+
+            if (memory.key_findings?.length > 0) {
+              memoryContent += "Key findings:\n";
+              for (const finding of memory.key_findings.slice(0, 5)) {
+                memoryContent += `- [${finding.severity}] ${finding.title}: ${finding.description}\n`;
+              }
+            }
+
+            if (memory.patterns?.length > 0) {
+              memoryContent += "Patterns observed:\n";
+              for (const pattern of memory.patterns) {
+                memoryContent += `- ${pattern}\n`;
+              }
+            }
+
+            if (memory.gotchas?.length > 0) {
+              memoryContent += "Gotchas:\n";
+              for (const gotcha of memory.gotchas) {
+                memoryContent += `- ${gotcha}\n`;
+              }
+            }
+
+            memoryContent += "\n";
+          } catch (err) {
+            debugLog("Failed to load past review for memory", {
+              prNumber: entry.pr_number,
+              error: err instanceof Error ? err.message : err,
+            });
+          }
+        }
+
+        // Only write if we have meaningful content beyond the header
+        if (memoryContent.length > 100) {
+          // Final size cap — truncate by characters if still over limit
+          if (Buffer.byteLength(memoryContent, "utf-8") > MAX_MEMORY_BYTES) {
+            memoryContent = memoryContent.slice(0, MAX_MEMORY_BYTES);
+            memoryContent += "\n[Memory truncated — limit reached]\n";
+          }
+
+          fs.mkdirSync(githubDir, { recursive: true });
+          memoryFilePath = path.join(githubDir, "tmp_review_memory.txt");
+          fs.writeFileSync(memoryFilePath, memoryContent, "utf-8");
+          debugLog("Wrote review memory to temp file", {
+            memoryFilePath,
+            reviewCount: pastReviews.length,
+            sizeBytes: Buffer.byteLength(memoryContent, "utf-8"),
+          });
+        }
+      }
+    }
+  } catch (err) {
+    debugLog("Failed to load past review memory", {
+      error: err instanceof Error ? err.message : err,
+    });
+    memoryFilePath = null;
+  }
+
+  const additionalArgs = [prNumber.toString()];
+  if (notesFilePath) {
+    additionalArgs.push("--notes-file", notesFilePath);
+  }
+  if (memoryFilePath) {
+    additionalArgs.push("--memory-file", memoryFilePath);
+  }
+
   const args = buildRunnerArgs(
     getRunnerPath(backendPath),
     project.path,
     "review-pr",
-    [prNumber.toString()],
+    additionalArgs,
     { model, thinkingLevel }
   );
 
@@ -2089,12 +2356,20 @@ export async function runPRReview(
     logCollector.finalize(true);
 
     // Save PR review insights to memory (async, non-blocking)
-    savePRReviewToMemory(result.data!, repo, false).catch((err) => {
+    savePRReviewToMemory(result.data!, repo, false, getGitHubDir(project), project.name || "unknown").catch((err) => {
       debugLog("Failed to save PR review to memory", { error: err.message });
     });
 
     return result.data!;
   } finally {
+    // Clean up temp notes file
+    if (notesFilePath) {
+      try { fs.unlinkSync(notesFilePath); } catch { /* ignore cleanup errors */ }
+    }
+    // Clean up temp memory file
+    if (memoryFilePath) {
+      try { fs.unlinkSync(memoryFilePath); } catch { /* ignore cleanup errors */ }
+    }
     // Clean up the registry when done (success or error)
     runningReviews.delete(reviewKey);
     debugLog("Unregistered review process", { reviewKey });
@@ -2381,7 +2656,7 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
   );
 
   // Run AI review
-  ipcMain.on(IPC_CHANNELS.GITHUB_PR_REVIEW, async (_, projectId: string, prNumber: number) => {
+  ipcMain.on(IPC_CHANNELS.GITHUB_PR_REVIEW, async (_, projectId: string, prNumber: number, notes?: string) => {
     debugLog("runPRReview handler called", { projectId, prNumber });
     const mainWindow = getMainWindow();
     if (!mainWindow) {
@@ -2443,7 +2718,7 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
           sendProgress(fetchingProgress);
           prReviewStateManager?.handleProgress(projectId, prNumber, fetchingProgress);
 
-          const result = await runPRReview(project, prNumber, mainWindow, stateManager);
+          const result = await runPRReview(project, prNumber, mainWindow, stateManager, notes);
 
           if (result.overallStatus === "in_progress") {
             // Review is already running externally (detected by BotDetector).
@@ -3595,7 +3870,7 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
             logCollector.finalize(true);
 
             // Save follow-up PR review insights to memory (async, non-blocking)
-            savePRReviewToMemory(result.data!, repo, true).catch((err) => {
+            savePRReviewToMemory(result.data!, repo, true, getGitHubDir(project), project.name || "unknown").catch((err) => {
               debugLog("Failed to save follow-up PR review to memory", { error: err.message });
             });
 
@@ -3892,6 +4167,100 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
         }
       });
       return result ?? [];
+    }
+  );
+
+  // ============================================================================
+  // PR Notes Handlers (user notes persisted per PR)
+  // ============================================================================
+
+  // Save user notes for a PR
+  ipcMain.handle(
+    IPC_CHANNELS.GITHUB_PR_NOTES_SAVE,
+    async (_, projectId: string, prNumber: number, notes: string): Promise<boolean> => {
+      debugLog("savePRNotes handler called", { projectId, prNumber });
+      const result = await withProjectOrNull(projectId, async (project) => {
+        const prDir = path.join(getGitHubDir(project), "pr");
+
+        try {
+          // Ensure pr directory exists
+          if (!fs.existsSync(prDir)) {
+            fs.mkdirSync(prDir, { recursive: true });
+          }
+
+          const notesPath = path.join(prDir, `notes_${prNumber}.json`);
+
+          // Load existing data for history preservation
+          let history: Array<{ notes: string; timestamp: string }> = [];
+          if (fs.existsSync(notesPath)) {
+            try {
+              const existing = JSON.parse(sanitizeNetworkData(fs.readFileSync(notesPath, "utf-8")));
+              // Preserve existing history and add current notes to it
+              history = Array.isArray(existing.history) ? existing.history : [];
+              if (existing.notes) {
+                history.unshift({
+                  notes: existing.notes,
+                  timestamp: existing.updated_at || new Date().toISOString(),
+                });
+              }
+              // Keep only last 50 entries
+              history = history.slice(0, 50);
+            } catch {
+              // If existing file is corrupt, start fresh
+              debugLog("Failed to parse existing notes file, starting fresh", { prNumber });
+            }
+          }
+
+          const notesData = {
+            pr_number: prNumber,
+            notes,
+            file_paths: [],
+            updated_at: new Date().toISOString(),
+            history,
+          };
+
+          fs.writeFileSync(notesPath, JSON.stringify(notesData, null, 2), "utf-8");
+          debugLog("PR notes saved", { prNumber });
+          return true;
+        } catch (error) {
+          debugLog("Failed to save PR notes", {
+            prNumber,
+            error: error instanceof Error ? error.message : error,
+          });
+          return false;
+        }
+      });
+      return result ?? false;
+    }
+  );
+
+  // Load user notes for a PR
+  ipcMain.handle(
+    IPC_CHANNELS.GITHUB_PR_NOTES_LOAD,
+    async (_, projectId: string, prNumber: number): Promise<string | null> => {
+      debugLog("loadPRNotes handler called", { projectId, prNumber });
+      const result = await withProjectOrNull(projectId, async (project) => {
+        const notesPath = path.join(getGitHubDir(project), "pr", `notes_${prNumber}.json`);
+
+        try {
+          if (!fs.existsSync(notesPath)) {
+            debugLog("No PR notes found", { prNumber });
+            return null;
+          }
+
+          const content = fs.readFileSync(notesPath, "utf-8");
+          const notesData = JSON.parse(sanitizeNetworkData(content));
+          debugLog("PR notes loaded", { prNumber });
+          return notesData.notes || null;
+        } catch (error) {
+          debugLog("Failed to load PR notes", {
+            prNumber,
+            error: error instanceof Error ? error.message : error,
+          });
+          return null;
+        }
+      });
+      return result ?? null;
     }
   );
 

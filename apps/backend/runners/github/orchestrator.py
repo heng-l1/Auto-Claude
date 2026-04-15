@@ -315,6 +315,7 @@ class GitHubOrchestrator:
         pr_number: int,
         force_review: bool = False,
         reviewer_notes: str | None = None,
+        memory_context: str | None = None,
     ) -> PRReviewResult:
         """
         Perform AI-powered review of a pull request.
@@ -327,6 +328,9 @@ class GitHubOrchestrator:
                            to inject into the review prompts. When provided, these are
                            passed to the review engine so the AI pays special attention
                            to the noted areas.
+            memory_context: Optional past review memory context to inject into the review
+                           prompts. When provided, the AI uses insights from previous
+                           reviews to provide more consistent and context-aware feedback.
 
         Returns:
             PRReviewResult with findings and overall assessment
@@ -443,13 +447,18 @@ class GitHubOrchestrator:
                     f"[DEBUG orchestrator] Passing reviewer notes ({len(reviewer_notes)} chars)",
                     flush=True,
                 )
+            if memory_context:
+                safe_print(
+                    f"[DEBUG orchestrator] Passing memory context ({len(memory_context)} chars)",
+                    flush=True,
+                )
             (
                 findings,
                 structural_issues,
                 ai_triages,
                 quick_scan,
             ) = await self.pr_review_engine.run_multi_pass_review(
-                pr_context, reviewer_notes=reviewer_notes
+                pr_context, reviewer_notes=reviewer_notes, memory_context=memory_context
             )
             safe_print(
                 f"[DEBUG orchestrator] Multi-pass review complete: "

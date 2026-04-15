@@ -240,9 +240,22 @@ async def cmd_review_pr(args) -> int:
         except (FileNotFoundError, PermissionError, UnicodeDecodeError) as e:
             safe_print(f"Warning: Could not read notes file '{notes_file}': {e}")
 
+    # Read memory context from file if provided
+    memory_context = None
+    memory_file = getattr(args, "memory_file", None)
+    if memory_file:
+        try:
+            memory_context = Path(memory_file).read_text(encoding="utf-8").strip()
+            if not memory_context:
+                memory_context = None
+            elif debug:
+                safe_print(f"[DEBUG] Loaded memory context from {memory_file} ({len(memory_context)} chars)")
+        except (FileNotFoundError, PermissionError, UnicodeDecodeError) as e:
+            safe_print(f"Warning: Could not read memory file '{memory_file}': {e}")
+
     # Pass force_review flag if --force was specified
     force_review = getattr(args, "force", False)
-    result = await orchestrator.review_pr(args.pr_number, force_review=force_review, reviewer_notes=reviewer_notes)
+    result = await orchestrator.review_pr(args.pr_number, force_review=force_review, reviewer_notes=reviewer_notes, memory_context=memory_context)
 
     if debug:
         safe_print(f"[DEBUG] review_pr returned, success={result.success}")
@@ -1132,6 +1145,12 @@ def main():
         type=str,
         default=None,
         help="Path to a file containing reviewer notes to inject into the review",
+    )
+    review_parser.add_argument(
+        "--memory-file",
+        type=str,
+        default=None,
+        help="Path to a file containing past review memory context to inject into the review",
     )
 
     # followup-review-pr command

@@ -410,6 +410,7 @@ class ParallelOrchestratorReviewer:
         context: PRContext,
         project_root: Path,
         reviewer_notes: str | None = None,
+        memory_context: str | None = None,
     ) -> str:
         """Build the full prompt for a specialist agent.
 
@@ -418,6 +419,7 @@ class ParallelOrchestratorReviewer:
             context: PR context with files and patches
             project_root: Working directory for the agent
             reviewer_notes: Optional human-provided notes to inject as high-priority guidance
+            memory_context: Optional memory-derived context (patterns, past issues) to inject
 
         Returns:
             Full system prompt with context injected
@@ -463,6 +465,17 @@ class ParallelOrchestratorReviewer:
                 f"{reviewer_notes.strip()}\n\n"
             )
 
+        # Build memory context section if provided
+        memory_section = ""
+        if memory_context and memory_context.strip():
+            memory_section = (
+                "\n### Memory Context\n"
+                "The following context has been retrieved from the project's memory system.\n"
+                "It contains patterns, past issues, and relevant knowledge from previous reviews.\n"
+                "Use this to inform your analysis:\n\n"
+                f"{memory_context.strip()}\n\n"
+            )
+
         # Compose full prompt with PR context
         pr_context = f"""
 ## PR Context
@@ -474,7 +487,7 @@ class ParallelOrchestratorReviewer:
 
 ### Changed Files ({len(context.changed_files)} files, +{context.total_additions}/-{context.total_deletions})
 {chr(10).join(files_list)}
-{notes_section}### Diff
+{notes_section}{memory_section}### Diff
 {diff_content}
 
 ## Your Task
@@ -494,6 +507,7 @@ Report findings with specific file paths, line numbers, and code evidence.
         model: str,
         thinking_budget: int | None,
         reviewer_notes: str | None = None,
+        memory_context: str | None = None,
     ) -> tuple[str, list[PRReviewFinding]]:
         """Run a single specialist as its own SDK session.
 
@@ -504,6 +518,7 @@ Report findings with specific file paths, line numbers, and code evidence.
             model: Model to use
             thinking_budget: Max thinking tokens
             reviewer_notes: Optional human-provided notes to inject into specialist prompt
+            memory_context: Optional memory-derived context to inject into specialist prompt
 
         Returns:
             Tuple of (specialist_name, findings)
@@ -515,7 +530,9 @@ Report findings with specific file paths, line numbers, and code evidence.
 
         # Build the specialist prompt with PR context
         prompt = self._build_specialist_prompt(
-            config, context, project_root, reviewer_notes=reviewer_notes
+            config, context, project_root,
+            reviewer_notes=reviewer_notes,
+            memory_context=memory_context,
         )
 
         try:
@@ -729,6 +746,7 @@ Report findings with specific file paths, line numbers, and code evidence.
         model: str,
         thinking_budget: int | None,
         reviewer_notes: str | None = None,
+        memory_context: str | None = None,
     ) -> tuple[list[PRReviewFinding], list[str]]:
         """Run all specialists in parallel and collect findings.
 
@@ -738,6 +756,7 @@ Report findings with specific file paths, line numbers, and code evidence.
             model: Model to use
             thinking_budget: Max thinking tokens
             reviewer_notes: Optional human-provided notes to inject into specialist prompts
+            memory_context: Optional memory-derived context to inject into specialist prompts
 
         Returns:
             Tuple of (all_findings, agents_invoked)
@@ -756,6 +775,7 @@ Report findings with specific file paths, line numbers, and code evidence.
                 model=model,
                 thinking_budget=thinking_budget,
                 reviewer_notes=reviewer_notes,
+                memory_context=memory_context,
             )
             for config in SPECIALIST_CONFIGS
         ]
@@ -1060,6 +1080,7 @@ The SDK will run invoked agents in parallel automatically.
         self,
         context: PRContext,
         reviewer_notes: str | None = None,
+        memory_context: str | None = None,
     ) -> PRReviewResult:
         """
         Main review entry point.
@@ -1069,6 +1090,9 @@ The SDK will run invoked agents in parallel automatically.
             reviewer_notes: Optional human-provided notes, observations, or focus areas
                            to inject into specialist agent prompts. When provided, these
                            appear as high-priority guidance for each specialist reviewer.
+            memory_context: Optional memory-derived context (patterns, past issues, relevant
+                           knowledge) to inject into specialist agent prompts. When provided,
+                           these inform each specialist's analysis.
 
         Returns:
             PRReviewResult with findings and verdict
@@ -1080,6 +1104,13 @@ The SDK will run invoked agents in parallel automatically.
         if reviewer_notes and reviewer_notes.strip():
             safe_print(
                 f"[ParallelOrchestrator] Reviewer notes provided ({len(reviewer_notes)} chars), "
+                "will inject into specialist prompts",
+                flush=True,
+            )
+
+        if memory_context and memory_context.strip():
+            safe_print(
+                f"[ParallelOrchestrator] Memory context provided ({len(memory_context)} chars), "
                 "will inject into specialist prompts",
                 flush=True,
             )
@@ -1231,6 +1262,7 @@ The SDK will run invoked agents in parallel automatically.
                 model=model,
                 thinking_budget=thinking_budget,
                 reviewer_notes=reviewer_notes,
+                memory_context=memory_context,
             )
 
             # Log results
