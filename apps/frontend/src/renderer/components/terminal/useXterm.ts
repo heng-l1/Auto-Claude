@@ -283,21 +283,15 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
     const raf = typeof requestAnimationFrame !== 'undefined'
       ? requestAnimationFrame
       : (cb: FrameRequestCallback) => setTimeout(() => cb(Date.now()), 0) as unknown as number;
-    const cancelRaf = typeof cancelAnimationFrame !== 'undefined'
-      ? cancelAnimationFrame
-      : (id: number) => clearTimeout(id);
-
-    // Effect-scoped cancellation flag. Unlike isDisposedRef (which is shared
-    // across effect invocations and gets reset), this is local to THIS effect
-    // run. It prevents stale timers from calling open() on a disposed xterm
-    // after the effect is cleaned up and a new xterm is created.
-    let effectCancelled = false;
-    let pendingRaf = 0;
-    let pendingTimeout = 0;
-
     const performInitialFit = () => {
-      pendingRaf = raf(() => {
-        if (effectCancelled || isDisposedRef.current || !terminalRef.current) return;
+      raf(() => {
+        // Guard against stale timers from a previous effect run: if xterm was
+        // disposed and replaced by a new instance (e.g., React StrictMode
+        // unmount/remount), xtermRef.current will differ from the closure's
+        // `xterm`. This identity check is safe across dependency-change re-runs
+        // (where the same xterm persists) but stops the chain when the instance
+        // is truly gone.
+        if (xtermRef.current !== xterm || isDisposedRef.current || !terminalRef.current) return;
 
         // Check if container has valid dimensions
         const rect = terminalRef.current.getBoundingClientRect();
@@ -448,7 +442,7 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
           }
         } else {
           // Container not ready yet (likely hidden via display:none), retry
-          pendingTimeout = window.setTimeout(performInitialFit, 50);
+          setTimeout(performInitialFit, 50);
         }
       });
     };
@@ -482,11 +476,10 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
     });
 
     return () => {
-      // Cancel the deferred open/fit chain to prevent stale timers from
-      // calling xterm.open() on a disposed instance after effect re-run.
-      effectCancelled = true;
-      cancelRaf(pendingRaf);
-      clearTimeout(pendingTimeout);
+      // Cleanup handled by parent component.
+      // The performInitialFit chain self-terminates via the identity check
+      // (xtermRef.current !== xterm) when the xterm instance is disposed
+      // and replaced by a new one.
     };
   }, [terminalId, onResize, onDimensionsReady, fontSettings.cursorAccentColor, fontSettings.cursorBlink, fontSettings.cursorStyle, fontSettings.fontFamily.join, fontSettings.fontSize, fontSettings.fontWeight, fontSettings.letterSpacing, fontSettings.lineHeight, fontSettings.scrollback]);
 
