@@ -12,5 +12,10 @@
   },
   "reviewReason": {
     "subtaskReview": "Examen de sous-t\u00e2che"
+  },
+  "execution": {
+    "shortPhases": {
+      "pr": "PR"
+    }
   }
 }
