@@ -218,7 +218,7 @@ describe('getClaudeCodeEnv', () => {
   it('ignores non-env settings and only returns env vars', () => {
     const hierarchy: ClaudeCodeSettingsHierarchy = {
       user: {
-        model: 'claude-opus-4-6',
+        model: 'claude-opus-4-7',
         alwaysThinkingEnabled: true,
         env: { USER_VAR: 'value' },
         permissions: {
@@ -229,7 +229,7 @@ describe('getClaudeCodeEnv', () => {
       projectLocal: undefined,
       managed: undefined,
       merged: {
-        model: 'claude-opus-4-6',
+        model: 'claude-opus-4-7',
         alwaysThinkingEnabled: true,
         env: { USER_VAR: 'value' },
         permissions: {

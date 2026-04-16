@@ -72,7 +72,7 @@ def create_simple_client(
         betas: Optional list of SDK beta header strings (e.g., ["context-1m-2025-08-07"])
         effort_level: Optional effort level for adaptive thinking models (e.g., "low",
                      "medium", "high"). Injected as CLAUDE_CODE_EFFORT_LEVEL env var.
-        fast_mode: Enable Fast Mode for faster Opus 4.6 output. Enables the "user"
+        fast_mode: Enable Fast Mode for faster Opus 4.7 output. Enables the "user"
                   setting source so the CLI reads fastMode from ~/.claude/settings.json.
 
     Returns:
@@ -91,7 +91,7 @@ def create_simple_client(
     # Configure SDK authentication (OAuth or API profile mode)
     configure_sdk_authentication(config_dir)
 
-    # Inject effort level for adaptive thinking models (e.g., Opus 4.6)
+    # Inject effort level for adaptive thinking models (e.g., Opus 4.7)
     if effort_level:
         sdk_env["CLAUDE_CODE_EFFORT_LEVEL"] = effort_level
 

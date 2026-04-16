@@ -1122,7 +1122,7 @@ def main():
     parser.add_argument(
         "--fast-mode",
         action="store_true",
-        help="Enable Fast Mode for faster Opus 4.6 output",
+        help="Enable Fast Mode for faster Opus 4.7 output",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Command to run")

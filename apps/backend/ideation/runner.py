@@ -61,7 +61,7 @@ class IdeationOrchestrator:
             thinking_level: Thinking level for extended reasoning
             refresh: Force regeneration of existing files
             append: Preserve existing ideas when merging
-            fast_mode: Enable Fast Mode for faster Opus 4.6 output
+            fast_mode: Enable Fast Mode for faster Opus 4.7 output
         """
         # Initialize configuration manager
         self.config_manager = IdeationConfigManager(

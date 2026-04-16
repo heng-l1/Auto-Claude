@@ -384,12 +384,12 @@ class TestOpus1mModelResolution:
     def test_opus_1m_resolves_to_opus_model_id(self, clean_env):
         """resolve_model_id('opus-1m') returns the same model ID as regular opus."""
         result = resolve_model_id("opus-1m")
-        assert result == "claude-opus-4-6"
+        assert result == "claude-opus-4-7"
 
     def test_opus_resolves_to_opus_model_id(self, clean_env):
-        """resolve_model_id('opus') returns claude-opus-4-6."""
+        """resolve_model_id('opus') returns claude-opus-4-7."""
         result = resolve_model_id("opus")
-        assert result == "claude-opus-4-6"
+        assert result == "claude-opus-4-7"
 
     def test_opus_1m_and_opus_resolve_to_same_id(self, clean_env):
         """opus-1m and opus both resolve to the same underlying model ID."""
@@ -456,8 +456,8 @@ class TestIsAdaptiveModel:
     """Tests for is_adaptive_model() function."""
 
     def test_opus_is_adaptive(self):
-        """claude-opus-4-6 is an adaptive thinking model."""
-        assert is_adaptive_model("claude-opus-4-6") is True
+        """claude-opus-4-7 is an adaptive thinking model."""
+        assert is_adaptive_model("claude-opus-4-7") is True
 
     def test_sonnet_is_not_adaptive(self):
         """claude-sonnet-4-5-20250929 is not an adaptive thinking model."""
@@ -473,7 +473,7 @@ class TestIsAdaptiveModel:
 
     def test_adaptive_models_set_contains_opus(self):
         """ADAPTIVE_THINKING_MODELS set contains opus."""
-        assert "claude-opus-4-6" in ADAPTIVE_THINKING_MODELS
+        assert "claude-opus-4-7" in ADAPTIVE_THINKING_MODELS
 
 
 class TestGetThinkingKwargsForModel:
@@ -481,7 +481,7 @@ class TestGetThinkingKwargsForModel:
 
     def test_opus_gets_effort_level(self):
         """Opus model gets both max_thinking_tokens and effort_level."""
-        result = get_thinking_kwargs_for_model("claude-opus-4-6", "medium")
+        result = get_thinking_kwargs_for_model("claude-opus-4-7", "medium")
         assert "max_thinking_tokens" in result
         assert "effort_level" in result
         assert result["effort_level"] == "medium"
@@ -489,13 +489,13 @@ class TestGetThinkingKwargsForModel:
 
     def test_opus_high_thinking(self):
         """Opus with high thinking level gets high effort."""
-        result = get_thinking_kwargs_for_model("claude-opus-4-6", "high")
+        result = get_thinking_kwargs_for_model("claude-opus-4-7", "high")
         assert result["effort_level"] == "high"
         assert result["max_thinking_tokens"] == 16384
 
     def test_opus_low_thinking(self):
         """Opus with low thinking level gets low effort."""
-        result = get_thinking_kwargs_for_model("claude-opus-4-6", "low")
+        result = get_thinking_kwargs_for_model("claude-opus-4-7", "low")
         assert result["effort_level"] == "low"
         assert result["max_thinking_tokens"] == 1024
 
@@ -515,13 +515,13 @@ class TestGetThinkingKwargsForModel:
 
     def test_opus_max_thinking(self):
         """Opus with 'max' thinking level gets max effort and 32768 tokens."""
-        result = get_thinking_kwargs_for_model("claude-opus-4-6", "max")
+        result = get_thinking_kwargs_for_model("claude-opus-4-7", "max")
         assert result["effort_level"] == "max"
         assert result["max_thinking_tokens"] == 32768
 
     def test_opus_ultrathink(self):
         """Opus with 'ultrathink' thinking level gets max effort and 128000 tokens."""
-        result = get_thinking_kwargs_for_model("claude-opus-4-6", "ultrathink")
+        result = get_thinking_kwargs_for_model("claude-opus-4-7", "ultrathink")
         assert result["effort_level"] == "max"
         assert result["max_thinking_tokens"] == 128000
 

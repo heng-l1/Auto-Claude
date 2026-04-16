@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 # Model shorthand to full model ID mapping
 # Values must match apps/frontend/src/shared/constants/models.ts MODEL_ID_MAP
 MODEL_ID_MAP: dict[str, str] = {
-    "opus": "claude-opus-4-6",
-    "opus-1m": "claude-opus-4-6",
+    "opus": "claude-opus-4-7",
+    "opus-1m": "claude-opus-4-7",
     "opus-4.5": "claude-opus-4-5-20251101",
     "sonnet": "claude-sonnet-4-5-20250929",
     "haiku": "claude-haiku-4-5-20251001",
@@ -55,7 +55,7 @@ THINKING_LEVEL_ORDER: list[str] = ["low", "medium", "high", "max", "ultrathink"]
 # Budget constant for ultrathink mode (128K tokens)
 ULTRATHINK_BUDGET = 128000
 
-# Effort level mapping for adaptive thinking models (e.g., Opus 4.6)
+# Effort level mapping for adaptive thinking models (e.g., Opus 4.7)
 # These models support CLAUDE_CODE_EFFORT_LEVEL env var for effort-based routing
 EFFORT_LEVEL_MAP: dict[str, str] = {
     "low": "low",
@@ -67,7 +67,7 @@ EFFORT_LEVEL_MAP: dict[str, str] = {
 
 # Models that support adaptive thinking via effort level (env var)
 # These models get both max_thinking_tokens AND effort_level
-ADAPTIVE_THINKING_MODELS: set[str] = {"claude-opus-4-6"}
+ADAPTIVE_THINKING_MODELS: set[str] = {"claude-opus-4-7"}
 
 # Spec runner phase-specific thinking levels
 # Heavy phases use high for deep analysis
@@ -493,7 +493,7 @@ def is_adaptive_model(model_id: str) -> bool:
     for effort-based routing in addition to max_thinking_tokens.
 
     Args:
-        model_id: Full model ID (e.g., 'claude-opus-4-6')
+        model_id: Full model ID (e.g., 'claude-opus-4-7')
 
     Returns:
         True if the model supports adaptive thinking
@@ -505,11 +505,11 @@ def get_thinking_kwargs_for_model(model_id: str, thinking_level: str) -> dict:
     """
     Get thinking-related kwargs for create_client() based on model type.
 
-    For adaptive models (Opus 4.6): returns both max_thinking_tokens and effort_level.
+    For adaptive models (Opus 4.7): returns both max_thinking_tokens and effort_level.
     For other models (Sonnet, Haiku): returns only max_thinking_tokens.
 
     Args:
-        model_id: Full model ID (e.g., 'claude-opus-4-6')
+        model_id: Full model ID (e.g., 'claude-opus-4-7')
         thinking_level: Thinking level string (low, medium, high)
 
     Returns:
@@ -550,7 +550,7 @@ def get_fast_mode(spec_dir: Path) -> bool:
     """
     Check if Fast Mode is enabled for this task.
 
-    Fast Mode provides faster Opus 4.6 output at higher cost.
+    Fast Mode provides faster Opus 4.7 output at higher cost.
     Reads the fastMode flag from task_metadata.json.
 
     Args:

@@ -27,7 +27,7 @@ Usage:
 Requirements:
     - Claude Code CLI installed
     - Active Claude subscription with extra usage enabled
-    - Opus 4.6 model access
+    - Opus 4.7 model access
 """
 
 import asyncio
@@ -98,7 +98,7 @@ def run_claude_cli(extra_args: list[str], env_overrides: dict | None = None,
     cmd = [
         "claude", "-p",
         "Reply with exactly: HELLO_FAST_TEST",
-        "--model", "claude-opus-4-6",
+        "--model", "claude-opus-4-7",
         "--max-budget-usd", "0.50",
         *extra_args,
     ]
@@ -288,7 +288,7 @@ def test_5_project_settings():
         cmd = [
             "claude", "-p",
             "Reply with exactly: HELLO_FAST_TEST",
-            "--model", "claude-opus-4-6",
+            "--model", "claude-opus-4-7",
             "--max-budget-usd", "0.50",
             "--setting-sources", "project",
             "--dangerously-skip-permissions",

@@ -826,6 +826,7 @@ def create_client(
     betas: list[str] | None = None,
     effort_level: str | None = None,
     fast_mode: bool = False,
+    cwd: Path | None = None,
 ) -> ClaudeSDKClient:
     """
     Create a Claude Agent SDK client with multi-layered security.
@@ -856,8 +857,8 @@ def create_client(
         effort_level: Optional effort level for adaptive thinking models (e.g., "low",
                      "medium", "high"). When set, injected as CLAUDE_CODE_EFFORT_LEVEL
                      env var for the SDK subprocess. Only meaningful for models that
-                     support adaptive thinking (e.g., Opus 4.6).
-        fast_mode: Enable Fast Mode for faster Opus 4.6 output. When True, enables
+                     support adaptive thinking (e.g., Opus 4.7).
+        fast_mode: Enable Fast Mode for faster Opus 4.7 output. When True, enables
                   the "user" setting source so the CLI reads fastMode from
                   ~/.claude/settings.json. Requires extra usage enabled on Claude
                   subscription; falls back to standard speed automatically.
@@ -888,7 +889,7 @@ def create_client(
     if config_dir:
         logger.info(f"Using CLAUDE_CONFIG_DIR for profile: {config_dir}")
 
-    # Inject effort level for adaptive thinking models (e.g., Opus 4.6)
+    # Inject effort level for adaptive thinking models (e.g., Opus 4.7)
     if effort_level:
         sdk_env["CLAUDE_CODE_EFFORT_LEVEL"] = effort_level
 
@@ -1246,7 +1247,7 @@ def create_client(
             ],
         },
         "max_turns": 1000,
-        "cwd": str(project_dir.resolve()),
+        "cwd": str((cwd or project_dir).resolve()),
         "settings": str(settings_file.resolve()),
         "env": sdk_env,  # Pass ANTHROPIC_BASE_URL etc. to subprocess
         "max_thinking_tokens": max_thinking_tokens,  # Extended thinking budget

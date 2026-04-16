@@ -65,7 +65,7 @@ export interface QAIssue {
 }
 
 // Task Log Types - for persistent, phase-based logging
-export type TaskLogPhase = 'planning' | 'coding' | 'validation';
+export type TaskLogPhase = 'planning' | 'coding' | 'validation' | 'pr';
 export type TaskLogPhaseStatus = 'pending' | 'active' | 'completed' | 'failed';
 export type TaskLogEntryType = 'text' | 'tool_start' | 'tool_end' | 'phase_start' | 'phase_end' | 'error' | 'success' | 'info';
 
@@ -100,6 +100,7 @@ export interface TaskLogs {
     planning: TaskPhaseLog;
     coding: TaskPhaseLog;
     validation: TaskPhaseLog;
+    pr?: TaskPhaseLog;
   };
 }
 
@@ -239,11 +240,12 @@ export interface TaskMetadata {
   phaseModels?: PhaseModelConfig;  // Per-phase model configuration
   phaseThinking?: PhaseThinkingConfig;  // Per-phase thinking configuration
   phaseUltrathink?: PhaseUltrathinkConfig;  // Per-phase ultrathink override (128K tokens, max effort)
-  fastMode?: boolean;  // Fast Mode — faster Opus 4.6 output, higher cost per token
+  fastMode?: boolean;  // Fast Mode — faster Opus 4.7 output, higher cost per token
 
   // Git/Worktree configuration
   baseBranch?: string;  // Override base branch for this task's worktree
   prUrl?: string;  // GitHub PR URL if task has been submitted as a PR
+  prCreationInProgress?: boolean;  // True while the PR creation agent is running in the background
   useWorktree?: boolean;  // If false, use direct mode (no worktree isolation) - default is true for safety
   useLocalBranch?: boolean;  // If true, use the local branch directly instead of preferring origin/branch (preserves gitignored files)
 

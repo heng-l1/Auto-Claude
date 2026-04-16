@@ -10,8 +10,8 @@ import type { AgentProfile, PhaseModelConfig, FeatureModelConfig, FeatureThinkin
 // ============================================
 
 export const AVAILABLE_MODELS = [
-  { value: 'opus', label: 'Claude Opus 4.6' },
-  { value: 'opus-1m', label: 'Claude Opus 4.6 (1M)' },
+  { value: 'opus', label: 'Claude Opus 4.7' },
+  { value: 'opus-1m', label: 'Claude Opus 4.7 (1M)' },
   { value: 'opus-4.5', label: 'Claude Opus 4.5' },
   { value: 'sonnet', label: 'Claude Sonnet 4.5' },
   { value: 'haiku', label: 'Claude Haiku 4.5' }
@@ -20,8 +20,8 @@ export const AVAILABLE_MODELS = [
 // Maps model shorthand to actual Claude model IDs
 // Values must match apps/backend/phase_config.py MODEL_ID_MAP
 export const MODEL_ID_MAP: Record<string, string> = {
-  opus: 'claude-opus-4-6',
-  'opus-1m': 'claude-opus-4-6',
+  opus: 'claude-opus-4-7',
+  'opus-1m': 'claude-opus-4-7',
   'opus-4.5': 'claude-opus-4-5-20251101',
   sonnet: 'claude-sonnet-4-5-20250929',
   haiku: 'claude-haiku-4-5-20251001'
