@@ -6,6 +6,8 @@ Workspace Models
 Data classes and enums for workspace management.
 """
 
+import json
+import socket
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -50,8 +52,17 @@ class ParallelMergeResult:
     was_auto_merged: bool = False  # True if git auto-merged without AI
 
 
+MERGE_LOCK_TTL_SECONDS = 3600
+
+
 class MergeLockError(Exception):
     """Raised when a merge lock cannot be acquired."""
+
+    pass
+
+
+class RebaseRestoreError(Exception):
+    """Raised when restoring the branch after a failed rebase fails."""
 
     pass
 

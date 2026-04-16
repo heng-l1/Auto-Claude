@@ -97,10 +97,12 @@ from .git_utils import (
     validate_merged_syntax,
 )
 from .models import (
+    MERGE_LOCK_TTL_SECONDS,
     MergeLock,
     MergeLockError,
     ParallelMergeResult,
     ParallelMergeTask,
+    RebaseRestoreError,
     SpecNumberLock,
     SpecNumberLockError,
     WorkspaceChoice,
@@ -126,12 +128,14 @@ __all__ = [
     # are kept as module-level assignments for internal use but not exported in __all__
     # to maintain the underscore convention for private/internal APIs
     # Models
+    "MERGE_LOCK_TTL_SECONDS",
     "WorkspaceMode",
     "WorkspaceChoice",
     "ParallelMergeTask",
     "ParallelMergeResult",
     "MergeLock",
     "MergeLockError",
+    "RebaseRestoreError",
     "SpecNumberLock",
     "SpecNumberLockError",
     # Git Utils

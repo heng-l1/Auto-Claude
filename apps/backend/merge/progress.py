@@ -44,6 +44,7 @@ class MergeProgressStage(Enum):
     VALIDATING = "validating"
     COMPLETE = "complete"
     ERROR = "error"
+    WARNING = "warning"
 
 
 class MergeProgressCallback(Protocol):
