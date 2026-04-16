@@ -697,6 +697,7 @@ def _try_smart_merge_inner(
                     "success": False,
                     "conflicts": resolution_result.get("remaining_conflicts", []),
                     "resolved": resolution_result.get("resolved_files", []),
+                    "warnings": resolution_result.get("warnings", []),
                     "git_conflicts": True,
                     "error": resolution_result.get("error"),
                 }
@@ -1363,6 +1364,7 @@ def _resolve_git_conflicts_with_ai(
 
     resolved_files = []
     remaining_conflicts = []
+    warnings = []
     auto_merged_count = 0
     ai_merged_count = 0
 
@@ -1631,6 +1633,12 @@ def _resolve_git_conflicts_with_ai(
 
         elapsed = time.time() - start_time
 
+        # Build lookup so we can fall back to git merge-file using the
+        # original content when AI merge fails for a file.
+        task_lookup: dict[str, ParallelMergeTask] = {
+            task.file_path: task for task in files_needing_ai_merge
+        }
+
         # Process results
         for result in parallel_results:
             if result.success:
@@ -1648,6 +1656,55 @@ def _resolve_git_conflicts_with_ai(
                     print(success(f"    ✓ {result.file_path} (AI merged)"))
             else:
                 print(error(f"    ✗ {result.file_path}: {result.error}"))
+
+                # AI merge failed — try git merge-file so non-overlapping
+                # changes still auto-merge and overlapping ones surface with
+                # conflict markers instead of being silently lost.
+                original_task = task_lookup.get(result.file_path)
+                if original_task is not None:
+                    debug_warning(
+                        MODULE,
+                        f"  {result.file_path}: AI merge failed, trying git merge-file fallback",
+                    )
+                    git_ok, git_merged = _git_merge_file(
+                        project_dir,
+                        original_task.base_content or "",
+                        original_task.main_content,
+                        original_task.worktree_content,
+                    )
+                    if git_ok and git_merged is not None:
+                        # Clean merge succeeded on fallback — stage it
+                        target_path = project_dir / result.file_path
+                        target_path.parent.mkdir(parents=True, exist_ok=True)
+                        target_path.write_text(git_merged, encoding="utf-8")
+                        run_git(["add", result.file_path], cwd=project_dir)
+                        resolved_files.append(result.file_path)
+                        auto_merged_count += 1
+                        print(
+                            success(
+                                f"    ✓ {result.file_path} (git 3-way merged on fallback)"
+                            )
+                        )
+                        continue
+                    elif git_merged is not None:
+                        # Exit code 1 — conflicts present but markers preserved.
+                        # Write to disk WITHOUT staging so manual review is required.
+                        target_path = project_dir / result.file_path
+                        target_path.parent.mkdir(parents=True, exist_ok=True)
+                        target_path.write_text(git_merged, encoding="utf-8")
+                        remaining_conflicts.append(
+                            {
+                                "file": result.file_path,
+                                "reason": "Overlapping changes \u2014 needs manual review",
+                                "severity": "high",
+                            }
+                        )
+                        warnings.append(
+                            f"{result.file_path}: AI merge failed, conflict markers written to disk"
+                        )
+                        continue
+                    # Exit >1 — fall through to unresolvable branch below.
+
                 remaining_conflicts.append(
                     {
                         "file": result.file_path,
@@ -1868,17 +1925,46 @@ def _resolve_git_conflicts_with_ai(
                                     f"  {file_path}: AI-merged (non-conflicting, both sides changed)",
                                 )
                             else:
-                                # AI merge failed — fall back to spec branch copy
-                                # so we don't block the whole merge
+                                # AI merge failed — try git merge-file for conflict markers
                                 debug_warning(
                                     MODULE,
-                                    f"  {file_path}: AI merge failed, falling back to spec branch copy",
+                                    f"  {file_path}: AI merge failed, trying git merge-file fallback",
                                 )
-                                target_path.write_text(
-                                    worktree_content, encoding="utf-8"
+                                git_ok, git_merged = _git_merge_file(
+                                    project_dir,
+                                    base_content or "",
+                                    main_content,
+                                    worktree_content,
                                 )
-                                run_git(["add", target_file_path], cwd=project_dir)
-                                resolved_files.append(target_file_path)
+                                if git_ok and git_merged is not None:
+                                    # Clean merge succeeded on fallback
+                                    target_path.write_text(git_merged, encoding="utf-8")
+                                    run_git(["add", target_file_path], cwd=project_dir)
+                                    resolved_files.append(target_file_path)
+                                    auto_merged_count += 1
+                                    debug(
+                                        MODULE,
+                                        f"  {file_path}: git 3-way merged on fallback (non-conflicting)",
+                                    )
+                                elif git_merged is not None:
+                                    # Exit code 1 — conflicts with markers preserved
+                                    target_path.write_text(git_merged, encoding="utf-8")
+                                    # Do NOT stage — leave conflict markers for manual review
+                                    remaining_conflicts.append({
+                                        "file": target_file_path,
+                                        "reason": "Overlapping changes \u2014 needs manual review",
+                                        "severity": "high",
+                                    })
+                                    warnings.append(
+                                        f"{target_file_path}: AI merge failed, conflict markers written to disk"
+                                    )
+                                else:
+                                    # Exit code >1 — error, unresolvable
+                                    remaining_conflicts.append({
+                                        "file": target_file_path,
+                                        "reason": "Merge error \u2014 could not produce conflict markers",
+                                        "severity": "high",
+                                    })
                     else:
                         # Main unchanged from base — spec branch is sole author
                         target_path.write_text(worktree_content, encoding="utf-8")
@@ -1901,6 +1987,7 @@ def _resolve_git_conflicts_with_ai(
     result = {
         "success": len(remaining_conflicts) == 0,
         "resolved_files": resolved_files,
+        "warnings": warnings,
         "stats": {
             "files_merged": len(resolved_files),
             "conflicts_resolved": len(conflicting_files) - len(remaining_conflicts),
@@ -2112,10 +2199,20 @@ def _git_merge_file(
 
             if result.returncode == 0:
                 return True, result.stdout
-            else:
+            elif result.returncode == 1:
+                # Exit code 1 = conflicts present, but merged content
+                # with conflict markers is available in stdout
                 debug_warning(
                     MODULE,
                     "git merge-file returned conflicts",
+                    returncode=result.returncode,
+                )
+                return False, result.stdout
+            else:
+                # Exit code >1 = error (e.g., file not found, permission issue)
+                debug_warning(
+                    MODULE,
+                    "git merge-file error",
                     returncode=result.returncode,
                 )
                 return False, None
