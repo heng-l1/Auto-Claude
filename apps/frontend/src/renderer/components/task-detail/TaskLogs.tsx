@@ -5,6 +5,7 @@ import {
   Pencil,
   FileCode,
   FlaskConical,
+  GitPullRequest,
   CheckCircle2,
   XCircle,
   AlertTriangle,
@@ -40,19 +41,22 @@ interface TaskLogsProps {
 const PHASE_LABELS: Record<TaskLogPhase, string> = {
   planning: 'Planning',
   coding: 'Coding',
-  validation: 'Validation'
+  validation: 'Validation',
+  pr: 'PR Creation'
 };
 
 const PHASE_ICONS: Record<TaskLogPhase, typeof Pencil> = {
   planning: Pencil,
   coding: FileCode,
-  validation: FlaskConical
+  validation: FlaskConical,
+  pr: GitPullRequest
 };
 
 const PHASE_COLORS: Record<TaskLogPhase, string> = {
   planning: 'text-amber-500 bg-amber-500/10 border-amber-500/30',
   coding: 'text-info bg-info/10 border-info/30',
-  validation: 'text-purple-500 bg-purple-500/10 border-purple-500/30'
+  validation: 'text-purple-500 bg-purple-500/10 border-purple-500/30',
+  pr: 'text-primary bg-primary/10 border-primary/30'
 };
 
 // Map log phases to config phase keys
@@ -60,7 +64,8 @@ const PHASE_COLORS: Record<TaskLogPhase, string> = {
 const LOG_PHASE_TO_CONFIG_PHASE: Record<TaskLogPhase, keyof PhaseModelConfig> = {
   planning: 'spec',  // Planning log phase primarily shows spec creation
   coding: 'coding',
-  validation: 'qa'
+  validation: 'qa',
+  pr: 'pr'
 };
 
 // Short labels for models
@@ -91,10 +96,18 @@ function getPhaseConfig(
 
   // Per-phase config (available for all profiles with phase configuration)
   if (metadata.phaseModels && metadata.phaseThinking) {
-    const model = metadata.phaseModels[configPhase];
-    const thinking = metadata.phaseThinking[configPhase];
+    // Tasks created before `pr` was added to PhaseModelConfig may leave
+    // phaseModels.pr / phaseThinking.pr unset. Fall back to the `coding`
+    // slot — the PR agent most closely mirrors the coding agent's intent.
+    const effectivePhase =
+      configPhase === 'pr' && metadata.phaseModels.pr == null
+        ? 'coding'
+        : configPhase;
+    const model = metadata.phaseModels[effectivePhase];
+    const thinking = metadata.phaseThinking[effectivePhase];
     // Check if ultrathink is enabled for this phase (overrides thinking level)
-    const isUltrathink = metadata.phaseUltrathink?.[configPhase];
+    const isUltrathink = metadata.phaseUltrathink?.[effectivePhase];
+    if (!model || !thinking) return null;
     return {
       model: MODEL_SHORT_LABELS[model] || model,
       thinking: isUltrathink ? 'Ultra' : (THINKING_SHORT_LABELS[thinking] || thinking)
@@ -137,11 +150,11 @@ export function TaskLogs({
         ) : phaseLogs ? (
           <>
             {/* Phase-based collapsible logs */}
-            {(['planning', 'coding', 'validation'] as TaskLogPhase[]).map((phase) => (
+            {(['planning', 'coding', 'validation', 'pr'] as TaskLogPhase[]).map((phase) => (
               <PhaseLogSection
                 key={phase}
                 phase={phase}
-                phaseLog={phaseLogs.phases[phase]}
+                phaseLog={phaseLogs.phases[phase] ?? null}
                 isExpanded={expandedPhases.has(phase)}
                 onToggle={() => onTogglePhase(phase)}
                 isTaskStuck={isStuck}

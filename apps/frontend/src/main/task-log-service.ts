@@ -126,7 +126,10 @@ export class TaskLogService extends EventEmitter {
       return worktreeLogs;
     }
 
-    // Merge logs: planning from main, coding/validation from worktree (if available)
+    // Merge logs: planning from main, coding/validation from worktree (if available),
+    // pr from wherever it actually ran (main or worktree).
+    const prFromWorktree = worktreeLogs.phases.pr;
+    const prFromMain = mainLogs.phases.pr;
     const mergedLogs: TaskLogs = {
       spec_id: mainLogs.spec_id,
       created_at: mainLogs.created_at,
@@ -139,7 +142,11 @@ export class TaskLogService extends EventEmitter {
           : mainLogs.phases.coding,
         validation: (worktreeLogs.phases.validation?.entries?.length > 0 || worktreeLogs.phases.validation?.status !== 'pending')
           ? worktreeLogs.phases.validation
-          : mainLogs.phases.validation
+          : mainLogs.phases.validation,
+        // Prefer whichever side actually recorded PR phase data
+        pr: (prFromWorktree && ((prFromWorktree.entries?.length ?? 0) > 0 || prFromWorktree.status !== 'pending'))
+          ? prFromWorktree
+          : prFromMain
       }
     };
 
@@ -225,7 +232,7 @@ export class TaskLogService extends EventEmitter {
     const logs = this.loadLogs(specDir);
     if (!logs) return null;
 
-    const phases: TaskLogPhase[] = ['planning', 'coding', 'validation'];
+    const phases: TaskLogPhase[] = ['planning', 'coding', 'validation', 'pr'];
     for (const phase of phases) {
       if (logs.phases[phase]?.status === 'active') {
         return phase;
@@ -455,7 +462,7 @@ export class TaskLogService extends EventEmitter {
    * Emit streaming updates for new log entries
    */
   private emitNewEntries(specId: string, previousLogs: TaskLogs | undefined, currentLogs: TaskLogs): void {
-    const phases: TaskLogPhase[] = ['planning', 'coding', 'validation'];
+    const phases: TaskLogPhase[] = ['planning', 'coding', 'validation', 'pr'];
 
     for (const phase of phases) {
       const prevPhase = previousLogs?.phases[phase];

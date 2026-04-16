@@ -13,6 +13,8 @@ interface PhaseProgressIndicatorProps {
   isStuck?: boolean;
   isRunning?: boolean;
   taskStatus?: TaskStatus;
+  /** True while the PR creation agent is running in the background */
+  isCreatingPR?: boolean;
   className?: string;
 }
 
@@ -58,6 +60,7 @@ export const PhaseProgressIndicator = memo(function PhaseProgressIndicator({
   isStuck = false,
   isRunning = false,
   taskStatus,
+  isCreatingPR = false,
   className,
 }: PhaseProgressIndicatorProps) {
   const { t } = useTranslation('tasks');
@@ -258,7 +261,7 @@ export const PhaseProgressIndicator = memo(function PhaseProgressIndicator({
 
       {/* Phase steps indicator (shows overall flow) */}
       {(isRunning || phase !== 'idle') && (
-        <PhaseStepsIndicator currentPhase={phase} isStuck={isStuck} isVisible={isVisible} taskStatus={taskStatus} />
+        <PhaseStepsIndicator currentPhase={phase} isStuck={isStuck} isVisible={isVisible} taskStatus={taskStatus} isCreatingPR={isCreatingPR} />
       )}
     </div>
   );
@@ -275,11 +278,13 @@ const PhaseStepsIndicator = memo(function PhaseStepsIndicator({
   isStuck,
   isVisible = true,
   taskStatus,
+  isCreatingPR = false,
 }: {
   currentPhase: ExecutionPhase;
   isStuck: boolean;
   isVisible?: boolean;
   taskStatus?: TaskStatus;
+  isCreatingPR?: boolean;
 }) {
   const { t } = useTranslation('tasks');
 
@@ -294,6 +299,7 @@ const PhaseStepsIndicator = memo(function PhaseStepsIndicator({
     // PR-specific logic FIRST — must precede the generic 'complete' check
     if (phaseKey === 'pr_creation') {
       if (currentPhase === 'failed') return 'failed';
+      if (isCreatingPR) return 'active';
       if (taskStatus === 'pr_created') return 'complete';
       return 'pending';
     }

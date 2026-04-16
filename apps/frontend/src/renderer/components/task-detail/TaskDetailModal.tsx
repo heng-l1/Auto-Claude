@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { useToast } from '../../hooks/use-toast';
@@ -79,6 +80,19 @@ function TaskDetailModalContent({ open, task, onOpenChange, onOpenInbuiltTermina
   const { t } = useTranslation(['tasks']);
   const { toast } = useToast();
   const state = useTaskDetail({ task });
+
+  // Auto-close the modal when PR creation kicks off. We call onOpenChange(false)
+  // inside handleCreatePR too, but add this as a safety net in case any render
+  // ordering (Zustand notification + React batched state) lands selectedTask
+  // back on this task before the close propagates.
+  const sawPrCreationRef = useRef(task.metadata?.prCreationInProgress === true);
+  useEffect(() => {
+    const current = task.metadata?.prCreationInProgress === true;
+    if (current && !sawPrCreationRef.current) {
+      onOpenChange(false);
+    }
+    sawPrCreationRef.current = current;
+  }, [task.metadata?.prCreationInProgress, onOpenChange]);
   const activeProject = useProjectStore(s => s.getActiveProject());
   const showFilesTab = isFilesTabEnabled();
   const progressPercent = calculateProgress(task.subtasks);
@@ -197,29 +211,37 @@ function TaskDetailModalContent({ open, task, onOpenChange, onOpenInbuiltTermina
   };
 
   const handleCreatePR = async (options: WorktreeCreatePROptions) => {
-    // Immediately move task to pr_created status so it appears in the PR column
-    // This makes PR creation non-blocking — the user doesn't have to wait
+    // Immediately move task to pr_created so it appears in the PR column,
+    // and set prCreationInProgress so the PR phase keeps spinning until
+    // the background agent finishes.
     useTaskStore.getState().updateTask(task.id, {
-      status: 'pr_created'
+      status: 'pr_created',
+      metadata: { ...task.metadata, prCreationInProgress: true }
     });
 
-    // Show confirmation toast and close the dialog
+    // Show confirmation toast, close the PR dialog, and close the task
+    // detail modal — the user can watch progress on the kanban board.
     toast({
       title: t('taskReview:pr.success.started'),
       description: t('taskReview:pr.success.startedDescription'),
       duration: 4000,
     });
     state.setShowPRDialog(false);
+    onOpenChange(false);
 
     // Fire PR creation in the background — don't await
     window.electronAPI.createWorktreePR(task.id, options)
       .then((result) => {
+        // Always clear the in-progress flag on completion.
+        const latest = useTaskStore.getState().tasks.find((tsk) => tsk.id === task.id);
+        const baseMetadata = { ...(latest?.metadata ?? task.metadata), prCreationInProgress: false };
+
         if (result.success && result.data) {
           if (result.data.success && result.data.prUrl && !result.data.alreadyExists) {
             // PR created successfully — update metadata with PR URL
             useTaskStore.getState().updateTask(task.id, {
               status: 'pr_created',
-              metadata: { ...task.metadata, prUrl: result.data.prUrl }
+              metadata: { ...baseMetadata, prUrl: result.data.prUrl }
             });
             toast({
               title: t('taskReview:pr.success.created'),
@@ -230,16 +252,20 @@ function TaskDetailModalContent({ open, task, onOpenChange, onOpenInbuiltTermina
             // PR already exists — still a valid state, update metadata
             useTaskStore.getState().updateTask(task.id, {
               status: 'pr_created',
-              metadata: { ...task.metadata, prUrl: result.data.prUrl }
+              metadata: { ...baseMetadata, prUrl: result.data.prUrl }
             });
             toast({
               title: t('taskReview:pr.success.alreadyExists'),
               duration: 4000,
             });
           } else {
-            // PR creation failed — move back to human_review
+            // PR creation failed. Only drop back to human_review if we don't
+            // already have a PR URL from a prior successful attempt — the PR
+            // exists on GitHub even if this retry failed.
+            const hasExistingPr = Boolean(baseMetadata.prUrl);
             useTaskStore.getState().updateTask(task.id, {
-              status: 'human_review'
+              status: hasExistingPr ? 'pr_created' : 'human_review',
+              metadata: baseMetadata
             });
             toast({
               variant: 'destructive',
@@ -249,9 +275,11 @@ function TaskDetailModalContent({ open, task, onOpenChange, onOpenInbuiltTermina
             });
           }
         } else {
-          // IPC-level failure — move back to human_review
+          // IPC-level failure — same guard as above.
+          const hasExistingPr = Boolean(baseMetadata.prUrl);
           useTaskStore.getState().updateTask(task.id, {
-            status: 'human_review'
+            status: hasExistingPr ? 'pr_created' : 'human_review',
+            metadata: baseMetadata
           });
           toast({
             variant: 'destructive',
@@ -262,9 +290,13 @@ function TaskDetailModalContent({ open, task, onOpenChange, onOpenInbuiltTermina
         }
       })
       .catch((err) => {
-        // Unexpected error — move back to human_review
+        // Unexpected error — same guard.
+        const latest = useTaskStore.getState().tasks.find((tsk) => tsk.id === task.id);
+        const baseMetadata = { ...(latest?.metadata ?? task.metadata), prCreationInProgress: false };
+        const hasExistingPr = Boolean(baseMetadata.prUrl);
         useTaskStore.getState().updateTask(task.id, {
-          status: 'human_review'
+          status: hasExistingPr ? 'pr_created' : 'human_review',
+          metadata: baseMetadata
         });
         toast({
           variant: 'destructive',

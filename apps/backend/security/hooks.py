@@ -7,6 +7,7 @@ Main enforcement point for the security system.
 """
 
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,12 @@ from project_analyzer import BASE_COMMANDS, SecurityProfile, is_command_allowed
 from .parser import extract_commands, get_command_for_validation, split_command_segments
 from .profile import get_security_profile
 from .validator import VALIDATORS
+
+
+def _log_deny(reason: str, command: str) -> None:
+    """Surface hook denials to stderr so they show up in Electron's CREATE_PR DEBUG output."""
+    preview = command if len(command) <= 200 else command[:200] + "...[truncated]"
+    print(f"[HOOK_DENY] reason={reason} | command={preview}", file=sys.stderr, flush=True)
 
 
 async def bash_security_hook(
@@ -48,21 +55,25 @@ async def bash_security_hook(
 
     # Check if tool_input is None (malformed tool call)
     if tool_input is None:
+        reason = "Bash tool_input is None - malformed tool call from SDK"
+        _log_deny(reason, "")
         return {
             "hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
                 "permissionDecision": "deny",
-                "permissionDecisionReason": "Bash tool_input is None - malformed tool call from SDK",
+                "permissionDecisionReason": reason,
             }
         }
 
     # Check if tool_input is a dict
     if not isinstance(tool_input, dict):
+        reason = f"Bash tool_input must be dict, got {type(tool_input).__name__}"
+        _log_deny(reason, str(tool_input))
         return {
             "hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
                 "permissionDecision": "deny",
-                "permissionDecisionReason": f"Bash tool_input must be dict, got {type(tool_input).__name__}",
+                "permissionDecisionReason": reason,
             }
         }
 
@@ -102,11 +113,13 @@ async def bash_security_hook(
 
     if not commands:
         # Could not parse - fail safe by blocking
+        reason = f"Could not parse command for security validation: {command}"
+        _log_deny("parse_failure", command)
         return {
             "hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
                 "permissionDecision": "deny",
-                "permissionDecisionReason": f"Could not parse command for security validation: {command}",
+                "permissionDecisionReason": reason,
             }
         }
 
@@ -122,6 +135,7 @@ async def bash_security_hook(
         is_allowed, reason = is_command_allowed(cmd, profile)
 
         if not is_allowed:
+            _log_deny(f"not_allowed[{cmd}]: {reason}", command)
             return {
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
@@ -139,6 +153,7 @@ async def bash_security_hook(
             validator = VALIDATORS[cmd]
             allowed, reason = validator(cmd_segment)
             if not allowed:
+                _log_deny(f"validator[{cmd}]: {reason}", command)
                 return {
                     "hookSpecificOutput": {
                         "hookEventName": "PreToolUse",

@@ -110,8 +110,15 @@ const PRINTABLE_CHARS_REGEX = /^[\x20-\x7E\u00A0-\uFFFF]*$/;
 // Timeout for PR creation operations (2 minutes for network operations)
 const PR_CREATION_TIMEOUT_MS = 120000;
 
-// Timeout for PR creation via agent path (3 minutes - agent needs time to compose rich PR descriptions)
-const PR_AGENT_TIMEOUT_MS = 180000;
+// Timeout for PR creation via agent path (5 minutes - agent composes rich PR
+// descriptions, may call linkedin-dev-workflow skills, and retries on our own
+// safety-layer denials before falling through to a working command)
+const PR_AGENT_TIMEOUT_MS = 300000;
+
+// Matches PR URLs on the github.com/[enterprise].com/gitlab.com providers.
+// Used to salvage a "succeeded but timed out" run by finding the URL the CLI
+// already printed to stdout before we killed it.
+const PR_URL_REGEX = /https:\/\/[\w.-]+\/[^\s'"]+\/(?:pull|merge_requests)\/\d+/;
 
 /**
  * Read utility feature settings (for commit message, merge resolver) from settings file
@@ -3623,6 +3630,60 @@ export function registerWorktreeHandlers(
         }
         debug('Worktree path:', worktreePath);
 
+        // Fast path: if a PR for this branch already exists on GitHub, skip
+        // the agent entirely. This is faster, avoids the Claude CLI
+        // `initialize` timeout path, and correctly attaches the existing PR
+        // to the task (so it lands in the PR Created column).
+        try {
+          const ghPath = getToolPath('gh');
+          const branch = execFileSync(
+            getToolPath('git'),
+            ['-C', worktreePath, 'branch', '--show-current'],
+            { encoding: 'utf-8', timeout: 5000, env: getIsolatedGitEnv() }
+          ).trim();
+          if (branch) {
+            const ghJson = execFileSync(
+              ghPath,
+              ['pr', 'list', '--head', branch, '--state', 'all',
+                '--json', 'url,state,isDraft', '--limit', '1'],
+              {
+                cwd: worktreePath,
+                encoding: 'utf-8',
+                timeout: 10000,
+                env: { ...getIsolatedGitEnv(), GITHUB_CLI_PATH: ghPath }
+              }
+            );
+            const existing = JSON.parse(ghJson) as Array<{ url?: string; state?: string }>;
+            const open = existing.find((pr) => pr.url && pr.state !== 'CLOSED');
+            if (open?.url) {
+              debug('PR already exists for branch, skipping agent:', open.url);
+              // Persist pr_created + prUrl to disk so the status survives
+              // a reload / task refresh (renderer-only updates get lost).
+              await updateTaskStatusAfterPRCreation(
+                specDir,
+                worktreePath,
+                open.url,
+                project.autoBuildPath,
+                task.specId,
+                debug
+              );
+              return {
+                success: true,
+                data: {
+                  success: false,  // "not newly created"
+                  prUrl: open.url,
+                  alreadyExists: true,
+                  error: undefined
+                }
+              };
+            }
+          }
+        } catch (existingCheckErr) {
+          // Non-fatal — if the pre-check fails we just fall through to the
+          // agent, which has its own "already exists" handling.
+          debug('PR pre-check failed (non-fatal):', existingCheckErr);
+        }
+
         // Determine whether to use agent-based or direct CLI PR creation
         const useAgent = isPRAgentEnabled();
         const timeoutMs = useAgent ? PR_AGENT_TIMEOUT_MS : PR_CREATION_TIMEOUT_MS;
@@ -3666,12 +3727,18 @@ export function registerWorktreeHandlers(
 
           // Parse Python command to handle space-separated commands like "py -3"
           const [pythonCommand, pythonBaseArgs] = parsePythonCommand(pythonPath);
+          // CLAUDE.md is included in the agent's system prompt unless the
+          // project explicitly opted out via settings.useClaudeMd === false.
+          const useClaudeMdEnv = project.settings?.useClaudeMd !== false
+            ? { USE_CLAUDE_MD: 'true' }
+            : {};
           const createPRProcess = spawn(pythonCommand, [...pythonBaseArgs, ...args], {
             cwd: sourcePath,
             env: {
               ...getIsolatedGitEnv(),
               ...pythonEnv,
               ...profileEnv,
+              ...useClaudeMdEnv,
               GITHUB_CLI_PATH: ghCliPath,
               PYTHONUNBUFFERED: '1',
               PYTHONUTF8: '1'
@@ -3682,18 +3749,43 @@ export function registerWorktreeHandlers(
           let stdout = '';
           let stderr = '';
 
-          // Set up timeout to kill hung processes
-          // Agent path gets longer timeout (3 min) since it composes rich descriptions
+          // Set up timeout to kill hung processes. Before giving up, scan
+          // stdout for a PR URL — the agent frequently succeeds just before
+          // our timeout fires (e.g. gh pr create returns, then the final
+          // JSON print gets cut off). If we find a URL, treat it as success.
           timeoutId = setTimeout(() => {
             if (!resolved) {
               debug('TIMEOUT: Create PR process exceeded', timeoutMs, 'ms, killing...');
               resolved = true;
 
-              // Platform-specific process termination with fallback
               killProcessGracefully(createPRProcess, {
                 debugPrefix: '[PR_CREATION]',
                 debug: isDebugMode
               });
+
+              const urlMatch = stdout.match(PR_URL_REGEX);
+              if (urlMatch) {
+                debug('TIMEOUT: Recovered PR URL from stdout:', urlMatch[0]);
+                // Best-effort update of task status using the recovered URL.
+                updateTaskStatusAfterPRCreation(
+                  specDir,
+                  worktreePath,
+                  urlMatch[0],
+                  project.autoBuildPath,
+                  task.specId,
+                  debug
+                ).catch((err) => debug('Post-timeout status update failed:', err));
+                resolve({
+                  success: true,
+                  data: {
+                    success: true,
+                    prUrl: urlMatch[0],
+                    alreadyExists: false,
+                    error: undefined
+                  }
+                });
+                return;
+              }
 
               resolve({
                 success: false,
@@ -3785,6 +3877,33 @@ export function registerWorktreeHandlers(
               const result = parsePRJsonOutput(stdout);
               if (result) {
                 debug('Parsed error result:', result);
+
+                // "Already exists" is NOT an IPC-level failure — the PR is
+                // valid, Python just exits 1 because nothing new was created.
+                // Persist pr_created to disk so the status survives a reload,
+                // then pass the full payload through so the renderer attaches
+                // the existing PR URL and keeps the task in PR Created.
+                if (result.alreadyExists && result.prUrl) {
+                  await updateTaskStatusAfterPRCreation(
+                    specDir,
+                    worktreePath,
+                    result.prUrl,
+                    project.autoBuildPath,
+                    task.specId,
+                    debug
+                  );
+                  resolve({
+                    success: true,
+                    data: {
+                      success: result.success,
+                      prUrl: result.prUrl,
+                      alreadyExists: true,
+                      error: result.error
+                    }
+                  });
+                  return;
+                }
+
                 resolve({
                   success: false,
                   error: result.error || 'Failed to create PR'

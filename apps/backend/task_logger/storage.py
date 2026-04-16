@@ -63,6 +63,13 @@ class LogStorage:
                     "completed_at": None,
                     "entries": [],
                 },
+                LogPhase.PR.value: {
+                    "phase": LogPhase.PR.value,
+                    "status": "pending",
+                    "started_at": None,
+                    "completed_at": None,
+                    "entries": [],
+                },
             },
         }
 

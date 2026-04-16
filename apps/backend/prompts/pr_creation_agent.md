@@ -213,20 +213,12 @@ gh pr create \
 
 Add `--draft` if the draft flag was requested.
 
-**IMPORTANT**: For long PR bodies, use a heredoc or write to a temp file to avoid shell escaping issues:
+**IMPORTANT — Always pass the body inline via `--body "<content>"`. Do NOT:**
+- Write the body to a temp file (blocked by the SDK's read-before-write checkpointing)
+- Use `cat > file << HEREDOC` redirects (blocked by the bash security hook)
+- Use `--body-file`
 
-```bash
-# Option A: Temp file (preferred for long bodies)
-cat > /tmp/pr_body.md << 'PRBODY'
-<body content here>
-PRBODY
-
-gh pr create \
-  --base <target-branch> \
-  --head <branch-name> \
-  --title "<title>" \
-  --body-file /tmp/pr_body.md
-```
+Shell-escape the body yourself by wrapping in double quotes and escaping any embedded double quotes / backticks / `$` as needed. If your tooling provides a LinkedIn-standard submit command (e.g. `linkedin-dev-workflow:submit`), prefer that over raw `gh pr create` — it handles escaping and company conventions for you.
 
 ### 3.2: GitLab (glab CLI)
 

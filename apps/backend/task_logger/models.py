@@ -12,6 +12,7 @@ class LogPhase(str, Enum):
     PLANNING = "planning"
     CODING = "coding"
     VALIDATION = "validation"
+    PR = "pr"
 
 
 class LogEntryType(str, Enum):

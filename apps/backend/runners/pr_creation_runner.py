@@ -23,6 +23,7 @@ Usage:
 import asyncio
 import json
 import logging
+import os
 import re
 import sys
 from pathlib import Path
@@ -48,6 +49,7 @@ if env_file.exists():
 from agents.pr_template_filler import detect_pr_template
 from agents.session import run_agent_session
 from core.client import create_client, load_claude_md
+from core.workspace.git_utils import get_existing_build_worktree
 from phase_config import (
     get_fast_mode,
     get_phase_client_thinking_kwargs,
@@ -206,6 +208,7 @@ def _build_context_message(
     target_branch: str,
     title: str | None,
     draft: bool,
+    worktree_path: Path | None = None,
 ) -> str:
     """
     Build the full context message for the PR creation agent.
@@ -269,6 +272,11 @@ def _build_context_message(
     )
 
     # Assemble the full message
+    worktree_line = (
+        f"**Worktree (your cwd — already on the spec branch):** {worktree_path}"
+        if worktree_path
+        else "**Worktree:** (not provided — running from project root)"
+    )
     parts = [
         system_instructions,
         "",
@@ -280,6 +288,11 @@ def _build_context_message(
         f"**Target Branch:** {target_branch}",
         f"**User-Provided Title:** {title or '(none — derive from context)'}",
         f"**Draft:** {'yes' if draft else 'no'}",
+        worktree_line,
+        "",
+        "Your working directory is already set to the worktree above. "
+        "The spec branch is checked out there. Do NOT attempt to `git checkout` "
+        "a different branch and do NOT `cd` elsewhere — just run git/gh from here.",
         "",
         "### Spec Overview",
         "",
@@ -346,9 +359,19 @@ async def run_pr_creation_agent(
     # Initialize task logger
     task_logger = get_task_logger(spec_dir)
     if task_logger:
-        task_logger.start_phase(LogPhase.CODING, "PR creation agent")
+        task_logger.start_phase(LogPhase.PR, "PR creation agent")
 
     try:
+        # Resolve worktree path — the agent MUST run from the worktree so it's
+        # on the correct branch. Running from project_dir leaves the agent on
+        # whatever branch the main repo is checked out to (often master/main),
+        # and it cannot `git checkout` the spec branch because the worktree
+        # already holds it.
+        worktree_path = get_existing_build_worktree(project_dir, spec_name)
+        if not worktree_path:
+            logger.error("No worktree found for spec: %s", spec_name)
+            return _failure_result(f"No worktree found for spec: {spec_name}")
+
         # Resolve model and thinking config for 'pr' phase
         model = get_phase_model(spec_dir, "pr", cli_model)
         thinking_kwargs = get_phase_client_thinking_kwargs(
@@ -358,10 +381,11 @@ async def run_pr_creation_agent(
         fast_mode = get_fast_mode(spec_dir)
 
         logger.info(
-            "PR creation agent config: model=%s, thinking=%s, fast_mode=%s",
+            "PR creation agent config: model=%s, thinking=%s, fast_mode=%s, worktree=%s",
             model,
             thinking_kwargs,
             fast_mode,
+            worktree_path,
         )
 
         # Build context message
@@ -372,9 +396,28 @@ async def run_pr_creation_agent(
             target_branch=target_branch,
             title=title,
             draft=draft,
+            worktree_path=worktree_path,
         )
 
-        # Create client following pr_template_filler pattern
+        # Capture the Claude CLI subprocess's stderr so we can diagnose
+        # SDK-level issues like "Control request timeout: initialize" instead
+        # of flying blind. The Electron worktree-handler tags Python stderr
+        # lines with "[CREATE_PR DEBUG] STDERR:", so these will surface there.
+        # The marker line below confirms this wiring ran even if the CLI
+        # emits nothing on stderr (i.e. a silent hang vs. missing callback).
+        def cli_stderr_cb(line: str) -> None:
+            print(f"[CLI STDERR] {line}", file=sys.stderr, flush=True)
+
+        print(
+            f"[PR_AGENT] stderr capture enabled "
+            f"(NODE_ENV={os.environ.get('NODE_ENV', '')}, "
+            f"DEBUG={os.environ.get('DEBUG', '')})",
+            file=sys.stderr,
+            flush=True,
+        )
+
+        # Create client rooted at the worktree so git commands see the
+        # spec branch checked out.
         client = create_client(
             project_dir,
             spec_dir,
@@ -382,18 +425,20 @@ async def run_pr_creation_agent(
             agent_type="pr_creation_agent",
             betas=betas or None,
             fast_mode=fast_mode,
+            cwd=worktree_path,
+            stderr_callback=cli_stderr_cb,
             **thinking_kwargs,
         )
 
         # Run agent session
         async with client:
             status, response, error_info = await run_agent_session(
-                client, message, spec_dir, verbose=False, phase=LogPhase.CODING
+                client, message, spec_dir, verbose=False, phase=LogPhase.PR
             )
 
         if task_logger:
             task_logger.end_phase(
-                LogPhase.CODING,
+                LogPhase.PR,
                 success=(status != "error"),
                 message="PR creation agent completed",
             )
@@ -429,13 +474,13 @@ async def run_pr_creation_agent(
     except FileNotFoundError as e:
         logger.error("PR creation agent setup error: %s", e)
         if task_logger:
-            task_logger.log_error(f"Setup error: {e}", LogPhase.CODING)
+            task_logger.log_error(f"Setup error: {e}", LogPhase.PR)
         return _failure_result(str(e))
 
     except Exception as e:
         logger.error("PR creation agent unexpected error: %s", e)
         if task_logger:
-            task_logger.log_error(f"Unexpected error: {e}", LogPhase.CODING)
+            task_logger.log_error(f"Unexpected error: {e}", LogPhase.PR)
         return _failure_result(f"Unexpected error: {e}")
 
 

@@ -114,6 +114,32 @@ class PhaseModelConfig(TypedDict, total=False):
     pr: str
 
 
+def _resolve_phase_value(
+    phase_dict: dict,
+    phase: str,
+    defaults: dict[str, str],
+) -> str | None:
+    """
+    Resolve a per-phase config value, handling the `pr` key being absent or
+    null for tasks created before `pr` was part of PhaseModelConfig.
+
+    Resolution order:
+    1. Exact phase value (if truthy — not None, not empty string).
+    2. For `pr` specifically: inherit from `coding` slot if set.
+    3. `defaults[phase]` as a last resort.
+
+    Returns the resolved value (or None if even the default is missing).
+    """
+    value = phase_dict.get(phase)
+    if value:
+        return value
+    if phase == "pr":
+        coding_value = phase_dict.get("coding")
+        if coding_value:
+            return coding_value
+    return defaults.get(phase)
+
+
 class PhaseThinkingConfig(TypedDict, total=False):
     spec: str
     planning: str
@@ -339,7 +365,7 @@ def get_phase_model(
         # Per-phase config (available for all profiles with phase configuration)
         if metadata.get("phaseModels"):
             phase_models = metadata["phaseModels"]
-            model = phase_models.get(phase, DEFAULT_PHASE_MODELS[phase])
+            model = _resolve_phase_value(phase_models, phase, DEFAULT_PHASE_MODELS)
             return resolve_model_id(model)
 
         # Legacy tasks without per-phase config: use single model
@@ -378,7 +404,7 @@ def get_phase_model_betas(
     if metadata:
         if metadata.get("phaseModels"):
             phase_models = metadata["phaseModels"]
-            model_short = phase_models.get(phase, DEFAULT_PHASE_MODELS[phase])
+            model_short = _resolve_phase_value(phase_models, phase, DEFAULT_PHASE_MODELS)
             return get_model_betas(model_short)
 
         if metadata.get("model"):
@@ -418,9 +444,13 @@ def get_phase_thinking(
     metadata = load_task_metadata(spec_dir)
 
     if metadata:
-        # Check for per-phase ultrathink override (128K tokens, max effort)
-        phase_ultrathink = metadata.get("phaseUltrathink", {})
-        if phase_ultrathink.get(phase):
+        # Check for per-phase ultrathink override (128K tokens, max effort).
+        # `pr` slot may be unset for older tasks; inherit from coding if so.
+        phase_ultrathink = metadata.get("phaseUltrathink", {}) or {}
+        ultrathink_enabled = phase_ultrathink.get(phase)
+        if phase == "pr" and not ultrathink_enabled:
+            ultrathink_enabled = phase_ultrathink.get("coding")
+        if ultrathink_enabled:
             logger.info(
                 "[Ultrathink] Phase '%s' has ultrathink enabled — using 128K tokens",
                 phase,
@@ -430,7 +460,7 @@ def get_phase_thinking(
         # Per-phase config (available for all profiles with phase configuration)
         if metadata.get("phaseThinking"):
             phase_thinking = metadata["phaseThinking"]
-            return phase_thinking.get(phase, DEFAULT_PHASE_THINKING[phase])
+            return _resolve_phase_value(phase_thinking, phase, DEFAULT_PHASE_THINKING)
 
         # Legacy tasks without per-phase config: use single thinking level
         if metadata.get("thinkingLevel"):

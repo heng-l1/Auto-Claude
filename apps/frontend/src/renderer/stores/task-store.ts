@@ -107,6 +107,18 @@ function notifyTaskStatusChange(taskId: string, oldStatus: TaskStatus | undefine
 }
 
 /**
+ * Invariant: if a task has a PR URL attached, its status must be 'pr_created'
+ * — unless the PR has already been merged/closed and the task is 'done'.
+ * Applied on every store mutation so inconsistent state from stale file loads,
+ * external updates, or missed success paths gets corrected automatically.
+ */
+function normalizeTaskStatus(task: Task): Task {
+  if (!task.metadata?.prUrl) return task;
+  if (task.status === 'done' || task.status === 'pr_created') return task;
+  return { ...task, status: 'pr_created' };
+}
+
+/**
  * Helper to update a single task efficiently.
  * Uses slice instead of map to avoid iterating all tasks.
  */
@@ -199,10 +211,15 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   taskOrder: null,
 
   setTasks: (tasks) => {
+    // Enforce prUrl → pr_created invariant on hydration (task list loaded
+    // from disk may have stale status if a prior PR-created update never
+    // persisted).
+    const normalized = tasks.map(normalizeTaskStatus);
+
     if (isDebugEnabled()) {
       debugLog('[TaskStore.setTasks] Hydrating tasks:', {
-        count: tasks.length,
-        taskIds: tasks.map(t => ({
+        count: normalized.length,
+        taskIds: normalized.map(t => ({
           id: t.id,
           status: t.status,
           logCount: t.logs?.length || 0,
@@ -212,7 +229,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       });
 
       // Log detailed info for each task with logs
-      tasks.forEach(task => {
+      normalized.forEach(task => {
         if (task.logs && task.logs.length > 0) {
           debugLog(`[TaskStore.setTasks] Task ${task.id} has ${task.logs.length} logs:`, {
             firstLogPreview: task.logs[0]?.substring(0, 100),
@@ -222,11 +239,12 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       });
     }
 
-    return set({ tasks });
+    return set({ tasks: normalized });
   },
 
-  addTask: (task) =>
+  addTask: (rawTask) =>
     set((state) => {
+      const task = normalizeTaskStatus(rawTask);
       // Determine which column the task belongs to based on its status
       const status = task.status || 'backlog';
 
@@ -261,7 +279,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       if (index === -1) return state;
 
       return {
-        tasks: updateTaskAtIndex(state.tasks, index, (t) => ({ ...t, ...updates }))
+        tasks: updateTaskAtIndex(state.tasks, index, (t) => normalizeTaskStatus({ ...t, ...updates }))
       };
     }),
 
@@ -329,7 +347,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             newPhase: executionProgress?.phase
           });
 
-          return { ...t, status, reviewReason, executionProgress, updatedAt: new Date() };
+          return normalizeTaskStatus({ ...t, status, reviewReason, executionProgress, updatedAt: new Date() });
         })
       };
     });

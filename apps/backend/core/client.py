@@ -211,6 +211,7 @@ def invalidate_project_cache(project_dir: Path | None = None) -> None:
 
 
 from agents.tools_pkg import (
+    AGENT_CONFIGS,
     CONTEXT7_TOOLS,
     ELECTRON_TOOLS,
     GRAPHITI_MCP_TOOLS,
@@ -798,7 +799,11 @@ def should_use_claude_md() -> bool:
 
 def load_claude_md(project_dir: Path) -> str | None:
     """
-    Load CLAUDE.md content from project root if it exists.
+    Load CLAUDE.md content from the project.
+
+    Checks both the project root (./CLAUDE.md) and the standard Claude Code
+    project-memory location (.claude/CLAUDE.md), in that order. Root takes
+    precedence if both exist.
 
     Args:
         project_dir: Root directory of the project
@@ -806,12 +811,12 @@ def load_claude_md(project_dir: Path) -> str | None:
     Returns:
         Content of CLAUDE.md if found, None otherwise
     """
-    claude_md_path = project_dir / "CLAUDE.md"
-    if claude_md_path.exists():
-        try:
-            return claude_md_path.read_text(encoding="utf-8")
-        except Exception:
-            return None
+    for candidate in (project_dir / "CLAUDE.md", project_dir / ".claude" / "CLAUDE.md"):
+        if candidate.exists():
+            try:
+                return candidate.read_text(encoding="utf-8")
+            except Exception:
+                continue
     return None
 
 
@@ -827,6 +832,7 @@ def create_client(
     effort_level: str | None = None,
     fast_mode: bool = False,
     cwd: Path | None = None,
+    stderr_callback: Any = None,
 ) -> ClaudeSDKClient:
     """
     Create a Claude Agent SDK client with multi-layered security.
@@ -1005,8 +1011,15 @@ def create_client(
                     )
             break
 
+    # Per-agent sandbox toggle. Defaults False — matches the plain `claude`
+    # CLI, which doesn't sandbox unless the user configures it. Agents that
+    # run fully-autonomous, AI-generated bash (where prompt-injection +
+    # destructive commands are real risks) can opt in via AGENT_CONFIGS by
+    # setting `"sandbox": True`.
+    sandbox_enabled = AGENT_CONFIGS.get(agent_type, {}).get("sandbox", False)
+
     security_settings = {
-        "sandbox": {"enabled": True, "autoAllowBashIfSandboxed": True},
+        "sandbox": {"enabled": sandbox_enabled, "autoAllowBashIfSandboxed": True},
         "permissions": {
             "defaultMode": "acceptEdits",  # Auto-approve edits within allowed directories
             "allow": [
@@ -1064,7 +1077,8 @@ def create_client(
         json.dump(security_settings, f, indent=2)
 
     print(f"Security settings: {settings_file}")
-    print("   - Sandbox enabled (OS-level bash isolation)")
+    if sandbox_enabled:
+        print(f"   - Sandbox enabled for agent: {agent_type} (OS-level bash isolation)")
     print(f"   - Filesystem restricted to: {project_dir.resolve()}")
     if original_project_permissions:
         print("   - Worktree permissions: granted for original project directories")
@@ -1257,13 +1271,18 @@ def create_client(
         # Enable file checkpointing to track file read/write state across tool calls
         # This prevents "File has not been read yet" errors in recovery sessions
         "enable_file_checkpointing": True,
+        # Load user-level filesystem settings (~/.claude/settings.json) so the
+        # agent sees installed plugins, skills, commands, and MCP servers —
+        # e.g. LinkedIn's `linkedin-dev-workflow` and friends. Auto-Claude's
+        # own `.claude_settings.json` still takes precedence for sandbox and
+        # permissions since it's passed explicitly via `settings`.
+        "setting_sources": ["user"],
     }
 
-    # Fast mode: enable user setting source so CLI reads fastMode from
-    # ~/.claude/settings.json. Without this, the SDK's default --setting-sources ""
-    # blocks all filesystem settings and the CLI never sees fastMode: true.
-    if fast_mode:
-        options_kwargs["setting_sources"] = ["user"]
+    # Capture the CLI subprocess's stderr so callers can surface it for
+    # diagnosing startup issues (e.g., "Control request timeout: initialize").
+    if stderr_callback is not None:
+        options_kwargs["stderr"] = stderr_callback
 
     # Optional: Allow CLI path override via environment variable
     # The SDK bundles its own CLI, but users can override if needed
