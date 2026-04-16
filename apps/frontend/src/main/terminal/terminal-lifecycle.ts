@@ -381,71 +381,37 @@ export async function destroyAllTerminals(
   terminals.forEach((terminal) => {
     killPromises.push(
       PtyManager.killPty(terminal, true).catch((error) => {
-        console.warn('[TerminalLifecycle] Error during PTY cleanup:', error);
+        console.warn('[TerminalLifecycle] Error during PTY cleanup:', error instanceof Error ? error.message : error);
       })
     );
   });
 
-  // Wait for all PTY processes to exit, but cap with a global timeout
-  // so shutdown never hangs indefinitely
+  // Wait for all PTY processes to exit with a global timeout
+  // If timeout is reached, we proceed anyway (shutdown must complete)
   await Promise.race([
     Promise.all(killPromises),
     new Promise<void>((resolve) => setTimeout(resolve, DESTROY_ALL_TIMEOUT))
-  ]);
+  ]).catch((error) => {
+    console.error('[TerminalLifecycle] Error destroying all terminals:', error instanceof Error ? error.message : error);
+  });
 
-  terminals.clear();
-
-  return saveTimer;
+  return null;
 }
 
 /**
- * Handle terminal exit event
- * Note: We don't remove sessions here because terminal exit might be due to app shutdown.
- * Sessions are only removed when explicitly destroyed by user action via destroyTerminal().
+ * Handle terminal exit
  */
-function handleTerminalExit(
-  _terminal: TerminalProcess,
-  _terminals: Map<string, TerminalProcess>
+export function handleTerminalExit(
+  terminal: TerminalProcess,
+  terminals: Map<string, TerminalProcess>
 ): void {
-  // Don't remove session - let it persist for restoration
-}
-
-/**
- * Restore multiple sessions from a specific date
- */
-export async function restoreSessionsFromDate(
-  date: string,
-  projectPath: string,
-  terminals: Map<string, TerminalProcess>,
-  getWindow: WindowGetter,
-  dataHandler: DataHandlerFn,
-  options: RestoreOptions,
-  cols = 80,
-  rows = 24
-): Promise<{ restored: number; failed: number; sessions: Array<{ id: string; success: boolean; error?: string }> }> {
-  const sessions = SessionHandler.getSessionsForDate(date, projectPath);
-  const results: Array<{ id: string; success: boolean; error?: string }> = [];
-
-  for (const session of sessions) {
-    const result = await restoreTerminal(
-      session,
-      terminals,
-      getWindow,
-      dataHandler,
-      options,
-      cols,
-      rows
-    );
-    results.push({
-      id: session.id,
-      success: result.success,
-      error: result.error
-    });
+  // Prevent double-cleanup if terminal already marked as exited
+  if (terminal.hasExited) {
+    return;
   }
 
-  return {
-    restored: results.filter(r => r.success).length,
-    failed: results.filter(r => !r.success).length,
-    sessions: results
-  };
+  terminal.hasExited = true;
+
+  // Mark for delayed removal (5 second window for recreation)
+  SessionHandler.markForPendingDelete(terminal.id);
 }
