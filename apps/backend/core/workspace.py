@@ -416,6 +416,74 @@ def merge_existing_build(
                     print(muted(f"  Error: {stash_err}"))
 
 
+def _run_post_merge_verification(project_dir: Path) -> dict:
+    """Verify merge results by inspecting staged content for conflict markers.
+
+    Runs ``git diff --cached --stat`` to summarize staged changes and counts
+    the number of staged files via ``git diff --cached --name-only``. Each
+    staged file's on-disk content is scanned for ``<<<<<<< `` conflict markers
+    so that merges which silently left markers behind can be caught before the
+    result is returned to the caller.
+
+    Callers should attach the returned dict to the merge result under the
+    ``verification`` key. When ``conflict_markers_present`` is True, the caller
+    is responsible for flipping ``success`` to False and appending affected
+    files to the result's conflicts list.
+
+    Args:
+        project_dir: The project directory containing the staged changes.
+
+    Returns:
+        dict with keys:
+        - staged_files (int): number of files currently staged
+        - merge_already_committed (bool): True when no changes are staged
+        - conflict_markers_present (bool): True when any staged file contains markers
+        - staged_diff_stat (str): raw ``git diff --cached --stat`` output
+        - files_with_markers (list[str]): paths of staged files with markers
+    """
+    # Get the list of staged files to inspect
+    name_only_result = run_git(
+        ["diff", "--cached", "--name-only"],
+        cwd=project_dir,
+    )
+    staged_file_paths: list[str] = []
+    if name_only_result.returncode == 0:
+        staged_file_paths = [
+            line.strip()
+            for line in name_only_result.stdout.splitlines()
+            if line.strip()
+        ]
+
+    # Get the human-readable stat summary (used by the UI / log output)
+    stat_result = run_git(
+        ["diff", "--cached", "--stat"],
+        cwd=project_dir,
+    )
+    staged_diff_stat = stat_result.stdout if stat_result.returncode == 0 else ""
+
+    # Scan staged files for conflict markers ('<<<<<<< ')
+    files_with_markers: list[str] = []
+    for file_path in staged_file_paths:
+        full_path = project_dir / file_path
+        if not full_path.exists() or not full_path.is_file():
+            continue
+        try:
+            content = full_path.read_text(encoding="utf-8", errors="replace")
+        except (OSError, UnicodeDecodeError):
+            # Skip files we cannot read (permission errors, special files)
+            continue
+        if "<<<<<<< " in content:
+            files_with_markers.append(file_path)
+
+    return {
+        "staged_files": len(staged_file_paths),
+        "merge_already_committed": len(staged_file_paths) == 0,
+        "conflict_markers_present": len(files_with_markers) > 0,
+        "staged_diff_stat": staged_diff_stat,
+        "files_with_markers": files_with_markers,
+    }
+
+
 def _try_smart_merge(
     project_dir: Path,
     spec_name: str,
@@ -693,13 +761,35 @@ def _try_smart_merge_inner(
                         },
                     )
 
+                # B6: Verify staged content before returning. Even though this
+                # path already reports failure, markers on disk indicate extra
+                # files beyond the ones the AI already flagged — surface them.
+                verification = _run_post_merge_verification(project_dir)
+                conflict_list = list(
+                    resolution_result.get("remaining_conflicts", [])
+                )
+                if verification.get("conflict_markers_present"):
+                    existing_files = {
+                        c.get("file") for c in conflict_list if c.get("file")
+                    }
+                    for marker_file in verification.get("files_with_markers", []):
+                        if marker_file not in existing_files:
+                            conflict_list.append(
+                                {
+                                    "file": marker_file,
+                                    "reason": "Conflict markers detected post-merge",
+                                    "severity": "high",
+                                }
+                            )
+
                 return {
                     "success": False,
-                    "conflicts": resolution_result.get("remaining_conflicts", []),
+                    "conflicts": conflict_list,
                     "resolved": resolution_result.get("resolved_files", []),
                     "warnings": resolution_result.get("warnings", []),
                     "git_conflicts": True,
                     "error": resolution_result.get("error"),
+                    "verification": verification,
                 }
 
         # Check if branches diverged but no actual conflicts (use git merge)
@@ -943,13 +1033,29 @@ def _try_smart_merge_inner(
                 f"Analysis complete ({files_to_merge} files compatible)",
             )
 
-        return {
+        # B6: Post-merge verification — detect conflict markers that may have
+        # slipped through. If any staged file still has markers, flip success
+        # to False and surface the files as conflicts for manual review.
+        verification = _run_post_merge_verification(project_dir)
+        clean_result = {
             "success": True,
             "stats": {
                 "files_merged": files_to_merge,
                 "auto_resolved": auto_mergeable,
             },
+            "verification": verification,
         }
+        if verification.get("conflict_markers_present"):
+            clean_result["success"] = False
+            clean_result["conflicts"] = [
+                {
+                    "file": marker_file,
+                    "reason": "Conflict markers detected post-merge",
+                    "severity": "high",
+                }
+                for marker_file in verification.get("files_with_markers", [])
+            ]
+        return clean_result
 
     except Exception as e:
         # If smart merge fails, fall back to git
@@ -1983,6 +2089,24 @@ def _resolve_git_conflicts_with_ai(
     # if resolved_files:
     #     _record_merge_completion(project_dir, spec_name, resolved_files)
 
+    # B6: Post-merge verification — scan staged files for conflict markers.
+    # Any file with markers is appended to remaining_conflicts (dedup), which
+    # also flips the success calculation below to False.
+    verification = _run_post_merge_verification(project_dir)
+    if verification.get("conflict_markers_present"):
+        existing_conflict_files = {
+            c.get("file") for c in remaining_conflicts if c.get("file")
+        }
+        for marker_file in verification.get("files_with_markers", []):
+            if marker_file not in existing_conflict_files:
+                remaining_conflicts.append(
+                    {
+                        "file": marker_file,
+                        "reason": "Conflict markers detected post-merge",
+                        "severity": "high",
+                    }
+                )
+
     # Build result - partial success if some files failed but we got others
     result = {
         "success": len(remaining_conflicts) == 0,
@@ -1999,6 +2123,7 @@ def _resolve_git_conflicts_with_ai(
             "parallel_ai_merges": len(files_needing_ai_merge),
             "lock_files_excluded": len(lock_files_excluded),
         },
+        "verification": verification,
     }
 
     # Add remaining conflicts if any (for UI to show what needs manual attention)
