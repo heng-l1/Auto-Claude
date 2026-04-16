@@ -38,5 +38,16 @@
       "label": "Agent IA de création de PR",
       "description": "Utiliser un agent Claude pour créer des pull requests avec un contexte riche à partir des spécifications, rapports QA et conventions du projet"
     }
+  },
+  "accounts": {
+    "configSync": {
+      "button": "Synchroniser la config Claude",
+      "syncing": "Synchronisation...",
+      "tooltip": "Copie les serveurs MCP et les paramètres de projet depuis ~/.claude.json vers chaque profil. Les jetons OAuth et l'état par profil ne sont pas modifiés.",
+      "success": "{{mcps}} MCP et {{projects}} projets synchronisés sur {{profiles}} profils",
+      "noop": "Tous les profils sont déjà à jour",
+      "error": "Échec de la synchronisation : {{error}}",
+      "partialError": "{{synced}} profils synchronisés, {{errors}} en erreur"
+    }
   }
 }
