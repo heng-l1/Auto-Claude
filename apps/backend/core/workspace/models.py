@@ -7,10 +7,13 @@ Data classes and enums for workspace management.
 """
 
 import json
+import logging
 import socket
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+
+from core.workspace.git_utils import is_process_running
 
 
 class WorkspaceMode(Enum):
@@ -103,32 +106,59 @@ class MergeLock:
                 )
                 os.close(fd)
 
-                # Write our PID to the lock file
-                self.lock_file.write_text(str(os.getpid()), encoding="utf-8")
+                # Write JSON lock data {pid, ts, host}
+                lock_data = {
+                    "pid": os.getpid(),
+                    "ts": time.time(),
+                    "host": socket.gethostname(),
+                }
+                self.lock_file.write_text(
+                    json.dumps(lock_data), encoding="utf-8"
+                )
                 self.acquired = True
                 return self
 
             except FileExistsError:
-                # Lock file exists - check if process is still running
+                # Lock file exists - check if it's stale
                 if self.lock_file.exists():
                     try:
-                        pid = int(self.lock_file.read_text(encoding="utf-8").strip())
-                        # Import locally to avoid circular dependency
-                        import os as _os
-
+                        raw = self.lock_file.read_text(encoding="utf-8").strip()
                         try:
-                            _os.kill(pid, 0)
-                            is_running = True
-                        except (OSError, ProcessLookupError):
-                            is_running = False
+                            lock_info = json.loads(raw)
+                            if not isinstance(lock_info, dict):
+                                raise ValueError("Not a JSON object")
+                            lock_pid = lock_info["pid"]
+                            lock_ts = lock_info.get("ts", 0)
+                            lock_host = lock_info.get("host", "")
+                        except (json.JSONDecodeError, KeyError, ValueError):
+                            # Legacy bare-PID format fallback
+                            lock_pid = int(raw)
+                            lock_ts = 0  # Unknown timestamp — treat as stale by TTL
+                            lock_host = socket.gethostname()  # Assume same host
 
-                        if not is_running:
-                            # Stale lock - remove it
+                        current_host = socket.gethostname()
+                        is_stale = False
+
+                        if lock_host != current_host:
+                            # Different hostname — cannot verify PID ownership
+                            is_stale = True
+                        elif time.time() - lock_ts > MERGE_LOCK_TTL_SECONDS:
+                            # TTL expired
+                            is_stale = True
+                        elif not is_process_running(lock_pid):
+                            # PID not running on same host
+                            is_stale = True
+
+                        if is_stale:
                             self.lock_file.unlink()
                             continue
-                    except (ValueError, ProcessLookupError):
-                        # Invalid PID or can't check - remove stale lock
-                        self.lock_file.unlink()
+
+                    except (ValueError, OSError):
+                        # Can't read/parse lock file — remove it
+                        try:
+                            self.lock_file.unlink()
+                        except OSError:
+                            pass
                         continue
 
                 # Active lock - wait or timeout
@@ -141,11 +171,31 @@ class MergeLock:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Release the merge lock."""
+        import time
+
         if self.acquired and self.lock_file.exists():
+            for attempt in range(3):
+                try:
+                    self.lock_file.unlink()
+                    return  # Successfully removed
+                except Exception:
+                    if attempt < 2:
+                        time.sleep(0.1)  # ~100ms backoff
+
+            # Persistent failure — emit WARNING with manual deletion path
             try:
-                self.lock_file.unlink()
+                from merge.progress import MergeProgressStage, emit_progress
+
+                emit_progress(
+                    stage=MergeProgressStage.WARNING,
+                    percent=100,
+                    message=f"Failed to remove merge lock file. Manual deletion required: {self.lock_file}",
+                    details={"lock_file": str(self.lock_file)},
+                )
             except Exception:
-                pass  # Best effort cleanup
+                logging.warning(
+                    "Failed to remove merge lock file: %s", self.lock_file
+                )
 
 
 class SpecNumberLockError(Exception):
