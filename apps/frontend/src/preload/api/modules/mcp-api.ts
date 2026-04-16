@@ -9,6 +9,12 @@ import { IPC_CHANNELS } from '../../../shared/constants/ipc';
 import type { IPCResult } from '../../../shared/types/common';
 import type { CustomMcpServer, McpHealthCheckResult, McpTestConnectionResult } from '../../../shared/types/project';
 
+/** Result of a config sync operation for a single profile */
+export type SyncResult =
+  | { status: 'synced'; profileId: string; mcpsAdded: number; projectsAdded: number }
+  | { status: 'noop'; profileId: string; reason: 'same-config' | 'no-user-content' | 'already-synced' }
+  | { status: 'error'; profileId: string; message: string };
+
 export interface McpAPI {
   /** Quick health check for a custom MCP server */
   checkMcpHealth: (server: CustomMcpServer) => Promise<IPCResult<McpHealthCheckResult>>;
@@ -16,6 +22,8 @@ export interface McpAPI {
   testMcpConnection: (server: CustomMcpServer) => Promise<IPCResult<McpTestConnectionResult>>;
   /** Get MCP servers imported from Claude Code (~/.claude.json) */
   getClaudeCodeMcpServers: () => Promise<IPCResult<CustomMcpServer[]>>;
+  /** Sync user-level Claude config (MCPs, projects) to all profiles */
+  syncClaudeConfigToAllProfiles: () => Promise<IPCResult<SyncResult[]>>;
 }
 
 export function createMcpAPI(): McpAPI {
@@ -28,5 +36,8 @@ export function createMcpAPI(): McpAPI {
 
     getClaudeCodeMcpServers: () =>
       ipcRenderer.invoke(IPC_CHANNELS.MCP_GET_CLAUDE_CODE_SERVERS),
+
+    syncClaudeConfigToAllProfiles: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_CONFIG_SYNC_ALL_PROFILES),
   };
 }

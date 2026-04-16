@@ -673,6 +673,15 @@
       "profileCreatedAuthFailed": "Profile created but failed to prepare authentication: {{error}}",
       "authPrepareFailed": "Failed to prepare authentication: {{error}}",
       "authStartFailedMessage": "Failed to start authentication. Please try again."
+    },
+    "configSync": {
+      "button": "Sync Claude Config",
+      "syncing": "Syncing...",
+      "tooltip": "Copies user MCPs and project settings from ~/.claude.json into every profile. OAuth tokens and per-profile state are not touched.",
+      "success": "Synced {{mcps}} MCPs and {{projects}} project entries across {{profiles}} profiles",
+      "noop": "All profiles already up to date",
+      "error": "Config sync failed: {{error}}",
+      "partialError": "Synced {{synced}} profiles, {{errors}} failed"
     }
   },
   "debug": {

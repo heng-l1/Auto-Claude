@@ -4,10 +4,11 @@
  */
 
 import { homedir } from 'os';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { existsSync, readFileSync, readdirSync, mkdirSync } from 'fs';
 import type { ClaudeProfile, APIProfile } from '../../shared/types';
 import { getCredentialsFromKeychain } from './credential-utils';
+import { writeFileAtomicSync } from '../utils/atomic-file';
 
 /**
  * Default Claude config directory
@@ -18,6 +19,22 @@ export const DEFAULT_CLAUDE_CONFIG_DIR = join(homedir(), '.claude');
  * Default profiles directory for additional accounts
  */
 export const CLAUDE_PROFILES_DIR = join(homedir(), '.claude-profiles');
+
+/**
+ * Allowlisted fields to sync from user config to profile config.
+ * Only these fields are copied — profile-specific data like oauthAccount,
+ * userID, subscription state, caches, and counters are never synced.
+ */
+const _SYNC_FIELDS = ['mcpServers', 'projects'] as const;
+
+/**
+ * Result of a config sync operation.
+ * The sync helper never throws — it returns one of these structured results.
+ */
+export type SyncResult =
+  | { status: 'synced'; profileId: string; mcpsAdded: number; projectsAdded: number }
+  | { status: 'noop'; profileId: string; reason: 'same-config' | 'no-user-content' | 'already-synced' }
+  | { status: 'error'; profileId: string; message: string };
 
 /**
  * Generate a unique ID for a new profile
@@ -326,4 +343,136 @@ export function getEmailFromConfigDir(configDir?: string): string | null {
   }
 
   return null;
+}
+
+/**
+ * Sync user-level config from ~/.claude.json into a profile's .claude.json.
+ *
+ * One-way sync: reads user-level MCP servers and project settings from the default
+ * Claude config, merges them into the profile's config with profile-wins-on-collision
+ * semantics, and writes atomically. This ensures profile-specific overrides are preserved
+ * while user-level settings propagate to all profiles.
+ *
+ * Never throws — returns a structured SyncResult for all outcomes including errors.
+ *
+ * Skip conditions:
+ * - profileConfigDir is the default ~/.claude (same config, no sync needed)
+ * - User ~/.claude.json is missing or unparseable
+ * - No syncable content (empty mcpServers and projects in user config)
+ * - Result is byte-identical to existing profile config (already synced)
+ *
+ * Merge semantics (profile wins on collision):
+ * - mcpServers: { ...userMcps, ...profileMcps } — profile overrides user on same key
+ * - projects: user paths added only if profile doesn't already have them
+ *
+ * Only fields in _SYNC_FIELDS are copied. Profile-specific data (oauthAccount,
+ * userID, subscription state, caches, counters) is never touched.
+ *
+ * @param profileId - ID of the profile being synced (for result tracking)
+ * @param profileConfigDir - Path to the profile's config directory
+ * @returns SyncResult indicating what happened
+ */
+export function syncUserConfigToProfile(profileId: string, profileConfigDir: string): SyncResult {
+  try {
+    // Skip if profile uses the default config directory (same config, no sync needed)
+    const normalizedProfileDir = resolve(expandHomePath(profileConfigDir));
+    const normalizedDefaultDir = resolve(DEFAULT_CLAUDE_CONFIG_DIR);
+    if (normalizedProfileDir === normalizedDefaultDir) {
+      return { status: 'noop', profileId, reason: 'same-config' };
+    }
+
+    // Read user's default ~/.claude.json (at home root, not inside ~/.claude/)
+    const userConfigPath = join(homedir(), '.claude.json');
+    if (!existsSync(userConfigPath)) {
+      return { status: 'error', profileId, message: 'User config not found' };
+    }
+
+    let userConfig: Record<string, unknown>;
+    try {
+      const userContent = readFileSync(userConfigPath, 'utf-8');
+      userConfig = JSON.parse(userContent);
+    } catch {
+      return { status: 'error', profileId, message: 'User config is not valid JSON' };
+    }
+
+    if (!userConfig || typeof userConfig !== 'object' || Array.isArray(userConfig)) {
+      return { status: 'error', profileId, message: 'User config is not a valid object' };
+    }
+
+    // Extract syncable fields from user config (only allowlisted fields)
+    const userMcps = (userConfig.mcpServers as Record<string, unknown>) ?? {};
+    const userProjects = (userConfig.projects as Record<string, unknown>) ?? {};
+
+    // Nothing to sync if user has no MCP servers and no project settings
+    if (Object.keys(userMcps).length === 0 && Object.keys(userProjects).length === 0) {
+      return { status: 'noop', profileId, reason: 'no-user-content' };
+    }
+
+    // Read profile's .claude.json (start from {} if missing)
+    const profileConfigPath = join(normalizedProfileDir, '.claude.json');
+    let profileConfig: Record<string, unknown> = {};
+
+    if (existsSync(profileConfigPath)) {
+      try {
+        const profileContent = readFileSync(profileConfigPath, 'utf-8');
+        if (profileContent.trim().length > 0) {
+          profileConfig = JSON.parse(profileContent);
+          if (!profileConfig || typeof profileConfig !== 'object' || Array.isArray(profileConfig)) {
+            return { status: 'error', profileId, message: 'Profile config is not a valid object' };
+          }
+        }
+      } catch {
+        // Non-empty but unparseable profile config — don't clobber it
+        return { status: 'error', profileId, message: 'Profile config is not valid JSON' };
+      }
+    }
+
+    // Merge mcpServers: user provides base, profile overrides (profile wins on collision)
+    const profileMcps = (profileConfig.mcpServers as Record<string, unknown>) ?? {};
+    const mergedMcps = { ...userMcps, ...profileMcps };
+
+    // Merge projects: add user paths only if profile doesn't already have them (profile wins)
+    const profileProjects = (profileConfig.projects as Record<string, unknown>) ?? {};
+    const mergedProjects = { ...profileProjects };
+    for (const [projectPath, config] of Object.entries(userProjects)) {
+      if (!(projectPath in mergedProjects)) {
+        mergedProjects[projectPath] = config;
+      }
+    }
+
+    // Count how many new entries were added from user config
+    const mcpsAdded = Object.keys(mergedMcps).length - Object.keys(profileMcps).length;
+    const projectsAdded = Object.keys(mergedProjects).length - Object.keys(profileProjects).length;
+
+    // Build merged config: preserve all existing profile fields, update only sync fields
+    const mergedConfig = { ...profileConfig };
+    if (Object.keys(mergedMcps).length > 0) {
+      mergedConfig.mcpServers = mergedMcps;
+    }
+    if (Object.keys(mergedProjects).length > 0) {
+      mergedConfig.projects = mergedProjects;
+    }
+
+    // Check if result is byte-identical to existing file (already synced)
+    const newContent = JSON.stringify(mergedConfig, null, 2);
+    if (existsSync(profileConfigPath)) {
+      try {
+        const existingContent = readFileSync(profileConfigPath, 'utf-8');
+        if (existingContent === newContent) {
+          return { status: 'noop', profileId, reason: 'already-synced' };
+        }
+      } catch {
+        // If we can't read for comparison, proceed with write
+      }
+    }
+
+    // Write atomically to prevent corruption
+    writeFileAtomicSync(profileConfigPath, newContent, 'utf-8');
+
+    return { status: 'synced', profileId, mcpsAdded, projectsAdded };
+  } catch (error) {
+    // Never throw — return structured error for all unexpected failures
+    const message = error instanceof Error ? error.message : 'Unknown sync error';
+    return { status: 'error', profileId, message };
+  }
 }

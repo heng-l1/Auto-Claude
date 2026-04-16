@@ -131,6 +131,7 @@ export const IPC_CHANNELS = {
   CLAUDE_PROFILE_UPDATE_AUTO_SWITCH: 'claude:updateAutoSwitch',
   CLAUDE_PROFILE_FETCH_USAGE: 'claude:fetchUsage',
   CLAUDE_PROFILE_GET_BEST_PROFILE: 'claude:getBestProfile',
+  CLAUDE_CONFIG_SYNC_ALL_PROFILES: 'claude:configSyncAllProfiles',
 
   // Account priority order (unified OAuth + API profile ordering)
   ACCOUNT_PRIORITY_GET: 'account:priorityGet',
