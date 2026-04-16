@@ -960,6 +960,8 @@ export interface ElectronAPI {
   checkMcpHealth: (server: CustomMcpServer) => Promise<IPCResult<McpHealthCheckResult>>;
   testMcpConnection: (server: CustomMcpServer) => Promise<IPCResult<McpTestConnectionResult>>;
   getClaudeCodeMcpServers: () => Promise<IPCResult<CustomMcpServer[]>>;
+  /** Sync user-level Claude config (MCPs, projects) to all profiles */
+  syncClaudeConfigToAllProfiles: () => Promise<IPCResult<import('../../preload/api/modules/mcp-api').SyncResult[]>>;
 
   // Screenshot capture operations
   getSources: () => Promise<IPCResult<ScreenshotSource[]> & { devMode?: boolean }>;

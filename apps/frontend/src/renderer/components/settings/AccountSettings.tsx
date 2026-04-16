@@ -133,6 +133,11 @@ export function AccountSettings({ settings, onSettingsChange, isOpen }: AccountS
   const [isSavingPriority, setIsSavingPriority] = useState(false);
 
   // ============================================
+  // Config sync state
+  // ============================================
+  const [isSyncingConfig, setIsSyncingConfig] = useState(false);
+
+  // ============================================
   // Usage data state (for priority list visualization)
   // ============================================
   const [profileUsageData, setProfileUsageData] = useState<Map<string, ProfileUsageSummary>>(new Map());
@@ -242,6 +247,82 @@ export function AccountSettings({ settings, onSettingsChange, isOpen }: AccountS
       });
     } finally {
       setIsSavingPriority(false);
+    }
+  };
+
+  // Sync user-level Claude config (~/.claude.json) to all profiles
+  const handleSyncClaudeConfig = async () => {
+    setIsSyncingConfig(true);
+    try {
+      const result = await window.electronAPI.syncClaudeConfigToAllProfiles();
+
+      if (!result.success || !result.data) {
+        toast({
+          variant: 'destructive',
+          title: t('accounts.configSync.error', { error: result.error || t('accounts.toast.tryAgain') }),
+        });
+        return;
+      }
+
+      // Aggregate counts across all per-profile results
+      const syncResults = result.data;
+      let mcpsAdded = 0;
+      let projectsAdded = 0;
+      let syncedCount = 0;
+      let errorCount = 0;
+
+      syncResults.forEach((r) => {
+        if (r.status === 'synced') {
+          mcpsAdded += r.mcpsAdded;
+          projectsAdded += r.projectsAdded;
+          syncedCount += 1;
+        } else if (r.status === 'error') {
+          errorCount += 1;
+        }
+      });
+
+      if (errorCount > 0 && syncedCount > 0) {
+        // Partial success: some synced, some failed
+        toast({
+          variant: 'destructive',
+          title: t('accounts.configSync.partialError', { synced: syncedCount, errors: errorCount }),
+        });
+      } else if (errorCount > 0) {
+        // All failed
+        const firstError = syncResults.find((r) => r.status === 'error');
+        const errorMessage =
+          firstError && firstError.status === 'error'
+            ? firstError.message
+            : t('accounts.toast.tryAgain');
+        toast({
+          variant: 'destructive',
+          title: t('accounts.configSync.error', { error: errorMessage }),
+        });
+      } else if (syncedCount === 0) {
+        // No changes needed — all profiles already in sync
+        toast({
+          title: t('accounts.configSync.noop'),
+        });
+      } else {
+        // Happy path: one or more profiles synced successfully
+        toast({
+          title: t('accounts.configSync.success', {
+            mcps: mcpsAdded,
+            projects: projectsAdded,
+            profiles: syncedCount,
+          }),
+        });
+      }
+    } catch (err) {
+      console.warn('[AccountSettings] Failed to sync Claude config:', err);
+      toast({
+        variant: 'destructive',
+        title: t('accounts.configSync.error', {
+          error: err instanceof Error ? err.message : t('accounts.toast.tryAgain'),
+        }),
+      });
+    } finally {
+      setIsSyncingConfig(false);
     }
   };
 
@@ -1269,6 +1350,36 @@ export function AccountSettings({ settings, onSettingsChange, isOpen }: AccountS
             </div>
           </TabsContent>
         </Tabs>
+
+        {/* Config Sync - Visible regardless of account count */}
+        <div className="flex items-center justify-end pt-4 border-t border-border">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSyncClaudeConfig}
+                disabled={isSyncingConfig}
+                className="gap-2"
+              >
+                {isSyncingConfig ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    {t('accounts.configSync.syncing')}
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    {t('accounts.configSync.button')}
+                  </>
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs">
+              {t('accounts.configSync.tooltip')}
+            </TooltipContent>
+          </Tooltip>
+        </div>
 
         {/* Auto-Switch Settings Section - Persistent below tabs */}
         {totalAccounts > 1 && (
