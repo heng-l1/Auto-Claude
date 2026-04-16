@@ -88,6 +88,7 @@ from core.workspace.git_utils import (
     MAX_PARALLEL_AI_MERGES,
     _is_auto_claude_file,
     get_existing_build_worktree,
+    get_stash_ref,
     has_uncommitted_changes,
     parse_conflict_file_path,
     stash_changes,
@@ -263,9 +264,14 @@ def merge_existing_build(
 
     # Auto-stash uncommitted changes to prevent merge failures
     did_stash = False
+    stash_ref: str | None = None
     if has_uncommitted_changes(project_dir):
         print_status("Stashing uncommitted changes before merge...", "progress")
         did_stash = stash_changes(project_dir)
+        if did_stash:
+            # B4: Capture the exact stash@{N} ref so recovery instructions are
+            # precise (stashes are indexed — other operations may shift them).
+            stash_ref = get_stash_ref(project_dir)
 
     try:
         if no_commit:
@@ -296,6 +302,7 @@ def merge_existing_build(
                 manager,
                 no_commit=no_commit,
                 task_source_branch=base_branch,
+                stash_ref=stash_ref,
             )
 
             if smart_result is not None:
@@ -491,6 +498,7 @@ def _try_smart_merge(
     manager: WorktreeManager,
     no_commit: bool = False,
     task_source_branch: str | None = None,
+    stash_ref: str | None = None,
 ) -> dict | None:
     """
     Try to use the intent-aware merge system.
@@ -503,6 +511,9 @@ def _try_smart_merge(
     Args:
         task_source_branch: The branch the task was created from (for comparison).
                            If None, auto-detect.
+        stash_ref: When the caller auto-stashed a dirty working tree, the exact
+                   ``stash@{N}`` reference returned by ``get_stash_ref()``. Used
+                   by B4 to surface precise ``git stash pop`` recovery commands.
 
     Returns:
         Dict with results, or None if smart merge not applicable
@@ -517,6 +528,7 @@ def _try_smart_merge(
                 manager,
                 no_commit,
                 task_source_branch=task_source_branch,
+                stash_ref=stash_ref,
             )
     except MergeLockError as e:
         print(warning(f"  {e}"))
@@ -534,6 +546,7 @@ def _try_smart_merge_inner(
     manager: WorktreeManager,
     no_commit: bool = False,
     task_source_branch: str | None = None,
+    stash_ref: str | None = None,
 ) -> dict | None:
     """Inner implementation of smart merge (called with lock held)."""
     debug(
@@ -547,6 +560,31 @@ def _try_smart_merge_inner(
     # Create progress callback for subprocess mode (Electron frontend).
     # Only emits JSON to stdout when piped, not in interactive CLI.
     progress_callback = _create_merge_progress_callback()
+
+    # B4: Seed the outer warnings list with stash recovery info when a dirty
+    # working tree was auto-stashed. This merges with any inner warnings from
+    # _resolve_git_conflicts_with_ai before the final result is returned.
+    outer_warnings: list[dict[str, str]] = []
+    if stash_ref:
+        stash_warning = {
+            "file": "working-tree",
+            "reason": f"Stashed dirty tree. Recovery: git stash pop {stash_ref}",
+        }
+        outer_warnings.append(stash_warning)
+        if progress_callback is not None:
+            progress_callback(
+                MergeProgressStage.WARNING,
+                5,
+                f"Stashed dirty tree. Recovery: git stash pop {stash_ref}",
+                {"stash_ref": stash_ref},
+            )
+
+    def _merge_warnings(inner_warnings: list | None) -> list:
+        """Combine outer (stash) warnings with any inner AI-merge warnings."""
+        merged = list(outer_warnings)
+        if inner_warnings:
+            merged.extend(inner_warnings)
+        return merged
 
     try:
         print(muted("  Analyzing changes with intent-aware merge..."))
@@ -639,6 +677,7 @@ def _try_smart_merge_inner(
                     "success": False,
                     "error": str(e),
                     "rebase_restore_failed": True,
+                    "warnings": _merge_warnings(None),
                 }
 
             if rebase_success:
@@ -729,6 +768,11 @@ def _try_smart_merge_inner(
                         },
                     )
 
+                # B4: Merge outer (stash) warnings into the inner resolution
+                # result so the final payload carries every recovery hint.
+                resolution_result["warnings"] = _merge_warnings(
+                    resolution_result.get("warnings")
+                )
                 return resolution_result
             else:
                 # AI couldn't resolve all conflicts
@@ -786,7 +830,9 @@ def _try_smart_merge_inner(
                     "success": False,
                     "conflicts": conflict_list,
                     "resolved": resolution_result.get("resolved_files", []),
-                    "warnings": resolution_result.get("warnings", []),
+                    "warnings": _merge_warnings(
+                        resolution_result.get("warnings")
+                    ),
                     "git_conflicts": True,
                     "error": resolution_result.get("error"),
                     "verification": verification,
@@ -846,6 +892,7 @@ def _try_smart_merge_inner(
                         "auto_merged": len(merged_files),
                         "git_merge": True,  # Flag indicating git merge was used
                     },
+                    "warnings": _merge_warnings(None),
                 }
             else:
                 # Merge failed unexpectedly despite no conflicts detected
@@ -982,6 +1029,7 @@ def _try_smart_merge_inner(
                                 "lock_files_auto_resolved": len(unmerged_files),
                             },
                             "lock_files_excluded": unmerged_files,
+                            "warnings": _merge_warnings(None),
                         }
 
                 # Not all lock files, or lock resolution failed - abort and fall back
@@ -1021,6 +1069,7 @@ def _try_smart_merge_inner(
                     "success": False,
                     "conflicts": needs_human,
                     "preview": preview,
+                    "warnings": _merge_warnings(None),
                 }
 
         # All conflicts can be auto-merged or no conflicts
@@ -1044,6 +1093,7 @@ def _try_smart_merge_inner(
                 "auto_resolved": auto_mergeable,
             },
             "verification": verification,
+            "warnings": _merge_warnings(None),
         }
         if verification.get("conflict_markers_present"):
             clean_result["success"] = False
