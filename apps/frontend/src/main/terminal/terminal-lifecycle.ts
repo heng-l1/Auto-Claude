@@ -241,6 +241,12 @@ export async function restoreTerminal(
     // Without this, storedIsClaudeMode would be false on next restore
     terminal.claudeSessionId = storedClaudeSessionId;
     terminal.isClaudeMode = true;
+    // Set lastInvokeTime to activate the 5-second grace period in exit detection.
+    // Without this, the new PTY's shell prompt triggers handleClaudeExit (false positive)
+    // before the deferred auto-resume has a chance to fire (100ms delay in renderer).
+    // The grace period at terminal-event-handler.ts:80 checks lastInvokeTime to suppress
+    // shell prompt patterns during Claude invocation/resume startup.
+    terminal.lastInvokeTime = Date.now();
     // Mark terminal as having a pending Claude resume
     // The actual resume will be triggered when the terminal becomes active
     terminal.pendingClaudeResume = true;
