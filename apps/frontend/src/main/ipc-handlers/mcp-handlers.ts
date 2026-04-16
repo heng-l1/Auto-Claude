@@ -15,6 +15,8 @@ import { appLog } from '../app-logger';
 import { isWindows } from '../platform';
 import { getWhereExePath } from '../utils/windows-paths';
 import { getAugmentedEnv } from '../env-utils';
+import { getClaudeProfileManager } from '../claude-profile-manager';
+import { syncUserConfigToProfile, type SyncResult } from '../claude-profile/profile-utils';
 
 /**
  * Defense-in-depth: Frontend-side command validation
@@ -672,6 +674,27 @@ export function registerMcpHandlers(): void {
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Connection test failed',
+      };
+    }
+  });
+
+  // Sync user config (~/.claude.json) to all registered profiles
+  ipcMain.handle(IPC_CHANNELS.CLAUDE_CONFIG_SYNC_ALL_PROFILES, async () => {
+    try {
+      const profileManager = getClaudeProfileManager();
+      const { profiles } = profileManager.getSettings();
+      const results: SyncResult[] = profiles.map((profile) => {
+        if (!profile.configDir) {
+          return { status: 'noop' as const, profileId: profile.id, reason: 'same-config' as const };
+        }
+        return syncUserConfigToProfile(profile.id, profile.configDir);
+      });
+      return { success: true, data: results };
+    } catch (error) {
+      appLog.error('Config sync all profiles error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Sync failed',
       };
     }
   });
