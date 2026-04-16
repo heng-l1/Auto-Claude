@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { memo, useRef, useState, useEffect } from 'react';
 import { cn } from '../lib/utils';
-import type { ExecutionPhase, TaskLogs, Subtask } from '../../shared/types';
+import type { ExecutionPhase, TaskLogs, Subtask, TaskStatus } from '../../shared/types';
 
 interface PhaseProgressIndicatorProps {
   phase?: ExecutionPhase;
@@ -12,6 +12,7 @@ interface PhaseProgressIndicatorProps {
   phaseProgress?: number;
   isStuck?: boolean;
   isRunning?: boolean;
+  taskStatus?: TaskStatus;
   className?: string;
 }
 
@@ -56,6 +57,7 @@ export const PhaseProgressIndicator = memo(function PhaseProgressIndicator({
   phaseProgress,
   isStuck = false,
   isRunning = false,
+  taskStatus,
   className,
 }: PhaseProgressIndicatorProps) {
   const { t } = useTranslation('tasks');
@@ -256,11 +258,14 @@ export const PhaseProgressIndicator = memo(function PhaseProgressIndicator({
 
       {/* Phase steps indicator (shows overall flow) */}
       {(isRunning || phase !== 'idle') && (
-        <PhaseStepsIndicator currentPhase={phase} isStuck={isStuck} isVisible={isVisible} />
+        <PhaseStepsIndicator currentPhase={phase} isStuck={isStuck} isVisible={isVisible} taskStatus={taskStatus} />
       )}
     </div>
   );
 });
+
+// Local display-only type - does NOT modify ExecutionPhase
+type DisplayPhase = ExecutionPhase | 'pr_creation';
 
 /**
  * Mini phase steps indicator showing the overall flow
@@ -269,20 +274,31 @@ const PhaseStepsIndicator = memo(function PhaseStepsIndicator({
   currentPhase,
   isStuck,
   isVisible = true,
+  taskStatus,
 }: {
   currentPhase: ExecutionPhase;
   isStuck: boolean;
   isVisible?: boolean;
+  taskStatus?: TaskStatus;
 }) {
   const { t } = useTranslation('tasks');
 
-  const phases: { key: ExecutionPhase; labelKey: string }[] = [
+  const phases: { key: DisplayPhase; labelKey: string }[] = [
     { key: 'planning', labelKey: 'execution.shortPhases.plan' },
     { key: 'coding', labelKey: 'execution.shortPhases.code' },
     { key: 'qa_review', labelKey: 'execution.shortPhases.qa' },
+    { key: 'pr_creation', labelKey: 'execution.shortPhases.pr' },
   ];
 
-  const getPhaseState = (phaseKey: ExecutionPhase) => {
+  const getPhaseState = (phaseKey: DisplayPhase) => {
+    // PR-specific logic FIRST — must precede the generic 'complete' check
+    if (phaseKey === 'pr_creation') {
+      if (currentPhase === 'failed') return 'failed';
+      if (taskStatus === 'pr_created') return 'complete';
+      return 'pending';
+    }
+
+    // Original logic below — unchanged, only handles non-PR phases
     const phaseOrder = ['planning', 'coding', 'qa_review', 'qa_fixing', 'complete'];
     const currentIndex = phaseOrder.indexOf(currentPhase);
     const phaseIndex = phaseOrder.indexOf(phaseKey);

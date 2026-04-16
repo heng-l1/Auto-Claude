@@ -175,7 +175,8 @@
     "shortPhases": {
       "plan": "Plan",
       "code": "Code",
-      "qa": "QA"
+      "qa": "QA",
+      "pr": "PR"
     }
   },
   "files": {

@@ -515,6 +515,7 @@ export const TaskCard = memo(function TaskCard({
               phaseProgress={task.executionProgress?.phaseProgress}
               isStuck={isStuck}
               isRunning={isRunning}
+              taskStatus={task.status}
             />
           </div>
         )}
