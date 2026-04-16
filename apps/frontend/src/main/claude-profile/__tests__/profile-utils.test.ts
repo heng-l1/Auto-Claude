@@ -48,7 +48,7 @@ vi.mock('os', async (importOriginal) => {
 
 describe('syncUserConfigToProfile', () => {
   let userConfigDir: string;      // FAKE_HOME/.claude (= DEFAULT_CLAUDE_CONFIG_DIR)
-  let userConfigPath: string;     // FAKE_HOME/.claude/.claude.json
+  let userConfigPath: string;     // FAKE_HOME/.claude.json (at home root, not inside .claude/)
   let profileConfigDir: string;   // FAKE_HOME/.claude-profiles/work
   let profileConfigPath: string;  // FAKE_HOME/.claude-profiles/work/.claude.json
 
@@ -56,7 +56,7 @@ describe('syncUserConfigToProfile', () => {
     // Create a unique temp sandbox so tests don't collide when run in parallel
     FAKE_HOME = mkdtempSync(path.join(tmpdir(), 'sync-test-'));
     userConfigDir = path.join(FAKE_HOME, '.claude');
-    userConfigPath = path.join(userConfigDir, '.claude.json');
+    userConfigPath = path.join(FAKE_HOME, '.claude.json');
     profileConfigDir = path.join(FAKE_HOME, '.claude-profiles', 'work');
     profileConfigPath = path.join(profileConfigDir, '.claude.json');
 
@@ -370,6 +370,28 @@ describe('syncUserConfigToProfile', () => {
       expect(result.status).toBe('error');
       if (result.status === 'error') {
         expect(result.profileId).toBe('work');
+        expect(result.message).toMatch(/not found/i);
+      }
+    });
+
+    it('reads user config from ~/.claude.json (home root), not ~/.claude/.claude.json', async () => {
+      // Regression guard: Claude Code CLI stores its user-level config at ~/.claude.json
+      // (sibling to the ~/.claude/ data directory), not inside it. If this function
+      // mistakenly reads from ~/.claude/.claude.json, every sync fails with
+      // "User config not found" even when the real config exists.
+      const { syncUserConfigToProfile } = await import('../profile-utils');
+
+      // Place a config ONLY at the wrong location (inside ~/.claude/)
+      writeFileSync(
+        path.join(FAKE_HOME, '.claude', '.claude.json'),
+        JSON.stringify({ mcpServers: { wrong: { command: 'wrong' } } }),
+      );
+      // Leave the correct location (FAKE_HOME/.claude.json) absent
+
+      const result = syncUserConfigToProfile('work', profileConfigDir);
+
+      expect(result.status).toBe('error');
+      if (result.status === 'error') {
         expect(result.message).toMatch(/not found/i);
       }
     });

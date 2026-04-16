@@ -381,8 +381,8 @@ export function syncUserConfigToProfile(profileId: string, profileConfigDir: str
       return { status: 'noop', profileId, reason: 'same-config' };
     }
 
-    // Read user's default ~/.claude.json
-    const userConfigPath = join(DEFAULT_CLAUDE_CONFIG_DIR, '.claude.json');
+    // Read user's default ~/.claude.json (at home root, not inside ~/.claude/)
+    const userConfigPath = join(homedir(), '.claude.json');
     if (!existsSync(userConfigPath)) {
       return { status: 'error', profileId, message: 'User config not found' };
     }
