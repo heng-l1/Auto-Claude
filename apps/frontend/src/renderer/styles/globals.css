@@ -1239,6 +1239,10 @@ body {
   border-top-color: #A855F7;
 }
 
+.column-pr-created {
+  border-top-color: #EC4899;
+}
+
 .column-done {
   border-top-color: var(--success);
 }

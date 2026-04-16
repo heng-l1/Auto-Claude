@@ -323,6 +323,8 @@ const DroppableColumn = memo(function DroppableColumn({ status, tasks, onTaskCli
         return 'column-ai-review';
       case 'human_review':
         return 'column-human-review';
+      case 'pr_created':
+        return 'column-pr-created';
       case 'done':
         return 'column-done';
       default:
