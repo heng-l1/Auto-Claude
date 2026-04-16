@@ -124,6 +124,7 @@ from core.workspace.models import (
     MergeLockError,
     ParallelMergeResult,
     ParallelMergeTask,
+    RebaseRestoreError,
 )
 from merge import (
     FileTimelineTracker,
@@ -559,11 +560,18 @@ def _try_smart_merge_inner(
             print(muted("  Automatically rebasing before merge..."))
 
             # Attempt to rebase the spec branch onto the latest base branch
-            rebase_success = _rebase_spec_branch(
-                project_dir,
-                spec_name,
-                base_branch,
-            )
+            try:
+                rebase_success = _rebase_spec_branch(
+                    project_dir,
+                    spec_name,
+                    base_branch,
+                )
+            except RebaseRestoreError as e:
+                return {
+                    "success": False,
+                    "error": str(e),
+                    "rebase_restore_failed": True,
+                }
 
             if rebase_success:
                 # Refresh git conflicts after rebase
@@ -1123,6 +1131,9 @@ def _rebase_spec_branch(
                     MODULE,
                     f"Failed to restore original branch '{original_branch}'",
                     stderr=restore_result.stderr,
+                )
+                raise RebaseRestoreError(
+                    f"Failed to restore original branch '{original_branch}': {restore_result.stderr}"
                 )
 
 
