@@ -2433,6 +2433,16 @@ export function registerWorktreeHandlers(
           let stdout = '';
           let stderr = '';
 
+          // B6: Backend-provided post-merge verification (captured from progress events).
+          // When present, supersedes the legacy execFileSync(['diff', '--staged', '--stat'])
+          // fallback used for older backends that don't emit a verification contract.
+          let mergeVerification: {
+            staged_files: number;
+            merge_already_committed: boolean;
+            conflict_markers_present: boolean;
+            staged_diff_stat: string;
+          } | null = null;
+
           // Set up timeout to kill hung processes
           timeoutId = setTimeout(() => {
             if (!resolved) {
@@ -2515,6 +2525,28 @@ export function registerWorktreeHandlers(
                   typeof parsed.percent === 'number' &&
                   typeof parsed.message === 'string'
                 ) {
+                  // B6: Capture backend-provided verification contract when present so the
+                  // post-merge verification section can read it instead of running
+                  // execFileSync(['diff', '--staged', '--stat']) itself.
+                  const details = parsed.details;
+                  if (details && typeof details === 'object' && details.verification && typeof details.verification === 'object') {
+                    const v = details.verification as Record<string, unknown>;
+                    if (
+                      typeof v.staged_files === 'number' &&
+                      typeof v.merge_already_committed === 'boolean' &&
+                      typeof v.conflict_markers_present === 'boolean' &&
+                      typeof v.staged_diff_stat === 'string'
+                    ) {
+                      mergeVerification = {
+                        staged_files: v.staged_files,
+                        merge_already_committed: v.merge_already_committed,
+                        conflict_markers_present: v.conflict_markers_present,
+                        staged_diff_stat: v.staged_diff_stat,
+                      };
+                      debug('Captured backend verification contract:', mergeVerification);
+                    }
+                  }
+
                   const mainWindow = getMainWindow();
                   if (mainWindow) {
                     mainWindow.webContents.send(IPC_CHANNELS.TASK_MERGE_PROGRESS, taskId, parsed);
@@ -2548,6 +2580,27 @@ export function registerWorktreeHandlers(
               try {
                 const parsed = JSON.parse(lineBuffer.trim());
                 if (parsed && parsed.type === 'progress') {
+                  // B6: Also capture verification from the final buffered progress event
+                  // so a last-line verification emission isn't lost.
+                  const details = parsed.details;
+                  if (details && typeof details === 'object' && details.verification && typeof details.verification === 'object') {
+                    const v = details.verification as Record<string, unknown>;
+                    if (
+                      typeof v.staged_files === 'number' &&
+                      typeof v.merge_already_committed === 'boolean' &&
+                      typeof v.conflict_markers_present === 'boolean' &&
+                      typeof v.staged_diff_stat === 'string'
+                    ) {
+                      mergeVerification = {
+                        staged_files: v.staged_files,
+                        merge_already_committed: v.merge_already_committed,
+                        conflict_markers_present: v.conflict_markers_present,
+                        staged_diff_stat: v.staged_diff_stat,
+                      };
+                      debug('Captured backend verification contract (flushed):', mergeVerification);
+                    }
+                  }
+
                   const mainWindow = getMainWindow();
                   if (mainWindow) {
                     mainWindow.webContents.send(IPC_CHANNELS.TASK_MERGE_PROGRESS, taskId, parsed);
@@ -2586,14 +2639,64 @@ export function registerWorktreeHandlers(
               // This prevents false positives when merge was already committed previously
               let hasActualStagedChanges = false;
               let mergeAlreadyCommitted = false;
+              // B6: Tracks whether the backend-reported verification flagged conflict markers
+              // in staged content. When true, we route the task to 'human_review' regardless
+              // of staging counts so the user can manually inspect before continuing.
+              let hasConflictMarkers = false;
+
+              // B6: Prefer the backend-provided verification contract when present. Fall
+              // back to execFileSync(['diff', '--staged', '--stat']) only for legacy
+              // backends that don't emit verification via the progress stream.
+              const data = mergeVerification ? { verification: mergeVerification } : null;
+
+              // B6: Marker detection applies regardless of stage-only vs full-merge mode —
+              // if the backend reported markers on any path, route to human_review.
+              if (data?.verification) {
+                hasConflictMarkers = data.verification.conflict_markers_present;
+              }
 
               if (isStageOnly) {
-                // Only check staged changes if project is a working tree (not bare repo)
-                if (isGitWorkTree(project.path)) {
+                if (data?.verification) {
+                  // Use backend verification directly — no execFileSync needed.
+                  hasActualStagedChanges = data.verification.staged_files > 0;
+                  debug(
+                    'Stage-only verification from backend contract:',
+                    {
+                      staged_files: data.verification.staged_files,
+                      conflict_markers_present: data.verification.conflict_markers_present,
+                      merge_already_committed: data.verification.merge_already_committed,
+                    }
+                  );
+                  debug('Staged diff stat:\n', data.verification.staged_diff_stat || '(none)');
+
+                  if (!hasActualStagedChanges && isGitWorkTree(project.path)) {
+                    // Check if worktree branch was already merged (merge commit exists).
+                    // The backend's merge_already_committed flag only reports "no staged
+                    // changes" — it cannot determine whether HEAD actually contains the
+                    // spec branch. We keep the is-ancestor probe to answer that precisely.
+                    const branchPrefixValue = project?.settings?.branchPrefix || 'auto-claude';
+                    const specBranch = `${branchPrefixValue}/${task.specId}`;
+                    try {
+                      execFileSync(
+                        getToolPath('git'),
+                        ['merge-base', '--is-ancestor', specBranch, 'HEAD'],
+                        { cwd: project.path, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+                      );
+                      mergeAlreadyCommitted = true;
+                      debug('Merge already committed check:', mergeAlreadyCommitted);
+                    } catch {
+                      mergeAlreadyCommitted = false;
+                      debug('Could not check merge status, assuming not merged');
+                    }
+                  }
+                } else if (isGitWorkTree(project.path)) {
+                  // Legacy fallback: older backends don't emit a verification contract, so
+                  // we run execFileSync(['diff', '--staged', '--stat']) ourselves. Kept for
+                  // one release cycle per spec.md risk-and-tradeoffs section.
                   try {
                     const gitDiffStaged = execFileSync(getToolPath('git'), ['diff', '--staged', '--stat'], { cwd: project.path, encoding: 'utf-8' });
                     hasActualStagedChanges = gitDiffStaged.trim().length > 0;
-                    debug('Stage-only verification: hasActualStagedChanges:', hasActualStagedChanges);
+                    debug('Stage-only verification (legacy fallback): hasActualStagedChanges:', hasActualStagedChanges);
 
                     if (!hasActualStagedChanges) {
                       // Check if worktree branch was already merged (merge commit exists)
@@ -2631,7 +2734,15 @@ export function registerWorktreeHandlers(
               let message: string;
               let staged: boolean;
 
-              if (isStageOnly && !hasActualStagedChanges && mergeAlreadyCommitted) {
+              if (hasConflictMarkers) {
+                // B6: Backend detected conflict markers in staged files post-merge. Force
+                // human_review so the user can resolve them manually before continuing.
+                newStatus = 'human_review';
+                planStatus = 'review';
+                message = 'Conflict markers detected in staged files. Manual review required before committing.';
+                staged = isStageOnly && hasActualStagedChanges;
+                debug('Conflict markers detected — routing to human_review.');
+              } else if (isStageOnly && !hasActualStagedChanges && mergeAlreadyCommitted) {
                 // Stage-only was requested but merge was already committed previously
                 // Keep in human_review and let user explicitly mark as done (which will trigger cleanup confirmation)
                 // This ensures user is in control of when the worktree is deleted
@@ -2808,12 +2919,18 @@ export function registerWorktreeHandlers(
               resolve({
                 success: true,
                 data: {
-                  success: true,
-                  status: 'ok',
+                  success: !hasConflictMarkers,
+                  // B6: If markers were detected, downgrade status from 'ok' to 'conflict'
+                  // so the renderer can branch on data.status the same way it does for
+                  // backend-reported conflicts.
+                  status: hasConflictMarkers ? 'conflict' : 'ok',
                   message,
                   staged,
                   projectPath: staged ? project.path : undefined,
-                  suggestedCommitMessage
+                  suggestedCommitMessage,
+                  // B6: Surface the backend verification contract so the renderer can
+                  // display diff stats / marker info without re-running git itself.
+                  verification: mergeVerification ?? undefined
                 }
               });
             } else {
@@ -2838,7 +2955,10 @@ export function registerWorktreeHandlers(
                   message: hasConflicts
                     ? 'Merge conflicts detected'
                     : `Merge failed: ${stripAnsiCodes(stderr || stdout)}`,
-                  conflictFiles: hasConflicts ? [] : undefined
+                  conflictFiles: hasConflicts ? [] : undefined,
+                  // B6: Surface verification contract for failure paths too when the
+                  // backend emitted one before exiting non-zero.
+                  verification: mergeVerification ?? undefined
                 }
               });
             }
