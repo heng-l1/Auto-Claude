@@ -116,8 +116,13 @@ export function useAutoNaming({ terminalId, cwd }: UseAutoNamingOptions) {
   }, [autoNameTerminals, autoNameClaudeTerminals, terminal?.isClaudeMode, terminal?.title, terminal?.cwd, cwd, terminalId, updateTerminal, setClaudeNamedOnce]);
 
   const handleCommandEnter = useCallback((command: string) => {
-    // Reset title on /clear in Claude-mode terminals
-    if (terminal?.isClaudeMode && command.trim() === '/clear') {
+    // Reset title on /clear in Claude-mode terminals.
+    // Match any prefix of /clear that's at least "/cl" — covers Tab-completed
+    // commands where xterm only captured the literal keystrokes before Tab.
+    // "/cl" is a unique prefix to /clear among Claude Code slash commands.
+    const trimmed = command.trim();
+    const isClearCommand = trimmed.startsWith('/cl') && '/clear'.startsWith(trimmed);
+    if (terminal?.isClaudeMode && isClearCommand) {
       if (autoNameTimeoutRef.current) {
         clearTimeout(autoNameTimeoutRef.current);
         autoNameTimeoutRef.current = null;
