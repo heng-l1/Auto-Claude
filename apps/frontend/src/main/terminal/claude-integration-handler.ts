@@ -13,7 +13,7 @@ import { getClaudeProfileManager, initializeClaudeProfileManager } from '../clau
 import { getFullCredentialsFromKeychain, clearKeychainCache, updateProfileSubscriptionMetadata } from '../claude-profile/credential-utils';
 import { getUsageMonitor, detectProvider } from '../claude-profile/usage-monitor';
 import { loadProfilesFile } from '../services/profile/profile-manager';
-import { getEmailFromConfigDir } from '../claude-profile/profile-utils';
+import { getEmailFromConfigDir, syncUserConfigToProfile } from '../claude-profile/profile-utils';
 import * as OutputParser from './output-parser';
 import * as SessionHandler from './session-handler';
 import * as PtyManager from './pty-manager';
@@ -1309,6 +1309,14 @@ function executeProfileCommand(options: ExecuteProfileCommandOptions): boolean {
       extraFlags,
       envVars
     );
+    // Sync user-level config (mcpServers, projects) into profile config before launch
+    try {
+      const syncResult = syncUserConfigToProfile(activeProfile.id, activeProfile.configDir);
+      debugLog(`${logPrefix} Config sync result:`, syncResult);
+    } catch (err) {
+      debugError(`${logPrefix} Config sync failed (non-blocking):`, err);
+    }
+
     debugLog(`${logPrefix} Executing command (configDir method, history-safe)`);
     PtyManager.writeToPty(terminal, command);
     profileManager.markProfileUsed(activeProfile.id);
@@ -1397,6 +1405,14 @@ async function executeProfileCommandAsync(options: ExecuteProfileCommandOptions)
       extraFlags,
       envVars
     );
+    // Sync user-level config (mcpServers, projects) into profile config before launch
+    try {
+      const syncResult = syncUserConfigToProfile(activeProfile.id, activeProfile.configDir);
+      debugLog(`${logPrefix} Config sync result:`, syncResult);
+    } catch (err) {
+      debugError(`${logPrefix} Config sync failed (non-blocking):`, err);
+    }
+
     debugLog(`${logPrefix} Executing command (configDir method, history-safe)`);
     PtyManager.writeToPty(terminal, command);
     profileManager.markProfileUsed(activeProfile.id);
