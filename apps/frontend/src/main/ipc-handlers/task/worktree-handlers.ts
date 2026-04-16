@@ -2457,30 +2457,34 @@ export function registerWorktreeHandlers(
                 debug: isDebugMode
               });
 
-              // Check if merge might have succeeded before the hang
-              // Look for success indicators in the output
+              // Check if merge might have partially succeeded before the hang.
+              // Per spec B1 edge case 7: these indicators do NOT flip success to true on timeout;
+              // they only enrich the warning message so the user can verify manually.
               const mayHaveSucceeded = stdout.includes('staged') ||
                                        stdout.includes('Successfully merged') ||
                                        stdout.includes('Changes from');
 
+              // B1: Always resolve with success: false on timeout (never true), status: 'unknown'.
+              // The outer IPC result is marked success: true so the renderer can read data.status
+              // and route the task to 'human_review' — never 'done'.
+              const timeoutMessage = mayHaveSucceeded
+                ? 'Merge state unknown — partial success detected in output. Verify manually with git status.'
+                : 'Merge state unknown — process timed out. Verify manually with git status.';
+
               if (mayHaveSucceeded) {
-                debug('TIMEOUT: Process hung but merge may have succeeded based on output');
-                const isStageOnly = options?.noCommit === true;
-                resolve({
-                  success: true,
-                  data: {
-                    success: true,
-                    message: 'Changes staged (process timed out but merge appeared successful)',
-                    staged: isStageOnly,
-                    projectPath: isStageOnly ? project.path : undefined
-                  }
-                });
-              } else {
-                resolve({
-                  success: false,
-                  error: 'Merge process timed out. Check git status to see if merge completed.'
-                });
+                debug('TIMEOUT: Process hung but merge may have partially succeeded based on output');
               }
+
+              resolve({
+                success: true,
+                data: {
+                  success: false,
+                  status: 'unknown',
+                  message: timeoutMessage,
+                  error: 'Merge timed out',
+                  timeout: true
+                }
+              });
             }
           }, MERGE_TIMEOUT_MS);
 
@@ -2805,6 +2809,7 @@ export function registerWorktreeHandlers(
                 success: true,
                 data: {
                   success: true,
+                  status: 'ok',
                   message,
                   staged,
                   projectPath: staged ? project.path : undefined,
@@ -2829,6 +2834,7 @@ export function registerWorktreeHandlers(
                 success: true,
                 data: {
                   success: false,
+                  status: hasConflicts ? 'conflict' : 'unknown',
                   message: hasConflicts
                     ? 'Merge conflicts detected'
                     : `Merge failed: ${stripAnsiCodes(stderr || stdout)}`,
