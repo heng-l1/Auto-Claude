@@ -56,6 +56,7 @@ import { initializeClaudeProfileManager, getClaudeProfileManager } from './claud
 import { isProfileAuthenticated } from './claude-profile/profile-utils';
 import { isMacOS, isWindows } from './platform';
 import { ptyDaemonClient } from './terminal/pty-daemon-client';
+import { restoreAutoPRReviewOnStartup } from './services/auto-pr-review-helpers';
 import type { AppSettings, AuthFailureInfo } from '../shared/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -487,6 +488,11 @@ app.whenReady().then(() => {
 
   // Create window
   createWindow();
+
+  // Restore auto PR review polling for projects that opted in (fire-and-forget)
+  restoreAutoPRReviewOnStartup(() => mainWindow).catch((err) =>
+    console.warn('[main] Failed to restore auto PR review:', err)
+  );
 
   // Pre-warm CLI tool cache in background (non-blocking)
   // This ensures CLI detection is done before user needs it
