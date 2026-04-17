@@ -13,7 +13,6 @@ import { debugError } from '../../shared/utils/debug-logger';
 import { getSpawnOptions, getSpawnCommand } from '../env-utils';
 import { AutoPRReviewService } from '../services/auto-pr-review-service';
 import { enableAutoPRReviewForProject } from '../services/auto-pr-review-helpers';
-import { getGitHubTokenForSubprocess } from './github/utils';
 
 // GitLab environment variable keys
 const GITLAB_ENV_KEYS = {
