@@ -1700,6 +1700,17 @@ export async function invokeClaudeAsync(
     debugLog('[ClaudeIntegration:invokeClaudeAsync] Dangerously skip permissions:', dangerouslySkipPermissions);
     debugLog('[ClaudeIntegration:invokeClaudeAsync] Effort max:', effortMax);
 
+    // Fall back to project root if the requested cwd no longer exists (e.g., worktree was deleted
+    // after merge). Without this, `cd <missing>` fails and Claude never launches, leaving the UI
+    // stuck in Claude mode with the launch button hidden.
+    if (cwd && !fs.existsSync(cwd)) {
+      const fallback = terminal.projectPath && fs.existsSync(terminal.projectPath)
+        ? terminal.projectPath
+        : undefined;
+      debugLog('[ClaudeIntegration:invokeClaudeAsync] CWD missing, falling back:', cwd, '->', fallback);
+      cwd = fallback;
+    }
+
     // Compute extra flags for YOLO mode
     const extraFlags = dangerouslySkipPermissions ? YOLO_MODE_FLAG : undefined;
 

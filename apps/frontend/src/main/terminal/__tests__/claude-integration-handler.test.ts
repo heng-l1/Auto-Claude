@@ -73,6 +73,9 @@ vi.mock('fs', async (importOriginal) => {
   return {
     ...actual,
     writeFileSync: vi.fn(),
+    // Treat all paths as existing so tests can use synthetic cwds like '/tmp/project'
+    // without the missing-worktree fallback kicking in.
+    existsSync: vi.fn(() => true),
     promises: {
       writeFile: vi.fn(),
     },
