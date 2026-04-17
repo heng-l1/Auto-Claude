@@ -12,6 +12,7 @@ import { getClaudeCliInvocation, getClaudeCliInvocationAsync } from '../claude-c
 import { debugError } from '../../shared/utils/debug-logger';
 import { getSpawnOptions, getSpawnCommand } from '../env-utils';
 import { AutoPRReviewService } from '../services/auto-pr-review-service';
+import { enableAutoPRReviewForProject } from '../services/auto-pr-review-helpers';
 import { getGitHubTokenForSubprocess } from './github/utils';
 
 // GitLab environment variable keys
@@ -651,19 +652,8 @@ ${existingVars['GRAPHITI_DB_PATH'] ? `GRAPHITI_DB_PATH=${existingVars['GRAPHITI_
           const autoReviewService = AutoPRReviewService.getInstance();
 
           if (config.githubAutoPRReview) {
-            // Enable: resolve fresh token and repo, then start polling
-            try {
-              const token = await getGitHubTokenForSubprocess();
-              const finalVars = parseEnvFile(newContent);
-              const repo = config.githubRepo || finalVars['GITHUB_REPO'];
-
-              if (token && repo) {
-                autoReviewService.setMainWindowGetter(getMainWindow);
-                autoReviewService.enableForProject(projectId, project, { token, repo });
-              }
-            } catch (err) {
-              debugError('[ENV_UPDATE] Failed to enable auto PR review:', err);
-            }
+            // Enable: delegate to helper (token/repo resolution + start polling)
+            await enableAutoPRReviewForProject(project, getMainWindow, config.githubRepo);
           } else {
             // Disable: stop polling for this project
             autoReviewService.disableForProject(projectId);
