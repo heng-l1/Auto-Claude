@@ -364,6 +364,8 @@
     "customComment": "Custom comment",
     "approveWithComment": "Approve with Comment",
     "postComment": "Post Comment",
+    "requestChanges": "Request changes",
+    "requestChangesWithComment": "Request Changes",
     "commentPlaceholder": "Add a comment...",
     "postedFindings": "Posted {{count}} finding",
     "postedFindings_plural": "Posted {{count}} findings",

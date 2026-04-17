@@ -32,6 +32,7 @@ import { Card, CardContent } from '../../ui/card';
 import { ScrollArea } from '../../ui/scroll-area';
 import { Progress } from '../../ui/progress';
 import { Textarea } from '../../ui/textarea';
+import { Checkbox } from '../../ui/checkbox';
 
 // Local components
 import { CollapsibleCard } from './CollapsibleCard';
@@ -64,7 +65,7 @@ interface PRDetailProps {
   onRunFollowupReview: () => void;
   onCheckNewCommits: () => Promise<NewCommitsCheck>;
   onCancelReview: () => void;
-  onPostReview: (selectedFindingIds?: string[], options?: { forceApprove?: boolean; customComment?: string }) => Promise<boolean>;
+  onPostReview: (selectedFindingIds?: string[], options?: { forceApprove?: boolean; forceRequestChanges?: boolean; customComment?: string }) => Promise<boolean>;
   onPostComment: (body: string) => Promise<boolean>;
   onMergePR: (mergeMethod?: 'merge' | 'squash' | 'rebase') => void;
   onAssignPR: (username: string) => void;
@@ -188,6 +189,7 @@ export function PRDetail({
   const [isMerging, setIsMerging] = useState(false);
   const [customComment, setCustomComment] = useState('');
   const [isPostingComment, setIsPostingComment] = useState(false);
+  const [requestChangesOnComment, setRequestChangesOnComment] = useState(false);
   // Initialize with store value, then sync and update via local checks
   const [newCommitsCheck, setNewCommitsCheck] = useState<NewCommitsCheck | null>(initialNewCommitsCheck ?? null);
   const [analysisExpanded, setAnalysisExpanded] = useState(true);
@@ -693,6 +695,7 @@ export function PRDetail({
     // Reset custom comment state
     setCustomComment('');
     setIsPostingComment(false);
+    setRequestChangesOnComment(false);
     // Reset branch update state as well
     setBranchUpdateError(null);
     setBranchUpdateSuccess(false);
@@ -1173,16 +1176,23 @@ export function PRDetail({
     }
   };
 
-  // Post standalone comment without changing PR approval status
+  // Post standalone comment; if requestChangesOnComment is on, submit as a
+  // REQUEST_CHANGES review (no findings attached) instead of a plain issue comment.
   const handlePostStandaloneComment = async () => {
     if (!customComment.trim()) return;
 
     const currentPr = pr.number;
+    const body = customComment.trim();
+    const shouldRequestChanges = requestChangesOnComment;
+
     setIsPostingComment(true);
     try {
-      const success = await onPostComment(customComment.trim());
+      const success = shouldRequestChanges
+        ? await onPostReview([], { forceRequestChanges: true, customComment: body })
+        : await onPostComment(body);
       if (success && pr.number === currentPr) {
         setCustomComment('');
+        setRequestChangesOnComment(false);
       }
     } finally {
       if (pr.number === currentPr) {
@@ -1549,10 +1559,10 @@ ${t('prReview.blockedStatusMessageFooter')}`;
                  rows={3}
                />
                {customComment.trim() && (
-                 <div className="flex gap-2">
+                 <div className="flex flex-wrap items-center gap-2">
                    <Button
                      onClick={handleAutoApprove}
-                     disabled={isPosting || isPostingCleanReview || isPostingComment}
+                     disabled={isPosting || isPostingCleanReview || isPostingComment || requestChangesOnComment}
                      variant="default"
                      size="sm"
                      className="bg-emerald-600 hover:bg-emerald-700 text-white"
@@ -1567,7 +1577,7 @@ ${t('prReview.blockedStatusMessageFooter')}`;
                    <Button
                      onClick={handlePostStandaloneComment}
                      disabled={isPostingComment || isPosting}
-                     variant="outline"
+                     variant={requestChangesOnComment ? 'destructive' : 'outline'}
                      size="sm"
                    >
                      {isPostingComment ? (
@@ -1575,8 +1585,19 @@ ${t('prReview.blockedStatusMessageFooter')}`;
                      ) : (
                        <Send className="h-4 w-4 mr-2" />
                      )}
-                     {t('prReview.postComment')}
+                     {requestChangesOnComment
+                       ? t('prReview.requestChangesWithComment')
+                       : t('prReview.postComment')}
                    </Button>
+                   <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+                     <Checkbox
+                       checked={requestChangesOnComment}
+                       onCheckedChange={(v) => setRequestChangesOnComment(v === true)}
+                       disabled={isPosting || isPostingComment}
+                       aria-label={t('prReview.requestChanges')}
+                     />
+                     <span>{t('prReview.requestChanges')}</span>
+                   </label>
                  </div>
                )}
              </div>

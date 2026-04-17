@@ -2788,13 +2788,18 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
       projectId: string,
       prNumber: number,
       selectedFindingIds?: string[],
-      options?: { forceApprove?: boolean; customComment?: string }
+      options?: {
+        forceApprove?: boolean;
+        forceRequestChanges?: boolean;
+        customComment?: string;
+      }
     ): Promise<boolean> => {
       debugLog("postPRReview handler called", {
         projectId,
         prNumber,
         selectedCount: selectedFindingIds?.length,
         forceApprove: options?.forceApprove,
+        forceRequestChanges: options?.forceRequestChanges,
       });
       const postResult = await withProjectOrNull(projectId, async (project) => {
         const result = getReviewResult(project, prNumber);
@@ -2877,11 +2882,14 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
           const bodyParts = [fileLevelBody, options?.customComment?.trim()].filter(Boolean);
           const body = bodyParts.join("\n\n");
 
-          // Determine review status based on selected findings (or force approve)
+          // Determine review status based on selected findings (or explicit override)
           let overallStatus = result.overallStatus;
           if (options?.forceApprove) {
             // Force approve regardless of findings
             overallStatus = "approve";
+          } else if (options?.forceRequestChanges) {
+            // User explicitly requested changes (e.g., via checkbox on Post Comment)
+            overallStatus = "request_changes";
           } else if (selectedSet) {
             const hasBlocker = findings.some(
               (f) => f.severity === "critical" || f.severity === "high"

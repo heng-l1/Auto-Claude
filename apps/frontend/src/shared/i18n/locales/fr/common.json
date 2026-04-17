@@ -42,6 +42,8 @@
     "customComment": "Commentaire personnalisé",
     "approveWithComment": "Approuver avec commentaire",
     "postComment": "Publier le commentaire",
+    "requestChanges": "Demander des modifications",
+    "requestChangesWithComment": "Demander des modifications",
     "commentPlaceholder": "Ajouter un commentaire...",
     "autoApprovePR": "Approuver la PR",
     "postingApproval": "Approbation en cours...",
