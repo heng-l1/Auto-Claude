@@ -108,7 +108,7 @@ export class TerminalNameGenerator extends EventEmitter {
     const autoBuildSource = this.getAutoBuildSourcePath();
 
     if (!autoBuildSource) {
-      debug('Auto-claude source path not found');
+      console.warn('[TerminalNameGenerator] Aborting: auto-claude source path not found');
       return null;
     }
 
@@ -117,7 +117,7 @@ export class TerminalNameGenerator extends EventEmitter {
       debug('Python environment not ready, initializing...');
       const status = await pythonEnvManager.initialize(autoBuildSource);
       if (!status.ready) {
-        debug('Python environment initialization failed:', status.error);
+        console.warn('[TerminalNameGenerator] Aborting: Python venv init failed:', status.error);
         return null;
       }
     }
@@ -125,7 +125,7 @@ export class TerminalNameGenerator extends EventEmitter {
     // Get the venv Python path (where claude_agent_sdk is installed)
     const venvPythonPath = pythonEnvManager.getPythonPath();
     if (!venvPythonPath) {
-      debug('Venv Python path not available');
+      console.warn('[TerminalNameGenerator] Aborting: venv Python path not available');
       return null;
     }
 
@@ -169,7 +169,7 @@ export class TerminalNameGenerator extends EventEmitter {
       let output = '';
       let errorOutput = '';
       const timeout = setTimeout(() => {
-        debug('Terminal name generation timed out after 30s');
+        console.warn('[TerminalNameGenerator] Aborting: subprocess timed out after 30s');
         childProcess.kill();
         resolve(null);
       }, 30000); // 30 second timeout
@@ -194,7 +194,7 @@ export class TerminalNameGenerator extends EventEmitter {
           const combinedOutput = `${output}\n${errorOutput}`;
           const rateLimitDetection = detectRateLimit(combinedOutput);
           if (rateLimitDetection.isRateLimited) {
-            debug('Rate limit detected:', {
+            console.warn('[TerminalNameGenerator] Aborting: rate limit detected', {
               resetTime: rateLimitDetection.resetTime,
               limitType: rateLimitDetection.limitType,
               suggestedProfile: rateLimitDetection.suggestedProfile?.name
@@ -202,12 +202,11 @@ export class TerminalNameGenerator extends EventEmitter {
 
             const rateLimitInfo = createSDKRateLimitInfo('other', rateLimitDetection);
             this.emit('sdk-rate-limit', rateLimitInfo);
-          }
-
-          if (!rateLimitDetection.isRateLimited) {
-            debug('Terminal name generation failed', {
+          } else {
+            console.warn('[TerminalNameGenerator] Aborting: subprocess exit', {
               code,
-              errorOutput: errorOutput.substring(0, 500)
+              stderr: errorOutput.substring(0, 500),
+              stdout: output.substring(0, 200)
             });
           }
           resolve(null);
@@ -216,7 +215,7 @@ export class TerminalNameGenerator extends EventEmitter {
 
       childProcess.on('error', (err) => {
         clearTimeout(timeout);
-        debug('Process error:', err.message);
+        console.warn('[TerminalNameGenerator] Aborting: subprocess error:', err.message);
         resolve(null);
       });
     });

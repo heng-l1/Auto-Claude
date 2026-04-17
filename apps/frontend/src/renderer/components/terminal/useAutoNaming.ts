@@ -24,6 +24,9 @@ interface UseAutoNamingOptions {
 export function useAutoNaming({ terminalId, cwd }: UseAutoNamingOptions) {
   const lastCommandRef = useRef<string>('');
   const autoNameTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Incremented whenever /clear fires, so in-flight IPC calls scheduled
+  // before /clear can detect the invalidation and skip applying their result.
+  const generationEpochRef = useRef<number>(0);
   const autoNameTerminals = useSettingsStore((state) => state.settings.autoNameTerminals);
   const autoNameClaudeTerminals = useSettingsStore((state) => state.settings.autoNameClaudeTerminals);
   const terminal = useTerminalStore((state) => state.terminals.find((t) => t.id === terminalId));
@@ -97,7 +100,13 @@ export function useAutoNaming({ terminalId, cwd }: UseAutoNamingOptions) {
     }
 
     try {
+      const epochAtStart = generationEpochRef.current;
+      console.warn('[Terminal] Auto-naming triggered:', { command: command.substring(0, 80), isClaudeMode: terminal?.isClaudeMode, title: terminal?.title });
       const result = await window.electronAPI.generateTerminalName(command, terminal?.cwd || cwd);
+      if (generationEpochRef.current !== epochAtStart) {
+        console.warn('[Terminal] Auto-naming result discarded — /clear ran during generation');
+        return;
+      }
       if (result.success && result.data) {
         updateTerminal(terminalId, { title: result.data });
         // Sync to main process so title persists across hot reloads
@@ -109,24 +118,35 @@ export function useAutoNaming({ terminalId, cwd }: UseAutoNamingOptions) {
         if (currentTerminal?.isClaudeMode) {
           setClaudeNamedOnce(terminalId, true);
         }
+      } else {
+        console.warn('[Terminal] Auto-naming returned failure:', result.error || 'unknown');
       }
     } catch (error) {
-      console.warn('[Terminal] Auto-naming failed:', error);
+      console.warn('[Terminal] Auto-naming threw:', error);
     }
   }, [autoNameTerminals, autoNameClaudeTerminals, terminal?.isClaudeMode, terminal?.title, terminal?.cwd, cwd, terminalId, updateTerminal, setClaudeNamedOnce]);
 
   const handleCommandEnter = useCallback((command: string) => {
+    const trimmed = command.trim();
+    console.warn('[Terminal] handleCommandEnter:', { command: trimmed.substring(0, 80), isClaudeMode: terminal?.isClaudeMode, title: terminal?.title });
     // Reset title on /clear in Claude-mode terminals.
     // Match any prefix of /clear that's at least "/cl" — covers Tab-completed
     // commands where xterm only captured the literal keystrokes before Tab.
     // "/cl" is a unique prefix to /clear among Claude Code slash commands.
-    const trimmed = command.trim();
     const isClearCommand = trimmed.startsWith('/cl') && '/clear'.startsWith(trimmed);
-    if (terminal?.isClaudeMode && isClearCommand) {
+    // /clear is a Claude-specific slash command. Don't gate this on isClaudeMode:
+    // the renderer's isClaudeMode flag can lag or false-flip off (e.g., when a
+    // shell-prompt pattern is detected in Claude output), leaving /clear to fall
+    // through to auto-naming and produce a "clear terminal" title.
+    if (isClearCommand) {
+      console.warn('[Terminal] /clear detected — resetting title to default');
       if (autoNameTimeoutRef.current) {
         clearTimeout(autoNameTimeoutRef.current);
         autoNameTimeoutRef.current = null;
       }
+      // Invalidate any in-flight generateTerminalName call so its result
+      // can't land after this reset and overwrite the title.
+      generationEpochRef.current += 1;
       const defaultTitle = getDefaultClaudeTitle();
       updateTerminal(terminalId, { title: defaultTitle });
       window.electronAPI.setTerminalTitle(terminalId, defaultTitle);
