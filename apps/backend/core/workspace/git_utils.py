@@ -31,6 +31,8 @@ __all__ = [
     "has_uncommitted_changes",
     "stash_changes",
     "unstash_changes",
+    "run_git_checked",
+    "get_stash_ref",
     "get_current_branch",
     "get_existing_build_worktree",
     "get_file_content_from_ref",
@@ -310,6 +312,65 @@ def unstash_changes(project_dir: Path) -> tuple[bool, str]:
     # The stash entry is preserved on the stash stack when pop fails.
     error_message = result.stderr.strip() or result.stdout.strip()
     return False, error_message
+
+
+def run_git_checked(
+    args: list[str],
+    cwd: Path | str | None = None,
+    timeout: int = 60,
+    input_data: str | None = None,
+) -> subprocess.CompletedProcess:
+    """Run a git command and raise on nonzero exit code.
+
+    Thin wrapper around run_git() that raises subprocess.CalledProcessError
+    when the command exits with a nonzero return code. Useful for git operations
+    where failure should immediately propagate rather than be checked manually.
+
+    Args:
+        args: Git command arguments (without 'git' prefix).
+        cwd: Working directory for the command.
+        timeout: Command timeout in seconds (default: 60).
+        input_data: Optional string data to pass to stdin.
+
+    Returns:
+        CompletedProcess with command results.
+
+    Raises:
+        subprocess.CalledProcessError: If the git command exits with nonzero status.
+    """
+    result = run_git(args, cwd=cwd, timeout=timeout, input_data=input_data)
+    if result.returncode != 0:
+        raise subprocess.CalledProcessError(
+            result.returncode,
+            result.args,
+            output=result.stdout,
+            stderr=result.stderr,
+        )
+    return result
+
+
+def get_stash_ref(project_dir: Path) -> str | None:
+    """Get the latest stash ref string from the stash list.
+
+    Runs 'git stash list' and parses the first entry to extract the
+    stash@{N} ref. Useful after stash_changes() to capture the exact
+    ref for recovery instructions.
+
+    Args:
+        project_dir: Project directory to query stash list in.
+
+    Returns:
+        The stash ref string (e.g., 'stash@{0}') or None if no stash entries.
+    """
+    result = run_git(["stash", "list"], cwd=project_dir)
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    # First line format: "stash@{0}: WIP on branch: message"
+    first_line = result.stdout.strip().split("\n")[0]
+    match = re.match(r"(stash@\{\d+\})", first_line)
+    if match:
+        return match.group(1)
+    return None
 
 
 def get_current_branch(project_dir: Path) -> str:
