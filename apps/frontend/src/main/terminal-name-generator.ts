@@ -157,7 +157,7 @@ export class TerminalNameGenerator extends EventEmitter {
       const childProcess = spawn(pythonCommand, [...pythonBaseArgs, '-c', script], {
         cwd: autoBuildSource,
         env: {
-          ...process.env,
+          ...pythonEnvManager.getPythonEnv(), // Supplies PYTHONPATH for bundled site-packages and Windows pywin32 PATH fixups (fixes auto-naming in packaged builds)
           ...autoBuildEnv,
           ...profileEnv, // Include active Claude profile config
           PYTHONUNBUFFERED: '1',
