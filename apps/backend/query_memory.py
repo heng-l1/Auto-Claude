@@ -22,7 +22,7 @@ import json
 import os
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -550,7 +550,7 @@ def cmd_add_episode(args):
 
         # Generate unique ID
         episode_uuid = str(uuid_module.uuid4())
-        created_at = datetime.now().isoformat()
+        now = datetime.now(timezone.utc)
 
         # Get database path - create directory if needed
         full_path = Path(args.db_path) / args.database
@@ -564,15 +564,19 @@ def cmd_add_episode(args):
 
         # Always try to create the Episodic table if it doesn't exist
         # This handles both new databases and existing databases without the table
+        # Schema mirrors graphiti_core/driver/kuzu_driver.py:55-65 so fresh-DB and Graphiti-initialized DBs are compatible
         try:
             conn.execute("""
                 CREATE NODE TABLE IF NOT EXISTS Episodic (
                     uuid STRING PRIMARY KEY,
                     name STRING,
-                    content STRING,
-                    source_description STRING,
                     group_id STRING,
-                    created_at STRING
+                    created_at TIMESTAMP,
+                    source STRING,
+                    source_description STRING,
+                    content STRING,
+                    valid_at TIMESTAMP,
+                    entity_edges STRING[]
                 )
             """)
         except Exception as schema_err:
@@ -583,24 +587,28 @@ def cmd_add_episode(args):
         # Insert the episode
         try:
             insert_query = """
-                CREATE (e:Episodic {
-                    uuid: $uuid,
-                    name: $name,
-                    content: $content,
-                    source_description: $description,
-                    group_id: $group_id,
-                    created_at: $created_at
-                })
+                MERGE (e:Episodic {uuid: $uuid})
+                SET e.name = $name,
+                    e.group_id = $group_id,
+                    e.created_at = $created_at,
+                    e.source = $source,
+                    e.source_description = $source_description,
+                    e.content = $content,
+                    e.valid_at = $valid_at,
+                    e.entity_edges = $entity_edges
             """
             conn.execute(
                 insert_query,
                 parameters={
                     "uuid": episode_uuid,
                     "name": args.name,
-                    "content": content,
-                    "description": f"[{args.episode_type}] {args.name}",
                     "group_id": args.group_id or "",
-                    "created_at": created_at,
+                    "created_at": now,
+                    "source": "json",
+                    "source_description": f"[{args.episode_type}] {args.name}",
+                    "content": content,
+                    "valid_at": now,
+                    "entity_edges": [],
                 },
             )
 
@@ -610,7 +618,7 @@ def cmd_add_episode(args):
                     "id": episode_uuid,
                     "name": args.name,
                     "type": args.episode_type,
-                    "timestamp": created_at,
+                    "timestamp": now.isoformat(),
                 },
             )
 
