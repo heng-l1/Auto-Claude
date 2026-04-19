@@ -401,21 +401,23 @@ describe('buildReviewComments', () => {
     });
   });
 
-  describe('skipping findings for files not in PR', () => {
-    it('should skip a finding whose file is not present in the fileLineMap', () => {
+  describe('routing findings for files not in PR', () => {
+    it('should surface a finding whose file is not in the PR as a file-level entry', () => {
       const fileLineMap = new Map<string, Set<number>>([
         ['src/included.ts', new Set([1, 2])],
       ]);
-      // This file is not in the PR at all
+      // This file is not in the PR at all — e.g. a missed change the reviewer wants flagged
       const findings = [makeFinding({ file: 'src/not-in-pr.ts', line: 5 })];
 
       const { inlineComments, fileLevelEntries } = buildReviewComments(findings, fileLineMap);
 
       expect(inlineComments).toHaveLength(0);
-      expect(fileLevelEntries).toHaveLength(0);
+      expect(fileLevelEntries).toHaveLength(1);
+      expect(fileLevelEntries[0]).toContain('src/not-in-pr.ts');
+      expect(fileLevelEntries[0]).toContain('not in PR files');
     });
 
-    it('should only include comments for files that are in the PR', () => {
+    it('should route PR files inline and non-PR files to file-level entries', () => {
       const fileLineMap = new Map<string, Set<number>>([
         ['src/a.ts', new Set([1])],
       ]);
@@ -425,11 +427,14 @@ describe('buildReviewComments', () => {
         makeFinding({ id: 'f-3', file: 'src/c.ts', line: 1 }),
       ];
 
-      const { inlineComments } = buildReviewComments(findings, fileLineMap);
+      const { inlineComments, fileLevelEntries } = buildReviewComments(findings, fileLineMap);
 
-      // Only the finding for src/a.ts should produce a comment
+      // The finding for src/a.ts produces an inline comment; the other two become file-level
       expect(inlineComments).toHaveLength(1);
       expect(inlineComments[0].path).toBe('src/a.ts');
+      expect(fileLevelEntries).toHaveLength(2);
+      expect(fileLevelEntries.some((e) => e.includes('src/b.ts') && e.includes('not in PR files'))).toBe(true);
+      expect(fileLevelEntries.some((e) => e.includes('src/c.ts') && e.includes('not in PR files'))).toBe(true);
     });
   });
 
@@ -515,7 +520,7 @@ describe('buildReviewComments', () => {
   });
 
   describe('mixed routing scenarios', () => {
-    it('should correctly route inline, file-level, and skipped findings in one call', () => {
+    it('should correctly route inline, in-PR file-level, and not-in-PR file-level findings in one call', () => {
       const fileLineMap = new Map<string, Set<number>>([
         ['src/changed.ts', new Set([10, 11, 12])],
         ['src/also-changed.ts', new Set([1, 2])],
@@ -525,24 +530,32 @@ describe('buildReviewComments', () => {
         makeFinding({ id: 'inline', file: 'src/changed.ts', line: 10, severity: 'high', title: 'Inline' }),
         // File-level: line 99 is NOT in the diff but file is in the PR
         makeFinding({ id: 'file-level', file: 'src/also-changed.ts', line: 99, severity: 'low', title: 'File-level' }),
-        // Skipped: file not in PR at all
-        makeFinding({ id: 'skipped', file: 'src/untouched.ts', line: 5, severity: 'medium', title: 'Skipped' }),
+        // File-level (not in PR): file is not part of the PR at all
+        makeFinding({ id: 'not-in-pr', file: 'src/untouched.ts', line: 5, severity: 'medium', title: 'MissedFile' }),
       ];
 
       const { inlineComments, fileLevelEntries } = buildReviewComments(findings, fileLineMap);
 
-      // Inline: 1 comment, file-level: 1 entry, skipped: omitted
+      // Inline: 1 comment, file-level: 2 entries (one in-PR, one not-in-PR)
       expect(inlineComments).toHaveLength(1);
-      expect(fileLevelEntries).toHaveLength(1);
+      expect(fileLevelEntries).toHaveLength(2);
 
       // Inline comment
       expect(inlineComments[0].path).toBe('src/changed.ts');
       expect(inlineComments[0].line).toBe(10);
 
-      // File-level entry (markdown string)
-      expect(fileLevelEntries[0]).toContain('src/also-changed.ts');
-      expect(fileLevelEntries[0]).toContain('(line 99)');
-      expect(fileLevelEntries[0]).toContain('**[LOW] File-level**');
+      // In-PR file-level entry (no "not in PR" note)
+      const inPrEntry = fileLevelEntries.find((e) => e.includes('src/also-changed.ts'));
+      expect(inPrEntry).toBeDefined();
+      expect(inPrEntry).toContain('(line 99)');
+      expect(inPrEntry).toContain('**[LOW] File-level**');
+      expect(inPrEntry).not.toContain('not in PR files');
+
+      // Not-in-PR file-level entry (carries the "not in PR" note)
+      const notInPrEntry = fileLevelEntries.find((e) => e.includes('src/untouched.ts'));
+      expect(notInPrEntry).toBeDefined();
+      expect(notInPrEntry).toContain('not in PR files');
+      expect(notInPrEntry).toContain('**[MEDIUM] MissedFile**');
     });
 
     it('should skip findings with no file or non-positive line', () => {

@@ -463,7 +463,8 @@ export interface BuildReviewCommentsResult {
  * Build review comments with diff-aware routing:
  * - Inline (line-level) for findings on lines within the diff → inlineComments
  * - File-level for findings on lines outside the diff but in a PR file → fileLevelEntries
- * - Skipped for findings on files not in the PR
+ * - File-level (with "not in PR files" note) for findings on files not in the PR,
+ *   so missed-change callouts still surface instead of being silently dropped
  *
  * @param findings - Array of PR review findings to route
  * @param fileLineMap - Map of filename → valid line numbers in the diff, or null to fall back to all-inline
@@ -499,8 +500,12 @@ export function buildReviewComments(
             // Line is NOT in the diff — add as formatted markdown for the review body
             fileLevelEntries.push(`- **${normalizedPath}** (line ${f.line}): ${commentBody}`);
           }
+        } else {
+          // File is not in the PR — surface as file-level feedback for missed changes
+          fileLevelEntries.push(
+            `- **${normalizedPath}** (line ${f.line}, not in PR files): ${commentBody}`,
+          );
         }
-        // If file not in map, skip this finding (file not in PR)
       } else {
         // fileLineMap is null (fetch failed) — fall back to original behavior
         inlineComments.push({ path: normalizedPath, line: f.line, body: commentBody });
