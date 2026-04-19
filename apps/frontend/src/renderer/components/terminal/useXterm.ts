@@ -126,6 +126,13 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
       },
       allowProposedApi: true,
       scrollback: fontSettings.scrollback,
+      linkHandler: {
+        activate: (_event, uri) => {
+          window.electronAPI?.openExternal?.(uri).catch((error) => {
+            console.warn('[useXterm] Failed to open OSC 8 link:', uri, error);
+          });
+        },
+      },
     });
 
     const fitAddon = new FitAddon();
