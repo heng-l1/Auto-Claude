@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useShallow } from 'zustand/react/shallow';
 import {
   DndContext,
   DragOverlay,
@@ -42,7 +43,24 @@ interface TerminalGridProps {
 
 export function TerminalGrid({ projectPath, onNewTaskClick, isActive = false }: TerminalGridProps) {
   const { t } = useTranslation('common');
-  const allTerminals = useTerminalStore((state) => state.terminals);
+  // Narrow the Zustand subscription to only the fields TerminalGrid actually reads.
+  // `useShallow` skips re-renders when none of these primitive fields change — notably,
+  // `isClaudeBusy` and `hasActivityAlert` toggles no longer re-render this component.
+  // `title` is included because the drag overlay reads it (line ~676).
+  const allTerminals = useTerminalStore(
+    useShallow((state) =>
+      state.terminals.map((t) => ({
+        id: t.id,
+        title: t.title,
+        projectPath: t.projectPath,
+        status: t.status,
+        isClaudeMode: t.isClaudeMode,
+        displayOrder: t.displayOrder,
+        cwd: t.cwd,
+        foregroundProcess: t.foregroundProcess,
+      }))
+    )
+  );
 
   // Track terminals that are in the grace period before being filtered out
   // Map of terminal ID -> timestamp when it was marked for cleanup
