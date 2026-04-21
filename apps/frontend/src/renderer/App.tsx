@@ -786,19 +786,36 @@ export function App() {
     if (!projectPath) return;
 
     // Build context message
-    const findingsSummary = reviewResult.findings
+    const MAX_FINDINGS = 50;
+    // NOTE: ".length" counts UTF-16 code units, which equals bytes for ASCII-only summaries
+    // (the typical GitHub PR case). For true byte counting, use new Blob([summary]).size.
+    const MAX_SUMMARY_BYTES = 2048;
+
+    const truncatedSummary =
+      reviewResult.summary.length > MAX_SUMMARY_BYTES
+        ? reviewResult.summary.slice(0, MAX_SUMMARY_BYTES) +
+          '\n\n... [summary truncated]'
+        : reviewResult.summary;
+
+    const visibleFindings = reviewResult.findings.slice(0, MAX_FINDINGS);
+    const findingsSummary = visibleFindings
       .map(f => `- [${f.severity.toUpperCase()}] ${f.file}:${f.line} - ${f.title}`)
       .join('\n');
+    const findingsOverflow = reviewResult.findings.length - visibleFindings.length;
+    const findingsTail =
+      findingsOverflow > 0
+        ? `\n- ... and ${findingsOverflow} more findings (truncated)`
+        : '';
 
     const contextMessage = [
       `I'd like to discuss the code review for PR #${pr.number}: "${pr.title}"`,
       `Review Status: ${reviewResult.overallStatus} | Branch: ${pr.headRefName} -> ${pr.baseRefName} | Author: ${pr.author.login}`,
       '',
       '## Summary',
-      reviewResult.summary,
+      truncatedSummary,
       '',
       `## Findings (${reviewResult.findings.length})`,
-      findingsSummary || 'No findings',
+      (findingsSummary + findingsTail) || 'No findings',
       '',
       'Please help me understand these findings and discuss potential approaches. You can use your tools to read the actual source files if needed.',
     ].join('\n');
