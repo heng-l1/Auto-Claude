@@ -94,6 +94,7 @@ export function TerminalHeader({
 
   // Use provided remoteProcesses or fall back to defaults
   const processesToCheck = remoteProcesses || DEFAULT_REMOTE_PROCESSES;
+  const isInRemoteSession = !!foregroundProcess && processesToCheck.has(foregroundProcess);
 
   return (
     <div className="electron-no-drag group/header flex h-9 items-center justify-between border-b border-border/50 bg-card/30 px-2">
@@ -247,7 +248,7 @@ export function TerminalHeader({
             {terminalCount < 4 && t('terminal:worktree.openInIDE')}
           </Button>
         )}
-        {!isClaudeMode && status !== 'exited' && (
+        {(!isClaudeMode || isInRemoteSession) && status !== 'exited' && (
           <Button
             variant="ghost"
             size={terminalCount >= 4 ? 'icon' : 'sm'}
