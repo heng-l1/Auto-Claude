@@ -2,6 +2,9 @@
  * Utility functions for managing environment variables in agent spawning
  */
 
+import { getAugmentedEnv } from '../env-utils';
+import { getPathDelimiter } from '../platform';
+
 /**
  * Normalize the PATH key in an environment object to a single uppercase 'PATH' key.
  *
@@ -123,4 +126,39 @@ export function getOAuthModeClearVars(apiProfileEnv: Record<string, string>): Re
     ANTHROPIC_DEFAULT_SONNET_MODEL: '',
     ANTHROPIC_DEFAULT_OPUS_MODEL: ''
   };
+}
+
+/**
+ * Build an augmented base environment plus a merged Python-env overlay, both PATH-normalized.
+ *
+ * Consolidates the env-construction pattern used by subprocess spawners. When a child
+ * process inherits both a tool-augmented PATH and a Python-specific env overlay, callers
+ * must coordinate three concerns to avoid "command not found" failures for apps launched
+ * from the GUI (which don't inherit a full shell PATH):
+ *   1. Invoke getAugmentedEnv() so the base env includes common tool locations
+ *      (Homebrew, npm globals, user-local bins, etc.).
+ *   2. Shallow-copy the caller's pythonEnv to avoid mutating shared state.
+ *   3. Merge the pythonEnv PATH entries into the augmented PATH so platform-specific
+ *      additions (e.g. pywin32_system32 on Windows) are preserved without clobbering
+ *      the augmented PATH during later object spreading.
+ *
+ * Mutates neither caller-supplied reference: the returned env is a fresh object from
+ * getAugmentedEnv() and mergedPythonEnv is a shallow copy of the input.
+ *
+ * @param pythonEnv - Python-specific environment overlay (may include its own PATH)
+ * @returns Object containing:
+ *   - env: augmented base environment with common tool paths injected into PATH
+ *   - mergedPythonEnv: shallow copy of pythonEnv with PATH merged against env.PATH
+ */
+export function buildAugmentedPythonEnv(
+  pythonEnv: Record<string, string>
+): { env: Record<string, string>; mergedPythonEnv: Record<string, string> } {
+  const env = getAugmentedEnv();
+  const mergedPythonEnv = { ...pythonEnv };
+  mergePythonEnvPath(
+    env as Record<string, string | undefined>,
+    mergedPythonEnv as Record<string, string | undefined>,
+    getPathDelimiter()
+  );
+  return { env, mergedPythonEnv };
 }
