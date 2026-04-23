@@ -3,8 +3,28 @@
  * Tests OAuth mode environment variable clearing functionality
  */
 
-import { describe, it, expect } from 'vitest';
-import { getOAuthModeClearVars, normalizeEnvPathKey, mergePythonEnvPath } from './env-utils';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// Module-level mocks for buildAugmentedPythonEnv dependencies (hoisted by vitest).
+// These intercept the '../env-utils' and '../platform' imports inside ./env-utils.ts,
+// isolating the helper from real shell resolution / platform detection.
+const mockGetAugmentedEnv = vi.fn();
+const mockGetPathDelimiter = vi.fn();
+
+vi.mock('../env-utils', () => ({
+  getAugmentedEnv: (...args: unknown[]) => mockGetAugmentedEnv(...args),
+}));
+
+vi.mock('../platform', () => ({
+  getPathDelimiter: (...args: unknown[]) => mockGetPathDelimiter(...args),
+}));
+
+import {
+  getOAuthModeClearVars,
+  normalizeEnvPathKey,
+  mergePythonEnvPath,
+  buildAugmentedPythonEnv,
+} from './env-utils';
 
 describe('getOAuthModeClearVars', () => {
   describe('OAuth mode (no active API profile)', () => {
@@ -293,5 +313,73 @@ describe('mergePythonEnvPath - Windows PATH merge logic (#1661)', () => {
     expect(mergedPythonEnv.PATH).toBeUndefined();
     expect(mergedPythonEnv.PYTHONPATH).toBe('/site-packages');
     expect(env.PATH).toBe('C:\\npm;C:\\homebrew');
+  });
+});
+
+describe('buildAugmentedPythonEnv', () => {
+  beforeEach(() => {
+    mockGetAugmentedEnv.mockReset();
+    mockGetPathDelimiter.mockReset();
+    // Default to Unix separator for deterministic tests (overridden per-test if needed)
+    mockGetPathDelimiter.mockReturnValue(':');
+  });
+
+  it('should return env with PATH from mocked getAugmentedEnv output', () => {
+    mockGetAugmentedEnv.mockReturnValue({
+      PATH: '/mock/augmented:/usr/bin',
+      HOME: '/home/user',
+    });
+
+    const { env } = buildAugmentedPythonEnv({});
+
+    expect(env.PATH).toBe('/mock/augmented:/usr/bin');
+    expect(env.HOME).toBe('/home/user');
+  });
+
+  it('should prepend python-specific PATH entries before augmented PATH in mergedPythonEnv', () => {
+    mockGetAugmentedEnv.mockReturnValue({
+      PATH: '/mock/augmented:/usr/bin',
+    });
+
+    const { mergedPythonEnv } = buildAugmentedPythonEnv({
+      PATH: '/python-only:/mock/augmented:/usr/bin',
+      PYTHONPATH: '/site-packages',
+    });
+
+    // /python-only is unique to pythonEnv and must be prepended before the augmented PATH
+    expect(mergedPythonEnv.PATH).toBe('/python-only:/mock/augmented:/usr/bin');
+    // Non-PATH keys from pythonEnv are preserved
+    expect(mergedPythonEnv.PYTHONPATH).toBe('/site-packages');
+  });
+
+  it('should normalize mixed Path/PATH casing to a single uppercase PATH on both objects', () => {
+    // Simulate getAugmentedEnv returning Windows-style lowercase 'Path'
+    mockGetAugmentedEnv.mockReturnValue({
+      Path: '/mock/augmented:/usr/bin',
+    });
+
+    const { env, mergedPythonEnv } = buildAugmentedPythonEnv({
+      Path: '/python-only:/usr/bin',
+    });
+
+    // env: lowercase 'Path' removed, uppercase 'PATH' set
+    expect('Path' in env).toBe(false);
+    expect(env.PATH).toBe('/mock/augmented:/usr/bin');
+    // mergedPythonEnv: lowercase 'Path' removed, uppercase 'PATH' set with unique entry prepended
+    expect('Path' in mergedPythonEnv).toBe(false);
+    expect(mergedPythonEnv.PATH).toBe('/python-only:/mock/augmented:/usr/bin');
+  });
+
+  it('should treat pythonEnv with no PATH as a no-op (empty mergedPythonEnv, env.PATH unchanged)', () => {
+    mockGetAugmentedEnv.mockReturnValue({
+      PATH: '/mock/augmented:/usr/bin',
+    });
+
+    const { env, mergedPythonEnv } = buildAugmentedPythonEnv({});
+
+    // Shallow copy of empty pythonEnv → mergedPythonEnv stays empty (no PATH injected)
+    expect(mergedPythonEnv).toEqual({});
+    // env.PATH untouched by the merge
+    expect(env.PATH).toBe('/mock/augmented:/usr/bin');
   });
 });
