@@ -78,6 +78,11 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
   const handlePasteRef = useRef<() => void>(() => {});
   const selectAllRef = useRef<() => void>(() => {});
   const clearTerminalRef = useRef<() => void>(() => {});
+  // rAF-batched write queue: collapses bursty PTY chunks (100+/sec during Claude
+  // streaming) into a single xterm.write() per animation frame. Per-hook refs
+  // ensure no cross-terminal contention. See the output-callback useEffect below.
+  const pendingWritesRef = useRef<string[]>([]);
+  const rafIdRef = useRef<number | null>(null);
   const [dimensions, setDimensions] = useState<{ cols: number; rows: number }>({ cols: 80, rows: 24 });
 
   // Get font settings from store
@@ -531,8 +536,15 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
     return unsubscribe;
   }, []); // Only terminalId needed - re-subscribe when terminal changes
 
-  // Register xterm write callback with terminal-store for global output listener
-  // This allows the global listener to write directly to xterm when terminal is visible
+  // Register xterm write callback with terminal-store for global output listener.
+  // This allows the global listener to write directly to xterm when terminal is visible.
+  //
+  // rAF batching: Chunks arriving at 100+/sec (e.g. during Claude streaming) are
+  // queued per-hook in pendingWritesRef and flushed once per animation frame as a
+  // single xterm.write() call. This collapses GPU/canvas render pressure without
+  // affecting data fidelity — terminalBufferManager.append() runs before the
+  // callback in terminal-store.ts, so queued chunks persist even if the terminal
+  // unmounts mid-flight and replay on remount.
   useEffect(() => {
     // Only register if xterm is ready
     if (!xtermRef.current) {
@@ -542,20 +554,43 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
 
     debugLog(`[useXterm] Registering output callback for terminal: ${terminalId}`);
 
-    // Create a write function that writes directly to this xterm instance
-    const writeCallback = (data: string) => {
+    // Flush pending writes as a single xterm.write() per animation frame.
+    // Fast path: single chunk uses pending[0] directly (avoids join('') allocation).
+    const flush = () => {
+      rafIdRef.current = null;
+      const pending = pendingWritesRef.current;
+      if (pending.length === 0) return;
+      pendingWritesRef.current = [];
       if (xtermRef.current && !isDisposedRef.current) {
-        xtermRef.current.write(data);
+        xtermRef.current.write(
+          pending.length === 1 ? pending[0] : pending.join('')
+        );
+      }
+    };
+
+    // Enqueue incoming chunks and schedule a single rAF flush per frame.
+    // Double-schedule guard: only call requestAnimationFrame when no flush is
+    // already pending (rafIdRef.current === null).
+    const writeCallback = (data: string) => {
+      if (isDisposedRef.current) return;
+      pendingWritesRef.current.push(data);
+      if (rafIdRef.current === null) {
+        rafIdRef.current = requestAnimationFrame(flush);
       }
     };
 
     // Register the callback so global listener can write to this terminal
     registerOutputCallback(terminalId, writeCallback);
 
-    // Cleanup: unregister callback when component unmounts
+    // Cleanup: unregister callback, cancel any pending rAF, and clear the queue.
     return () => {
       debugLog(`[useXterm] Unregistering output callback for terminal: ${terminalId}`);
       unregisterOutputCallback(terminalId);
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+      pendingWritesRef.current = [];
     };
   }, [terminalId]);
 

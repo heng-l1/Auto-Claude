@@ -100,6 +100,22 @@ vi.mock('../../../stores/settings-store', () => ({
   })
 }));
 
+// Mock terminal-store so Fix A tests can capture the writeCallback that useXterm
+// registers via registerOutputCallback. Invoking it directly lets tests simulate
+// PTY chunks arriving and assert on rAF-batched flush behavior.
+// vi.hoisted ensures `terminalStoreMocks.state` exists before vi.mock factories run.
+const terminalStoreMocks = vi.hoisted(() => ({
+  state: { capturedWriteCallback: null as ((data: string) => void) | null },
+}));
+vi.mock('../../../stores/terminal-store', () => ({
+  registerOutputCallback: (_id: string, cb: (data: string) => void) => {
+    terminalStoreMocks.state.capturedWriteCallback = cb;
+  },
+  unregisterOutputCallback: () => {
+    terminalStoreMocks.state.capturedWriteCallback = null;
+  },
+}));
+
 // Mock navigator.platform for platform detection
 const originalNavigatorPlatform = navigator.platform;
 
@@ -1080,5 +1096,272 @@ describe('useXterm WebGL context management', () => {
     // When undefined, the ?? 'off' fallback means no WebGL import at all
     expect(mockWebglRegister).not.toHaveBeenCalled();
     expect(mockWebglAcquire).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Fix A unit tests — rAF-batched write callback.
+ *
+ * These tests install a capture-based requestAnimationFrame mock (store the
+ * frame callback in `scheduledCallback`; invoke it manually from each test)
+ * instead of the setTimeout-based polyfill used by the other describe blocks.
+ * This gives deterministic per-frame control so we can enqueue N chunks BEFORE
+ * the flush fires and assert on batching behavior.
+ */
+describe('useXterm rAF-batched write callback', () => {
+  // Preserve whatever rAF/cAF the outer suite installed so we can restore it.
+  const outerRequestAnimationFrame = global.requestAnimationFrame;
+  const outerCancelAnimationFrame = global.cancelAnimationFrame;
+
+  // Module-scoped capture: the flush callback scheduled via requestAnimationFrame.
+  // Tests invoke this manually to simulate a frame firing.
+  let scheduledCallback: FrameRequestCallback | null = null;
+  let rafSpy: ReturnType<typeof vi.fn>;
+  let cafSpy: ReturnType<typeof vi.fn>;
+  // Stub rAF handle id returned by rafSpy. Tests assert that cancelAnimationFrame
+  // is called with this same id during cleanup.
+  const RAF_HANDLE_ID = 42;
+
+  beforeAll(() => {
+    rafSpy = vi.fn((cb: FrameRequestCallback): number => {
+      scheduledCallback = cb;
+      return RAF_HANDLE_ID;
+    });
+    cafSpy = vi.fn();
+  });
+
+  afterAll(() => {
+    global.requestAnimationFrame = outerRequestAnimationFrame;
+    global.cancelAnimationFrame = outerCancelAnimationFrame;
+  });
+
+  beforeEach(() => {
+    // NOTE: vi.useFakeTimers() replaces global.requestAnimationFrame with its
+    // internal fake-timer rAF. Install our capture-based mock AFTER useFakeTimers
+    // so the rAF-batched write callback in useXterm picks up rafSpy/cafSpy, not
+    // the vitest fake timer (which would make `scheduledCallback` unreachable).
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    scheduledCallback = null;
+    terminalStoreMocks.state.capturedWriteCallback = null;
+
+    global.requestAnimationFrame = rafSpy as unknown as typeof global.requestAnimationFrame;
+    global.cancelAnimationFrame = cafSpy as unknown as typeof global.cancelAnimationFrame;
+
+    // ResizeObserver is referenced by useXterm's resize effect.
+    global.ResizeObserver = vi.fn().mockImplementation(function() {
+      return { observe: vi.fn(), unobserve: vi.fn(), disconnect: vi.fn() };
+    });
+
+    // window.electronAPI is referenced during xterm init (onData -> sendTerminalInput).
+    (window as unknown as { electronAPI: unknown }).electronAPI = {
+      sendTerminalInput: vi.fn(),
+      openExternal: vi.fn(),
+    };
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * Render useXterm with a fresh XTerm mock. Returns the write spy (so tests
+   * can assert on xterm.write calls), plus unmount + dispose handles.
+   */
+  async function renderForBatching(terminalId = 'test-batching-terminal') {
+    const writeSpy = vi.fn();
+
+    (XTerm as unknown as Mock).mockImplementation(function() {
+      return {
+        open: vi.fn(),
+        loadAddon: vi.fn(),
+        attachCustomKeyEventHandler: vi.fn(),
+        hasSelection: vi.fn(() => false),
+        getSelection: vi.fn(() => ''),
+        paste: vi.fn(),
+        input: vi.fn(),
+        onData: vi.fn(),
+        onResize: vi.fn(),
+        dispose: vi.fn(),
+        write: writeSpy,
+        parser: {
+          registerOscHandler: vi.fn().mockReturnValue({ dispose: vi.fn() }),
+        },
+        selectAll: vi.fn(),
+        clear: vi.fn(),
+        cols: 80,
+        rows: 24,
+        options: {
+          cursorBlink: true,
+          cursorStyle: 'block',
+          fontSize: 14,
+          fontFamily: 'monospace',
+          fontWeight: 'normal',
+          lineHeight: 1,
+          letterSpacing: 0,
+          theme: { cursorAccent: '#000000' },
+          scrollback: 1000,
+        },
+        refresh: vi.fn(),
+      };
+    });
+
+    const { FitAddon } = await import('@xterm/addon-fit');
+    (FitAddon as unknown as Mock).mockImplementation(function() {
+      return { fit: vi.fn(), dispose: vi.fn() };
+    });
+
+    const { WebLinksAddon } = await import('@xterm/addon-web-links');
+    (WebLinksAddon as unknown as Mock).mockImplementation(function() {
+      return {};
+    });
+
+    const { SerializeAddon } = await import('@xterm/addon-serialize');
+    (SerializeAddon as unknown as Mock).mockImplementation(function() {
+      return { serialize: vi.fn(() => ''), dispose: vi.fn() };
+    });
+
+    let hookReturn: ReturnType<typeof useXterm> | null = null;
+
+    const TestWrapper = () => {
+      const result = useXterm({ terminalId });
+      hookReturn = result;
+      return React.createElement('div', { ref: result.terminalRef });
+    };
+
+    const rendered = render(React.createElement(TestWrapper));
+
+    // useXterm's performInitialFit calls requestAnimationFrame once during init
+    // (for the deferred xterm.open). That init call is bookkeeping — not part of
+    // the Fix A write-batching logic — so clear rafSpy's history here. Assertions
+    // on toHaveBeenCalledTimes then only count writeCallback-triggered rAFs.
+    // scheduledCallback is left intact: it will be overwritten by writeCallback's
+    // next rAF schedule, which is the flush we actually want to invoke.
+    rafSpy.mockClear();
+
+    return {
+      writeSpy,
+      unmount: rendered.unmount,
+      dispose: () => hookReturn?.dispose(),
+    };
+  }
+
+  it('batches 5 enqueued chunks within one frame into a single xterm.write call', async () => {
+    const { writeSpy } = await renderForBatching();
+    // Narrow + assert in one shot so TypeScript knows writeCallback is non-null
+    // for the rest of the test (satisfies Biome's noNonNullAssertion rule).
+    const writeCallback = terminalStoreMocks.state.capturedWriteCallback;
+    if (!writeCallback) throw new Error('Expected registerOutputCallback to have captured a writeCallback');
+
+    // Enqueue 5 chunks BEFORE the frame fires. Each call should push into
+    // pendingWritesRef; only the first should schedule a rAF (double-schedule guard).
+    writeCallback('chunk-1');
+    writeCallback('chunk-2');
+    writeCallback('chunk-3');
+    writeCallback('chunk-4');
+    writeCallback('chunk-5');
+
+    // xterm.write must not fire until the frame callback runs — chunks are buffered.
+    expect(writeSpy).not.toHaveBeenCalled();
+    // Only one rAF scheduled despite 5 writeCallback invocations.
+    expect(rafSpy).toHaveBeenCalledTimes(1);
+
+    // Fire the frame manually — this is the flush() that useXterm scheduled.
+    if (!scheduledCallback) throw new Error('Expected writeCallback to have scheduled a frame callback');
+    scheduledCallback(performance.now());
+
+    // Exactly one xterm.write, with all 5 chunks concatenated via pending.join('').
+    expect(writeSpy).toHaveBeenCalledTimes(1);
+    expect(writeSpy).toHaveBeenCalledWith('chunk-1chunk-2chunk-3chunk-4chunk-5');
+  });
+
+  it('takes the fast path for a single chunk (writes pending[0], not join)', async () => {
+    const { writeSpy } = await renderForBatching();
+    const writeCallback = terminalStoreMocks.state.capturedWriteCallback;
+    if (!writeCallback) throw new Error('Expected registerOutputCallback to have captured a writeCallback');
+
+    writeCallback('only-chunk');
+
+    // Fire the frame.
+    if (!scheduledCallback) throw new Error('Expected writeCallback to have scheduled a frame callback');
+    scheduledCallback(performance.now());
+
+    // With a single pending chunk, flush uses pending[0] directly — avoids the
+    // join('') allocation. The argument is the exact original string reference.
+    expect(writeSpy).toHaveBeenCalledTimes(1);
+    expect(writeSpy).toHaveBeenCalledWith('only-chunk');
+  });
+
+  it('cleanup cancels pending rAF and clears pendingWritesRef to []', async () => {
+    const { writeSpy, unmount } = await renderForBatching();
+    const writeCallback = terminalStoreMocks.state.capturedWriteCallback;
+    if (!writeCallback) throw new Error('Expected registerOutputCallback to have captured a writeCallback');
+
+    // Enqueue a chunk so a rAF is pending at cleanup time.
+    writeCallback('chunk-before-unmount');
+    expect(rafSpy).toHaveBeenCalledTimes(1);
+
+    // Preserve the scheduled flush so we can verify the queue was cleared.
+    const capturedFlush = scheduledCallback;
+    if (!capturedFlush) throw new Error('Expected writeCallback to have scheduled a frame callback');
+
+    // Trigger the useEffect cleanup via unmount.
+    unmount();
+
+    // cancelAnimationFrame was called with the rAF handle that rafSpy returned.
+    expect(cafSpy).toHaveBeenCalledWith(RAF_HANDLE_ID);
+    // unregisterOutputCallback was called → capturedWriteCallback nulled.
+    expect(terminalStoreMocks.state.capturedWriteCallback).toBeNull();
+
+    // Verify pendingWritesRef.current was reset to []: if we manually invoke
+    // the flush that had been scheduled, it should hit the `pending.length === 0`
+    // early-return and NOT call xterm.write.
+    capturedFlush(performance.now());
+    expect(writeSpy).not.toHaveBeenCalled();
+  });
+
+  it('disposed terminal skips xterm.write inside flush', async () => {
+    const { writeSpy, dispose } = await renderForBatching();
+    const writeCallback = terminalStoreMocks.state.capturedWriteCallback;
+    if (!writeCallback) throw new Error('Expected registerOutputCallback to have captured a writeCallback');
+
+    // Enqueue a chunk — rAF scheduled, but flush hasn't fired yet.
+    writeCallback('chunk-pre-dispose');
+    expect(rafSpy).toHaveBeenCalledTimes(1);
+    if (!scheduledCallback) throw new Error('Expected writeCallback to have scheduled a frame callback');
+
+    // Dispose the terminal: sets isDisposedRef.current = true and nulls xtermRef.
+    // The flush guard is `xtermRef.current && !isDisposedRef.current` — both
+    // conditions now prevent the write.
+    dispose();
+
+    // Fire the frame manually. Flush runs, but the guard skips xterm.write.
+    scheduledCallback(performance.now());
+
+    expect(writeSpy).not.toHaveBeenCalled();
+  });
+
+  it('schedules requestAnimationFrame exactly once for 3 rapid writeCallback calls (double-schedule guard)', async () => {
+    const { unmount } = await renderForBatching();
+    const writeCallback = terminalStoreMocks.state.capturedWriteCallback;
+    if (!writeCallback) throw new Error('Expected registerOutputCallback to have captured a writeCallback');
+
+    // Three synchronous writeCallback bursts within the same frame. The guard
+    // `if (rafIdRef.current === null)` must prevent the 2nd and 3rd rAF calls.
+    writeCallback('a');
+    writeCallback('b');
+    writeCallback('c');
+
+    expect(rafSpy).toHaveBeenCalledTimes(1);
+
+    // Unmount explicitly inside the test body so the useEffect cleanup runs
+    // while our cafSpy is still installed. Without this, React's deferred
+    // passive-effect unmount fires after `vi.useRealTimers()` / `restoreAllMocks`
+    // in afterEach, and the bare `cancelAnimationFrame` reference in useXterm
+    // throws ReferenceError because global.cancelAnimationFrame is gone.
+    unmount();
+    expect(cafSpy).toHaveBeenCalledWith(RAF_HANDLE_ID);
   });
 });
