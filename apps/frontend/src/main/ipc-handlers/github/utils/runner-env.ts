@@ -1,24 +1,30 @@
-import { getOAuthModeClearVars } from '../../../agent/env-utils';
+import { buildAugmentedPythonEnv, getOAuthModeClearVars } from '../../../agent/env-utils';
 import { getAPIProfileEnv } from '../../../services/profile';
 import { getBestAvailableProfileEnv } from '../../../rate-limit-detector';
 import { pythonEnvManager } from '../../../python-env-manager';
 import { getGitHubTokenForSubprocess } from '../utils';
-import { getSentryEnvForSubprocess, safeBreadcrumb } from '../../../sentry';
+import { safeBreadcrumb } from '../../../sentry';
 import { getToolInfo } from '../../../cli-tool-manager';
 
 /**
  * Get environment variables for Python runner subprocesses.
  *
  * Environment variable precedence (lowest to highest):
- * 1. pythonEnv - Python environment including PYTHONPATH for bundled packages (fixes #139)
- * 2. apiProfileEnv - Custom Anthropic-compatible API profile (ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN)
- * 3. oauthModeClearVars - Clears stale ANTHROPIC_* vars when in OAuth mode
- * 4. profileEnv - Claude OAuth token from profile manager (CLAUDE_CODE_OAUTH_TOKEN)
- * 5. githubEnv - Fresh GitHub token from gh CLI (GITHUB_TOKEN) - fetched on each call to reflect account changes
- * 6. extraEnv - Caller-specific vars (e.g., USE_CLAUDE_MD)
+ * 1. augmented - Login-shell PATH + Sentry env (via buildAugmentedPythonEnv → getAugmentedEnv)
+ * 2. mergedPythonEnv - Python environment including PYTHONPATH for bundled packages (fixes #139), with PATH merged against augmented
+ * 3. apiProfileEnv - Custom Anthropic-compatible API profile (ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN)
+ * 4. oauthModeClearVars - Clears stale ANTHROPIC_* vars when in OAuth mode
+ * 5. profileEnv - Claude OAuth token from profile manager (CLAUDE_CODE_OAUTH_TOKEN)
+ * 6. githubEnv - Fresh GitHub token from gh CLI (GITHUB_TOKEN) - fetched on each call to reflect account changes
+ * 7. ghCliEnv - gh CLI path for bundled apps (Python backend uses GITHUB_CLI_PATH)
+ * 8. extraEnv - Caller-specific vars (e.g., USE_CLAUDE_MD)
  *
  * NOTE: extraEnv can intentionally override any of the above, including GITHUB_TOKEN.
  * This allows callers to provide their own token for testing or special cases.
+ *
+ * The augmented env is critical for GUI-launched builds where the child would otherwise
+ * inherit a stripped PATH; it injects common tool locations so locally-installed CLI
+ * tools remain discoverable.
  *
  * The pythonEnv is critical for packaged apps (#139) - without PYTHONPATH, Python
  * cannot find bundled dependencies like dotenv, claude_agent_sdk, etc.
@@ -61,14 +67,18 @@ export async function getRunnerEnv(
     },
   });
 
+  // Compose the augmented base env (login-shell PATH + Sentry env) with the Python
+  // overlay so locally-installed CLI tools are discoverable in GUI-launched builds.
+  const { env: augmented, mergedPythonEnv } = buildAugmentedPythonEnv(pythonEnv);
+
   return {
-    ...pythonEnv,  // Python environment including PYTHONPATH (fixes #139)
+    ...augmented,  // Login-shell PATH + Sentry env (Sentry is injected inside getAugmentedEnv)
+    ...mergedPythonEnv,  // Python environment including PYTHONPATH (fixes #139) with merged PATH
     ...apiProfileEnv,
     ...oauthModeClearVars,
     ...profileEnv,  // OAuth token from profile manager (fixes #563, rate-limit aware)
     ...githubEnv,  // Fresh GitHub token from gh CLI (fixes #151)
     ...ghCliEnv,  // gh CLI path for bundled apps (Python backend uses GITHUB_CLI_PATH)
-    ...getSentryEnvForSubprocess(),  // Sentry DSN + sample rates for Python subprocess
     ...extraEnv,  // extraEnv last so callers can still override
   };
 }

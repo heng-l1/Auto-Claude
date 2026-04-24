@@ -52,6 +52,7 @@ import { readSettingsFile } from './settings-utils';
 import { appLog, setupErrorLogging } from './app-logger';
 import { initSentryMain } from './sentry';
 import { preWarmToolCache } from './cli-tool-manager';
+import { preWarmStdioMcpServers } from './services/mcp-prewarm';
 import { initializeClaudeProfileManager, getClaudeProfileManager } from './claude-profile-manager';
 import { isProfileAuthenticated } from './claude-profile/profile-utils';
 import { isMacOS, isWindows } from './platform';
@@ -501,6 +502,7 @@ app.whenReady().then(() => {
     preWarmToolCache(['claude', 'git', 'gh', 'python']).catch((error) => {
       console.warn('[main] Failed to pre-warm CLI cache:', error);
     });
+    preWarmStdioMcpServers().catch(err => console.warn('[MCP Pre-warm] failed:', err));
   });
 
   // Initialize Claude profile manager, then start usage monitor

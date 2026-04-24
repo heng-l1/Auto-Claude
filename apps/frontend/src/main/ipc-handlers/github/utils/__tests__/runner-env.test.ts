@@ -5,14 +5,29 @@ const mockGetOAuthModeClearVars = vi.fn();
 const mockGetPythonEnv = vi.fn();
 const mockGetBestAvailableProfileEnv = vi.fn();
 const mockGetGitHubTokenForSubprocess = vi.fn();
+const mockGetAugmentedEnv = vi.fn();
 
 vi.mock('../../../../services/profile', () => ({
   getAPIProfileEnv: (...args: unknown[]) => mockGetAPIProfileEnv(...args),
 }));
 
-vi.mock('../../../../agent/env-utils', () => ({
-  getOAuthModeClearVars: (...args: unknown[]) => mockGetOAuthModeClearVars(...args),
+// Mock getAugmentedEnv from src/main/env-utils. buildAugmentedPythonEnv calls it
+// internally, so mocking here gives us a deterministic augmented PATH to assert against
+// without depending on the host shell's real PATH resolution.
+vi.mock('../../../../env-utils', () => ({
+  getAugmentedEnv: () => mockGetAugmentedEnv(),
 }));
+
+// Partial mock of agent/env-utils: keep the real buildAugmentedPythonEnv (so the real
+// PATH merge + casing normalization logic exercises under test), but override
+// getOAuthModeClearVars with the test spy.
+vi.mock('../../../../agent/env-utils', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../agent/env-utils')>();
+  return {
+    ...actual,
+    getOAuthModeClearVars: (...args: unknown[]) => mockGetOAuthModeClearVars(...args),
+  };
+});
 
 vi.mock('../../../../python-env-manager', () => ({
   pythonEnvManager: {
@@ -44,6 +59,9 @@ import { getRunnerEnv } from '../runner-env';
 describe('getRunnerEnv', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default mock for augmented env - deterministic PATH so assertions can verify
+    // that subprocess env includes the login-shell PATH entries.
+    mockGetAugmentedEnv.mockReturnValue({ PATH: '/mock/augmented:/usr/bin' });
     // Default mock for Python env - minimal env for testing
     mockGetPythonEnv.mockReturnValue({
       PYTHONDONTWRITEBYTECODE: '1',
@@ -167,5 +185,77 @@ describe('getRunnerEnv', () => {
     const result = await getRunnerEnv();
 
     expect(result.GITHUB_TOKEN).toBeUndefined();
+  });
+
+  it('includes augmented PATH so locally-installed CLI tools are findable', async () => {
+    mockGetAPIProfileEnv.mockResolvedValue({});
+    mockGetOAuthModeClearVars.mockReturnValue({});
+    // pythonEnv has no PATH — augmented PATH should surface untouched in the result.
+    mockGetPythonEnv.mockReturnValue({
+      PYTHONPATH: '/bundled/site-packages',
+    });
+
+    const result = await getRunnerEnv();
+
+    expect(result.PATH).toContain('/mock/augmented');
+  });
+
+  it('prepends pythonEnv PATH entries to augmented PATH', async () => {
+    mockGetAPIProfileEnv.mockResolvedValue({});
+    mockGetOAuthModeClearVars.mockReturnValue({});
+    // pythonEnv carries a leading python-specific path plus the augmented entry.
+    // After the merge, python-specific entries should be prepended.
+    mockGetPythonEnv.mockReturnValue({
+      PATH: '/python-only:/mock/augmented',
+    });
+
+    const result = await getRunnerEnv();
+
+    expect(result.PATH.startsWith('/python-only')).toBe(true);
+  });
+
+  it('normalizes Path/PATH casing', async () => {
+    mockGetAPIProfileEnv.mockResolvedValue({});
+    mockGetOAuthModeClearVars.mockReturnValue({});
+    // Simulate the Windows case where pythonEnv arrives with lowercase 'Path'.
+    // After normalization inside buildAugmentedPythonEnv, the merged env must expose
+    // exactly one uppercase 'PATH' key and zero 'Path' keys (regression guard #1661).
+    mockGetPythonEnv.mockReturnValue({
+      Path: '/lowercase-python-path',
+    } as unknown as Record<string, string>);
+
+    const result = await getRunnerEnv();
+
+    const keys = Object.keys(result);
+    expect(keys.filter(k => k === 'PATH')).toHaveLength(1);
+    expect(keys.filter(k => k === 'Path')).toHaveLength(0);
+  });
+
+  it('apiProfileEnv precedence preserved over augmented env', async () => {
+    // Augmented env exposes an ANTHROPIC_BASE_URL — apiProfileEnv must still win.
+    mockGetAugmentedEnv.mockReturnValue({
+      PATH: '/mock/augmented:/usr/bin',
+      ANTHROPIC_BASE_URL: 'https://from-augmented',
+    });
+    mockGetAPIProfileEnv.mockResolvedValue({
+      ANTHROPIC_BASE_URL: 'https://api.example.test',
+    });
+    mockGetOAuthModeClearVars.mockReturnValue({});
+
+    const result = await getRunnerEnv();
+
+    expect(result.ANTHROPIC_BASE_URL).toBe('https://api.example.test');
+  });
+
+  it('extraEnv retains highest precedence', async () => {
+    // Every layer below extraEnv supplies a different PATH, yet extraEnv still wins.
+    mockGetAugmentedEnv.mockReturnValue({ PATH: '/mock/augmented:/usr/bin' });
+    mockGetPythonEnv.mockReturnValue({ PATH: '/python-only' });
+    mockGetAPIProfileEnv.mockResolvedValue({});
+    mockGetOAuthModeClearVars.mockReturnValue({});
+
+    const result = await getRunnerEnv({ PATH: '/override' });
+
+    expect(result.PATH).toBe('/override');
   });
 });

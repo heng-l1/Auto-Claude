@@ -10,7 +10,7 @@ import type { IdeationConfig, Idea } from '../../shared/types';
 import { AUTO_BUILD_PATHS } from '../../shared/constants';
 import { detectRateLimit, createSDKRateLimitInfo, getBestAvailableProfileEnv } from '../rate-limit-detector';
 import { getAPIProfileEnv } from '../services/profile';
-import { getOAuthModeClearVars, normalizeEnvPathKey } from './env-utils';
+import { buildAugmentedPythonEnv, getOAuthModeClearVars, normalizeEnvPathKey } from './env-utils';
 import { debugLog, debugError } from '../../shared/utils/debug-logger';
 import { stripAnsiCodes } from '../../shared/utils/ansi-sanitizer';
 import { parsePythonCommand } from '../python-detector';
@@ -378,16 +378,17 @@ export class AgentQueueManager {
     const combinedPythonPath = pythonPathParts.join(getPathDelimiter());
 
     // Build final environment with proper precedence:
-    // 1. process.env (system)
-    // 2. pythonEnv (bundled packages environment)
+    // 1. augmented (login-shell PATH + process.env via getAugmentedEnv)
+    // 2. mergedPythonEnv (pythonEnv with PATH merged against augmented PATH)
     // 3. combinedEnv (auto-claude/.env for CLI usage)
     // 4. oauthModeClearVars (clear stale ANTHROPIC_* vars when in OAuth mode)
     // 5. profileEnv (Electron app OAuth token)
     // 6. apiProfileEnv (Active API profile config - highest priority for ANTHROPIC_* vars)
     // 7. Our specific overrides
+    const { env: augmented, mergedPythonEnv } = buildAugmentedPythonEnv(pythonEnv);
     const finalEnv = {
-      ...process.env,
-      ...pythonEnv,
+      ...augmented,
+      ...mergedPythonEnv,
       ...combinedEnv,
       ...oauthModeClearVars,
       ...profileEnv,
@@ -717,16 +718,17 @@ export class AgentQueueManager {
     const combinedPythonPath = pythonPathParts.join(getPathDelimiter());
 
     // Build final environment with proper precedence:
-    // 1. process.env (system)
-    // 2. pythonEnv (bundled packages environment)
+    // 1. augmented (login-shell PATH + process.env via getAugmentedEnv)
+    // 2. mergedPythonEnv (pythonEnv with PATH merged against augmented PATH)
     // 3. combinedEnv (auto-claude/.env for CLI usage)
     // 4. oauthModeClearVars (clear stale ANTHROPIC_* vars when in OAuth mode)
     // 5. profileEnv (Electron app OAuth token)
     // 6. apiProfileEnv (Active API profile config - highest priority for ANTHROPIC_* vars)
     // 7. Our specific overrides
+    const { env: augmented, mergedPythonEnv } = buildAugmentedPythonEnv(pythonEnv);
     const finalEnv = {
-      ...process.env,
-      ...pythonEnv,
+      ...augmented,
+      ...mergedPythonEnv,
       ...combinedEnv,
       ...oauthModeClearVars,
       ...profileEnv,
