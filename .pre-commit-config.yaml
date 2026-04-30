@@ -47,7 +47,7 @@ repos:
                 sed -i.bak '/<!-- BETA_VERSION_BADGE -->/,/<!-- BETA_VERSION_BADGE_END -->/s|releases/tag/v[0-9.a-z-]*)|releases/tag/v'"$VERSION"')|g' README.md
 
                 # Update beta download links (within BETA_DOWNLOADS section only)
-                for SUFFIX in "win32-x64.exe" "darwin-arm64.dmg" "darwin-x64.dmg" "linux-x86_64.AppImage" "linux-amd64.deb" "linux-x86_64.flatpak"; do
+                for SUFFIX in "win32-x64.exe" "darwin-arm64.dmg" "linux-x86_64.AppImage" "linux-amd64.deb" "linux-x86_64.flatpak"; do
                   sed -i.bak '/<!-- BETA_DOWNLOADS -->/,/<!-- BETA_DOWNLOADS_END -->/{s|Auto-Claude-[0-9.a-z-]*-'"$SUFFIX"'](https://github.com/ArcaneAgent/Auto-Claude/releases/download/v[^/]*/Auto-Claude-[^)]*-'"$SUFFIX"')|Auto-Claude-'"$VERSION"'-'"$SUFFIX"'](https://github.com/ArcaneAgent/Auto-Claude/releases/download/v'"$VERSION"'/Auto-Claude-'"$VERSION"'-'"$SUFFIX"')|g}' README.md
                 done
               else
@@ -63,7 +63,7 @@ repos:
                 sed -i.bak '/<!-- STABLE_VERSION_BADGE -->/,/<!-- STABLE_VERSION_BADGE_END -->/s|releases/tag/v[0-9.a-z-]*)|releases/tag/v'"$VERSION"')|g' README.md
 
                 # Update stable download links (within STABLE_DOWNLOADS section only)
-                for SUFFIX in "win32-x64.exe" "darwin-arm64.dmg" "darwin-x64.dmg" "linux-x86_64.AppImage" "linux-amd64.deb"; do
+                for SUFFIX in "win32-x64.exe" "darwin-arm64.dmg" "linux-x86_64.AppImage" "linux-amd64.deb"; do
                   sed -i.bak '/<!-- STABLE_DOWNLOADS -->/,/<!-- STABLE_DOWNLOADS_END -->/{s|Auto-Claude-[0-9.a-z-]*-'"$SUFFIX"'](https://github.com/ArcaneAgent/Auto-Claude/releases/download/v[^/]*/Auto-Claude-[^)]*-'"$SUFFIX"')|Auto-Claude-'"$VERSION"'-'"$SUFFIX"'](https://github.com/ArcaneAgent/Auto-Claude/releases/download/v'"$VERSION"'/Auto-Claude-'"$VERSION"'-'"$SUFFIX"')|g}' README.md
                 done
               fi

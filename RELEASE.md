@@ -37,7 +37,7 @@ Auto Claude uses an automated release pipeline that ensures releases are only pu
 │                     │    - Creates tag v2.8.0                │               │
 │                     │                                        │               │
 │                     │ 5. release.yml (triggered by tag)      │               │
-│                     │    - Builds macOS (Intel + ARM)        │               │
+│                     │    - Builds macOS (Apple Silicon)      │               │
 │                     │    - Builds Windows                    │               │
 │                     │    - Builds Linux                      │               │
 │                     │    - Generates changelog               │               │
@@ -120,7 +120,6 @@ Once the PR is approved and merged to `main`, GitHub Actions will automatically:
 4. **Create a git tag** (e.g., `v2.8.0`)
 5. **Trigger the release workflow** (`release.yml`)
 6. **Build binaries** for all platforms:
-   - macOS Intel (x64) - code signed & notarized
    - macOS Apple Silicon (arm64) - code signed & notarized
    - Windows (NSIS installer) - code signed
    - Linux (AppImage + .deb)

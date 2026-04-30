@@ -143,7 +143,6 @@ const OUTPUT_DIR = 'python-runtime';
 // Get checksums from: https://github.com/indygreg/python-build-standalone/releases/download/{RELEASE_TAG}/SHA256SUMS
 const CHECKSUMS = {
   'darwin-arm64': 'abe1de2494bb8b243fd507944f4d50292848fa00685d5288c858a72623a16635',
-  'darwin-x64': '867c1af10f204224b571f8f2593fc9eb580fe0c2376224d1096ebe855ad8c722',
   'win32-x64': '1a702b3463cf87ec0d2e33902a47e95456053b0178fe96bd673c1dbb554f5d15',
   'linux-x64': '698e53b264a9bcd35cfa15cd680c4d78b0878fa529838844b5ffd0cd661d6bc2',
   'linux-arm64': 'fb983ec85952513f5f013674fcbf4306b1a142c50fcfd914c2c3f00c61a874b0',
@@ -185,10 +184,6 @@ function getDownloadInfo(platform, arch) {
   const configs = {
     'darwin-arm64': {
       filename: `cpython-${version}+${RELEASE_TAG}-aarch64-apple-darwin-install_only_stripped.tar.gz`,
-      extractDir: 'python',
-    },
-    'darwin-x64': {
-      filename: `cpython-${version}+${RELEASE_TAG}-x86_64-apple-darwin-install_only_stripped.tar.gz`,
       extractDir: 'python',
     },
     'win32-x64': {
@@ -816,7 +811,7 @@ function installPackages(pythonBin, requirementsPath, targetSitePackages) {
   // --target: Install to specific directory
   // --only-binary: Force binary wheels for pydantic (prevents silent source build failures)
   // Note: We intentionally DO use pip's cache to preserve built wheels for packages
-  // like real_ladybug that must be compiled from source on Intel Mac (no PyPI wheel)
+  // that must be compiled from source (no prebuilt PyPI wheel for the target platform)
   const pipArgs = [
     '-m', 'pip', 'install',
     '--no-compile',
@@ -1086,7 +1081,6 @@ async function downloadPython(targetPlatform, targetArch, options = {}) {
 async function downloadAllPlatforms() {
   const platforms = [
     { platform: 'darwin', arch: 'arm64' },
-    { platform: 'darwin', arch: 'x64' },
     { platform: 'win32', arch: 'x64' },
     { platform: 'linux', arch: 'x64' },
     { platform: 'linux', arch: 'arm64' },

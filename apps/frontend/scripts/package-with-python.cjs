@@ -96,7 +96,7 @@ function resolvePlatforms() {
   return [...platforms];
 }
 
-function resolveArchs() {
+function resolveArchs(platform) {
   const archs = new Set();
   let wantsUniversal = false;
 
@@ -111,18 +111,29 @@ function resolveArchs() {
   }
 
   if (wantsUniversal) {
+    if (platform === 'mac') {
+      throw new Error(
+        `Universal Mac builds are not supported. Auto-Claude ships Apple Silicon (arm64) only for macOS — use --arm64.`
+      );
+    }
     archs.add('x64');
     archs.add('arm64');
   }
 
   if (archs.size === 0) {
-    archs.add(os.arch());
+    archs.add(platform === 'mac' ? 'arm64' : os.arch());
+  }
+
+  if (platform === 'mac' && archs.has('x64')) {
+    throw new Error(
+      `Mac x64 builds are not supported. Auto-Claude ships Apple Silicon (arm64) only for macOS.`
+    );
   }
 
   for (const arch of archs) {
     if (!['x64', 'arm64'].includes(arch)) {
       throw new Error(
-        `Host architecture '${arch}' is not supported for bundled Python. Please specify --x64 or --arm64 explicitly.`
+        `Architecture '${arch}' is not supported for bundled Python. Please specify --x64 or --arm64 explicitly.`
       );
     }
   }
@@ -249,10 +260,10 @@ async function main() {
   const env = buildEnv(frontendDir);
 
   const platforms = resolvePlatforms();
-  const archs = resolveArchs();
+  const archsByPlatform = new Map(platforms.map((p) => [p, resolveArchs(p)]));
 
   for (const platform of platforms) {
-    for (const arch of archs) {
+    for (const arch of archsByPlatform.get(platform)) {
       await downloadPython(platform, arch);
     }
   }
@@ -260,12 +271,24 @@ async function main() {
   runCommand('electron-vite', ['build'], frontendDir, env);
 
   for (const platform of platforms) {
-    for (const arch of archs) {
+    for (const arch of archsByPlatform.get(platform)) {
       stageRuntimePackages(frontendDir, platform, arch);
     }
   }
 
   const builderArgs = [...args];
+
+  const hasArchFlag = builderArgs.some((arg) => ARCH_FLAGS.has(arg));
+  if (!hasArchFlag) {
+    const resolvedArchs = new Set();
+    for (const archs of archsByPlatform.values()) {
+      for (const arch of archs) resolvedArchs.add(arch);
+    }
+    for (const arch of resolvedArchs) {
+      builderArgs.push(`--${arch}`);
+    }
+  }
+
   const hasPublishFlag = builderArgs.some((arg) => arg === '--publish' || arg.startsWith('--publish='));
   if (!hasPublishFlag) {
     builderArgs.push('--publish', 'never');
