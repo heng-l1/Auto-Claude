@@ -351,6 +351,8 @@
     "mergeViaGitHub": "Merge via GitHub CLI. May fail if branch protection rules require additional reviews or checks.",
     "discussInTerminal": "Discuss in Terminal",
     "discussInTerminalTooltip": "Open an AI terminal to discuss this review interactively",
+    "contextCopied": "PR context copied to clipboard — paste it into Claude's prompt",
+    "contextCopyFailed": "Failed to copy PR context to clipboard",
     "discussion": "Discussion",
     "discussionDescription": "Chat about review findings with AI",
     "discussionEmpty": "Ask a question about the review findings to start a discussion.",

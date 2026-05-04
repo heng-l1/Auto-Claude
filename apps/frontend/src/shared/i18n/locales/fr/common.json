@@ -47,6 +47,8 @@
     "commentPlaceholder": "Ajouter un commentaire...",
     "autoApprovePR": "Approuver la PR",
     "postingApproval": "Approbation en cours...",
-    "suggestions": "avec {{count}} suggestions"
+    "suggestions": "avec {{count}} suggestions",
+    "contextCopied": "Contexte de la PR copié dans le presse-papiers — collez-le dans l'invite de Claude",
+    "contextCopyFailed": "Échec de la copie du contexte de la PR dans le presse-papiers"
   }
 }
