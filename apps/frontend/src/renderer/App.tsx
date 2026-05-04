@@ -73,6 +73,7 @@ import { useIpcListeners } from './hooks/useIpc';
 import { useGlobalTerminalListeners } from './hooks/useGlobalTerminalListeners';
 import { useTerminalProfileChange } from './hooks/useTerminalProfileChange';
 import { useActivityListeners } from './hooks/useActivityListeners';
+import { useToast } from './hooks/use-toast';
 import { COLOR_THEMES, UI_SCALE_MIN, UI_SCALE_MAX, UI_SCALE_DEFAULT, TAB_COLORS } from '../shared/constants';
 import type { Task, Project, ColorTheme, TerminalWorktreeConfig } from '../shared/types';
 import { ProjectTabBar } from './components/ProjectTabBar';
@@ -427,6 +428,7 @@ export function App() {
   };
 
   const { t, i18n } = useTranslation('dialogs');
+  const { toast } = useToast();
 
   // Sync spell check language with i18n language
   useEffect(() => {
@@ -781,6 +783,7 @@ export function App() {
     }
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: t and toast are stable references (i18next-bound t, module-level toast callable) and intentionally excluded from deps
   const handleDiscussInTerminal = useCallback((pr: PRData, reviewResult: PRReviewResult) => {
     const projectPath = selectedProject?.path;
     if (!projectPath) return;
@@ -836,10 +839,28 @@ export function App() {
       title,
       isClaudeMode: true,
       prDiscussionContext: { prNumber: pr.number, repo: reviewResult.repo },
-      pendingClaudeInvocation: { contextMessage },
+      pendingClaudeInvocation: { contextMessage: '' },
     });
     window.electronAPI.setTerminalTitle(terminal.id, title);
     window.electronAPI.setTerminalPRDiscussionContext(terminal.id, { prNumber: pr.number, repo: reviewResult.repo });
+
+    // Copy the PR review context to the clipboard so the user can paste it into
+    // Claude's prompt manually. This avoids the terminal freeze caused by piping
+    // large multi-line messages through PTY stdin (see spec 126).
+    navigator.clipboard.writeText(contextMessage).then(
+      () => {
+        toast({
+          title: t('common:prReview.contextCopied'),
+        });
+      },
+      (err: Error) => {
+        toast({
+          variant: 'destructive',
+          title: t('common:prReview.contextCopyFailed'),
+          description: err.message,
+        });
+      }
+    );
   }, [selectedProject, // Switch to terminals view
     changeActiveView]);
 
