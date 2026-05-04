@@ -783,6 +783,7 @@ export function App() {
     }
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: t and toast are stable references (i18next-bound t, module-level toast callable) and intentionally excluded from deps
   const handleDiscussInTerminal = useCallback((pr: PRData, reviewResult: PRReviewResult) => {
     const projectPath = selectedProject?.path;
     if (!projectPath) return;
