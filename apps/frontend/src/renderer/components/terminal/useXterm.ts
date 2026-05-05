@@ -3,6 +3,7 @@ import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { SerializeAddon } from '@xterm/addon-serialize';
+import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { terminalBufferManager } from '../../lib/terminal-buffer-manager';
 import { registerOutputCallback, unregisterOutputCallback } from '../../stores/terminal-store';
 import { useTerminalFontSettingsStore } from '../../stores/terminal-font-settings-store';
@@ -147,10 +148,16 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
       });
     });
     const serializeAddon = new SerializeAddon();
+    const unicode11Addon = new Unicode11Addon();
 
     xterm.loadAddon(fitAddon);
     xterm.loadAddon(webLinksAddon);
     xterm.loadAddon(serializeAddon);
+    xterm.loadAddon(unicode11Addon);
+    // Without this, xterm defaults to Unicode 6 width tables and measures modern
+    // emoji (✅ 🤔 etc.) as width-1 instead of width-2, corrupting cursor math
+    // and garbling subsequent text — especially under Ink's full-line redraws.
+    xterm.unicode.activeVersion = '11';
 
     // NOTE: xterm.open() is deferred until the container has valid dimensions.
     // This prevents the canvas from being created at 0x0 when mounted inside a
