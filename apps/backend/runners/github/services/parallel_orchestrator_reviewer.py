@@ -138,6 +138,16 @@ SPECIALIST_CONFIGS: list[SpecialistConfig] = [
 ]
 
 
+# Conditional specialist: only spawned when the human reviewer provides notes.
+# Mandate is the note itself, allowing findings outside the 4 baseline domains.
+USER_NOTES_SPECIALIST = SpecialistConfig(
+    name="user-notes",
+    prompt_file="pr_user_notes_agent.md",
+    tools=["Read", "Grep", "Glob"],
+    description="Findings driven by the human reviewer's notes",
+)
+
+
 logger = logging.getLogger(__name__)
 
 # Check if debug mode is enabled
@@ -761,8 +771,12 @@ Report findings with specific file paths, line numbers, and code evidence.
         Returns:
             Tuple of (all_findings, agents_invoked)
         """
+        active_specialists = list(SPECIALIST_CONFIGS)
+        if reviewer_notes and reviewer_notes.strip():
+            active_specialists.append(USER_NOTES_SPECIALIST)
+
         safe_print(
-            f"[ParallelOrchestrator] Launching {len(SPECIALIST_CONFIGS)} specialists in parallel...",
+            f"[ParallelOrchestrator] Launching {len(active_specialists)} specialists in parallel...",
             flush=True,
         )
 
@@ -777,7 +791,7 @@ Report findings with specific file paths, line numbers, and code evidence.
                 reviewer_notes=reviewer_notes,
                 memory_context=memory_context,
             )
-            for config in SPECIALIST_CONFIGS
+            for config in active_specialists
         ]
 
         # Run all specialists in parallel

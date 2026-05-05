@@ -75,6 +75,7 @@ const SOURCE_COLORS: Record<string, string> = {
   'Specialist:quality': 'bg-indigo-600/20 text-indigo-400',
   'Specialist:logic': 'bg-blue-600/20 text-blue-400',
   'Specialist:codebase-fit': 'bg-emerald-600/20 text-emerald-400',
+  'Specialist:user-notes': 'bg-rose-600/20 text-rose-400',
   'default': 'bg-muted text-muted-foreground'
 };
 
