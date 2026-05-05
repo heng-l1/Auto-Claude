@@ -91,6 +91,20 @@ def _load_fts_extension(conn):
         pass
 
 
+def _sanitize_for_fts(obj):
+    # FTS tokenizer fails with "vector with ANY type" on JSON content that
+    # contains empty arrays or null values; strip them recursively before insert.
+    if isinstance(obj, dict):
+        return {
+            k: _sanitize_for_fts(v)
+            for k, v in obj.items()
+            if v is not None and not (isinstance(v, list) and len(v) == 0)
+        }
+    if isinstance(obj, list):
+        return [_sanitize_for_fts(x) for x in obj]
+    return obj
+
+
 def _is_lock_error(error: Exception) -> bool:
     """Check if an error indicates database lock contention."""
     error_msg = str(error).lower()
@@ -587,7 +601,7 @@ def cmd_add_episode(args):
                 # Try to parse as JSON to validate
                 parsed = json.loads(content)
                 # Re-serialize to ensure consistent formatting
-                content = json.dumps(parsed)
+                content = json.dumps(_sanitize_for_fts(parsed))
             except json.JSONDecodeError:
                 # If not valid JSON, use as-is
                 pass
