@@ -230,7 +230,7 @@ export function SortableProjectTab({
                   <input
                     ref={inputRef}
                     type="text"
-                    value={editValue}
+                    value={editValue ?? ''}
                     onChange={(e) => setEditValue(e.target.value)}
                     onKeyDown={handleKeyDown}
                     onBlur={handleSave}
