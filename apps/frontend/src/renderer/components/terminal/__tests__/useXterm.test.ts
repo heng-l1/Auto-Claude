@@ -27,6 +27,8 @@ vi.mock('@xterm/xterm', () => ({
     onResize: vi.fn(),
     dispose: vi.fn(),
     write: vi.fn(),
+    onWriteParsed: vi.fn((_cb) => ({ dispose: vi.fn() })),
+    clearTextureAtlas: vi.fn(),
     parser: {
       registerOscHandler: vi.fn().mockReturnValue({ dispose: vi.fn() }),
     },
