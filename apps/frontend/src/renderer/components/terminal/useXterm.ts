@@ -538,6 +538,12 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
       };
       xterm.options.scrollback = settings.scrollback;
 
+      // Drop cached glyph bitmaps so the next paint re-rasterizes at the new
+      // font metrics. Without this, refresh() reuses stale glyphs sized for the
+      // previous font, producing misaligned characters until the next reflow.
+      // MUST be called BEFORE refresh() - order matters.
+      xterm.clearTextureAtlas();
+
       // Refresh terminal to apply visual changes
       xterm.refresh(0, xterm.rows - 1);
     };
