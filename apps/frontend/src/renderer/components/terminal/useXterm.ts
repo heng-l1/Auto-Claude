@@ -69,6 +69,8 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
   const isDisposedRef = useRef<boolean>(false);
   const isOpenedRef = useRef<boolean>(false);
   const oscHandlerRef = useRef<{ dispose(): void } | null>(null);
+  const writeParsedDisposableRef = useRef<{ dispose(): void } | null>(null);
+  const pendingRefreshIdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dimensionsReadyCalledRef = useRef<boolean>(false);
   // Lazily-loaded WebGL context manager — only populated when gpuAcceleration !== 'off'
   const webglManagerRef = useRef<WebGLContextManagerType | null>(null);
