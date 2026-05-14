@@ -958,6 +958,7 @@ describe('useXterm WebGL context management', () => {
         input: vi.fn(),
         onData: vi.fn(),
         onResize: vi.fn(),
+        onWriteParsed: vi.fn((_cb) => ({ dispose: vi.fn() })),
         dispose: mockDispose,
         write: vi.fn(),
         parser: {
@@ -965,6 +966,7 @@ describe('useXterm WebGL context management', () => {
         },
         selectAll: vi.fn(),
         clear: vi.fn(),
+        clearTextureAtlas: vi.fn(),
         cols: 80,
         rows: 24,
         options: {
@@ -1188,6 +1190,7 @@ describe('useXterm rAF-batched write callback', () => {
         input: vi.fn(),
         onData: vi.fn(),
         onResize: vi.fn(),
+        onWriteParsed: vi.fn((_cb) => ({ dispose: vi.fn() })),
         dispose: vi.fn(),
         write: writeSpy,
         parser: {
@@ -1195,6 +1198,7 @@ describe('useXterm rAF-batched write callback', () => {
         },
         selectAll: vi.fn(),
         clear: vi.fn(),
+        clearTextureAtlas: vi.fn(),
         cols: 80,
         rows: 24,
         options: {

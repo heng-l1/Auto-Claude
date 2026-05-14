@@ -829,6 +829,18 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
       oscHandlerRef.current.dispose();
       oscHandlerRef.current = null;
     }
+    // Clear any pending post-write refresh timer to prevent it firing
+    // after dispose. isDisposedRef guards the callback too, but clearing
+    // the handle releases the timer slot eagerly.
+    if (pendingRefreshIdRef.current !== null) {
+      clearTimeout(pendingRefreshIdRef.current);
+      pendingRefreshIdRef.current = null;
+    }
+    // Dispose the onWriteParsed subscription so no new refreshes get scheduled
+    if (writeParsedDisposableRef.current) {
+      writeParsedDisposableRef.current.dispose();
+      writeParsedDisposableRef.current = null;
+    }
     // Note: webLinksAddon is local and will be disposed when xterm.dispose() is called
     if (xtermRef.current) {
       xtermRef.current.dispose();
