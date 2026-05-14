@@ -223,5 +223,17 @@
     "step3": "Click \"Re-authenticate\" on your profile",
     "gotIt": "Got It",
     "goToSettings": "Go to Settings"
+  },
+  "ralphLoop": {
+    "title": "Launch Ralph Loop",
+    "description": "Run /ralph-loop in this terminal. Claude will iterate on the prompt until the completion promise is met or the maximum number of iterations is reached.",
+    "promptLabel": "Prompt",
+    "promptPlaceholder": "Describe what you want Ralph to do (e.g. \"Fix all failing tests in the auth module\")",
+    "promptRequired": "Prompt is required",
+    "maxIterationsLabel": "Max Iterations",
+    "maxIterationsPlaceholder": "e.g. 10",
+    "completionPromiseLabel": "Completion Promise",
+    "completionPromisePlaceholder": "e.g. \"All tests pass and lint is clean\"",
+    "runButton": "Run"
   }
 }
