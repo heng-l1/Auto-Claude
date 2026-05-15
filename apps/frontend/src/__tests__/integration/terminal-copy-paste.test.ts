@@ -44,6 +44,8 @@ vi.mock('@xterm/xterm', () => ({
         scrollback: 1000
       },
       refresh: vi.fn(),
+      onWriteParsed: vi.fn((_cb: () => void) => ({ dispose: vi.fn() })),
+      clearTextureAtlas: vi.fn(),
       parser: {
         registerOscHandler: vi.fn().mockReturnValue({ dispose: vi.fn() })
       },
@@ -160,7 +162,9 @@ describe('Terminal copy/paste integration', () => {
             theme: { cursorAccent: '#000000' },
             scrollback: 1000
           },
-          refresh: vi.fn()
+          refresh: vi.fn(),
+          onWriteParsed: vi.fn((_cb: () => void) => ({ dispose: vi.fn() })),
+          clearTextureAtlas: vi.fn()
         };
       });
 
@@ -248,7 +252,9 @@ describe('Terminal copy/paste integration', () => {
             theme: { cursorAccent: '#000000' },
             scrollback: 1000
           },
-          refresh: vi.fn()
+          refresh: vi.fn(),
+          onWriteParsed: vi.fn((_cb: () => void) => ({ dispose: vi.fn() })),
+          clearTextureAtlas: vi.fn()
         };
       });
 
@@ -355,7 +361,9 @@ describe('Terminal copy/paste integration', () => {
             theme: { cursorAccent: '#000000' },
             scrollback: 1000
           },
-          refresh: vi.fn()
+          refresh: vi.fn(),
+          onWriteParsed: vi.fn((_cb: () => void) => ({ dispose: vi.fn() })),
+          clearTextureAtlas: vi.fn()
         };
       });
 
@@ -446,7 +454,9 @@ describe('Terminal copy/paste integration', () => {
             theme: { cursorAccent: '#000000' },
             scrollback: 1000
           },
-          refresh: vi.fn()
+          refresh: vi.fn(),
+          onWriteParsed: vi.fn((_cb: () => void) => ({ dispose: vi.fn() })),
+          clearTextureAtlas: vi.fn()
         };
       });
 
@@ -536,7 +546,9 @@ describe('Terminal copy/paste integration', () => {
             theme: { cursorAccent: '#000000' },
             scrollback: 1000
           },
-          refresh: vi.fn()
+          refresh: vi.fn(),
+          onWriteParsed: vi.fn((_cb: () => void) => ({ dispose: vi.fn() })),
+          clearTextureAtlas: vi.fn()
         };
       });
 
@@ -650,7 +662,9 @@ describe('Terminal copy/paste integration', () => {
             theme: { cursorAccent: '#000000' },
             scrollback: 1000
           },
-          refresh: vi.fn()
+          refresh: vi.fn(),
+          onWriteParsed: vi.fn((_cb: () => void) => ({ dispose: vi.fn() })),
+          clearTextureAtlas: vi.fn()
         };
       });
 
@@ -776,7 +790,9 @@ describe('Terminal copy/paste integration', () => {
             theme: { cursorAccent: '#000000' },
             scrollback: 1000
           },
-          refresh: vi.fn()
+          refresh: vi.fn(),
+          onWriteParsed: vi.fn((_cb: () => void) => ({ dispose: vi.fn() })),
+          clearTextureAtlas: vi.fn()
         };
       });
 
@@ -869,6 +885,8 @@ describe('Terminal copy/paste integration', () => {
             scrollback: 1000
           },
           refresh: vi.fn(),
+          onWriteParsed: vi.fn((_cb: () => void) => ({ dispose: vi.fn() })),
+          clearTextureAtlas: vi.fn(),
           parser: {
             registerOscHandler: vi.fn(function(id: number, handler: (data: string) => boolean) {
               if (id === 52) {
@@ -964,6 +982,8 @@ describe('Terminal copy/paste integration', () => {
             scrollback: 1000
           },
           refresh: vi.fn(),
+          onWriteParsed: vi.fn((_cb: () => void) => ({ dispose: vi.fn() })),
+          clearTextureAtlas: vi.fn(),
           parser: {
             registerOscHandler: vi.fn(function(id: number, handler: (data: string) => boolean) {
               if (id === 52) {
@@ -1056,6 +1076,8 @@ describe('Terminal copy/paste integration', () => {
             scrollback: 1000
           },
           refresh: vi.fn(),
+          onWriteParsed: vi.fn((_cb: () => void) => ({ dispose: vi.fn() })),
+          clearTextureAtlas: vi.fn(),
           parser: {
             registerOscHandler: vi.fn(function(id: number, handler: (data: string) => boolean) {
               if (id === 52) {
@@ -1154,6 +1176,8 @@ describe('Terminal copy/paste integration', () => {
             scrollback: 1000
           },
           refresh: vi.fn(),
+          onWriteParsed: vi.fn((_cb: () => void) => ({ dispose: vi.fn() })),
+          clearTextureAtlas: vi.fn(),
           parser: {
             registerOscHandler: vi.fn(function(id: number, handler: (data: string) => boolean) {
               if (id === 52) {
@@ -1250,6 +1274,8 @@ describe('Terminal copy/paste integration', () => {
             scrollback: 1000
           },
           refresh: vi.fn(),
+          onWriteParsed: vi.fn((_cb: () => void) => ({ dispose: vi.fn() })),
+          clearTextureAtlas: vi.fn(),
           parser: {
             registerOscHandler: vi.fn().mockReturnValue({ dispose: vi.fn() })
           },
@@ -1333,6 +1359,8 @@ describe('Terminal copy/paste integration', () => {
             scrollback: 1000
           },
           refresh: vi.fn(),
+          onWriteParsed: vi.fn((_cb: () => void) => ({ dispose: vi.fn() })),
+          clearTextureAtlas: vi.fn(),
           parser: {
             registerOscHandler: vi.fn().mockReturnValue({ dispose: vi.fn() })
           },
