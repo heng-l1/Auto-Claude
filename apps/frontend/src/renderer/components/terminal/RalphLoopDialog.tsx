@@ -15,7 +15,7 @@ import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 
 /**
- * Arguments accepted by the /ralph-loop slash command builder.
+ * Arguments accepted by the /ralph-loop:ralph-loop slash command builder.
  *
  * The dialog normalizes whitespace (newline collapse + trim) before calling
  * onSubmit, so buildRalphLoopCommand assumes a single-line prompt.
@@ -38,7 +38,7 @@ function shellQuote(value: string): string {
 }
 
 /**
- * Builds a single-line `/ralph-loop` slash command from the dialog's form
+ * Builds a single-line `/ralph-loop:ralph-loop` slash command from the dialog's form
  * inputs. Every user-supplied string is shell-quoted because Claude Code
  * forwards $ARGUMENTS to bash without re-quoting.
  *
@@ -51,7 +51,7 @@ export function buildRalphLoopCommand({
   maxIterations,
   completionPromise,
 }: RalphLoopCommandArgs): string {
-  const parts = ['/ralph-loop', shellQuote(prompt)];
+  const parts = ['/ralph-loop:ralph-loop', shellQuote(prompt)];
 
   if (
     typeof maxIterations === 'number' &&
