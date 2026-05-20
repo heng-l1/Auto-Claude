@@ -70,6 +70,8 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
   const isDisposedRef = useRef<boolean>(false);
   const isOpenedRef = useRef<boolean>(false);
   const oscHandlerRef = useRef<{ dispose(): void } | null>(null);
+  const writeParsedDisposableRef = useRef<{ dispose(): void } | null>(null);
+  const pendingRefreshIdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dimensionsReadyCalledRef = useRef<boolean>(false);
   // Lazily-loaded WebGL context manager — only populated when gpuAcceleration !== 'off'
   const webglManagerRef = useRef<WebGLContextManagerType | null>(null);
@@ -158,6 +160,25 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
     // emoji (✅ 🤔 etc.) as width-1 instead of width-2, corrupting cursor math
     // and garbling subsequent text — especially under Ink's full-line redraws.
     xterm.unicode.activeVersion = '11';
+
+    // Force a full-row repaint shortly after each write burst settles. xterm's
+    // dirty-cell optimization can miss cells when Ink does cursor-up + clear-line +
+    // reprint with width changes between frames, leaving stale glyphs visible
+    // until the next resize. Debouncing to ~32ms means at most one full redraw
+    // per render frame during heavy streaming and no work when idle.
+    // Leading-edge debounce: if a timer is already pending, do nothing — the
+    // pending timer will fire and cover the burst. xterm.rows is read INSIDE
+    // the setTimeout callback so a resize between schedule and fire is safe.
+    const REFRESH_DEBOUNCE_MS = 32;
+    writeParsedDisposableRef.current = xterm.onWriteParsed(() => {
+      if (isDisposedRef.current) return;
+      if (pendingRefreshIdRef.current !== null) return;
+      pendingRefreshIdRef.current = setTimeout(() => {
+        pendingRefreshIdRef.current = null;
+        if (isDisposedRef.current || !xtermRef.current) return;
+        xtermRef.current.refresh(0, xtermRef.current.rows - 1);
+      }, REFRESH_DEBOUNCE_MS);
+    });
 
     // NOTE: xterm.open() is deferred until the container has valid dimensions.
     // This prevents the canvas from being created at 0x0 when mounted inside a
@@ -524,6 +545,12 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
       };
       xterm.options.scrollback = settings.scrollback;
 
+      // Drop cached glyph bitmaps so the next paint re-rasterizes at the new
+      // font metrics. Without this, refresh() reuses stale glyphs sized for the
+      // previous font, producing misaligned characters until the next reflow.
+      // MUST be called BEFORE refresh() - order matters.
+      xterm.clearTextureAtlas();
+
       // Refresh terminal to apply visual changes
       xterm.refresh(0, xterm.rows - 1);
     };
@@ -808,6 +835,18 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
     if (oscHandlerRef.current) {
       oscHandlerRef.current.dispose();
       oscHandlerRef.current = null;
+    }
+    // Clear any pending post-write refresh timer to prevent it firing
+    // after dispose. isDisposedRef guards the callback too, but clearing
+    // the handle releases the timer slot eagerly.
+    if (pendingRefreshIdRef.current !== null) {
+      clearTimeout(pendingRefreshIdRef.current);
+      pendingRefreshIdRef.current = null;
+    }
+    // Dispose the onWriteParsed subscription so no new refreshes get scheduled
+    if (writeParsedDisposableRef.current) {
+      writeParsedDisposableRef.current.dispose();
+      writeParsedDisposableRef.current = null;
     }
     // Note: webLinksAddon is local and will be disposed when xterm.dispose() is called
     if (xtermRef.current) {

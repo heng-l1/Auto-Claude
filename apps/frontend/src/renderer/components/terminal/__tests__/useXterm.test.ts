@@ -12,6 +12,7 @@ import { act, render } from '@testing-library/react';
 import React from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { useXterm } from '../useXterm';
+import { useTerminalFontSettingsStore } from '../../../stores/terminal-font-settings-store';
 
 // Mock xterm.js
 vi.mock('@xterm/xterm', () => ({
@@ -27,6 +28,8 @@ vi.mock('@xterm/xterm', () => ({
     onResize: vi.fn(),
     dispose: vi.fn(),
     write: vi.fn(),
+    onWriteParsed: vi.fn((_cb) => ({ dispose: vi.fn() })),
+    clearTextureAtlas: vi.fn(),
     parser: {
       registerOscHandler: vi.fn().mockReturnValue({ dispose: vi.fn() }),
     },
@@ -151,6 +154,8 @@ async function setupMockXterm(overrides: {
       onResize: vi.fn(),
       dispose: vi.fn(),
       write: vi.fn(),
+      onWriteParsed: vi.fn((_cb) => ({ dispose: vi.fn() })),
+      clearTextureAtlas: vi.fn(),
       parser: {
         registerOscHandler: vi.fn().mockReturnValue({ dispose: vi.fn() }),
       },
@@ -954,6 +959,7 @@ describe('useXterm WebGL context management', () => {
         input: vi.fn(),
         onData: vi.fn(),
         onResize: vi.fn(),
+        onWriteParsed: vi.fn((_cb) => ({ dispose: vi.fn() })),
         dispose: mockDispose,
         write: vi.fn(),
         parser: {
@@ -961,6 +967,7 @@ describe('useXterm WebGL context management', () => {
         },
         selectAll: vi.fn(),
         clear: vi.fn(),
+        clearTextureAtlas: vi.fn(),
         cols: 80,
         rows: 24,
         options: {
@@ -1184,6 +1191,7 @@ describe('useXterm rAF-batched write callback', () => {
         input: vi.fn(),
         onData: vi.fn(),
         onResize: vi.fn(),
+        onWriteParsed: vi.fn((_cb) => ({ dispose: vi.fn() })),
         dispose: vi.fn(),
         write: writeSpy,
         parser: {
@@ -1191,6 +1199,7 @@ describe('useXterm rAF-batched write callback', () => {
         },
         selectAll: vi.fn(),
         clear: vi.fn(),
+        clearTextureAtlas: vi.fn(),
         cols: 80,
         rows: 24,
         options: {
@@ -1363,5 +1372,254 @@ describe('useXterm rAF-batched write callback', () => {
     // throws ReferenceError because global.cancelAnimationFrame is gone.
     unmount();
     expect(cafSpy).toHaveBeenCalledWith(RAF_HANDLE_ID);
+  });
+});
+
+/**
+ * Post-write refresh debounce tests.
+ *
+ * These cover the 32ms leading-edge debounced full-row refresh that runs after
+ * each xterm onWriteParsed event — fixes phantom characters left behind by
+ * xterm.js dirty-cell tracking during Claude/Ink streaming — and the
+ * clearTextureAtlas-before-refresh ordering in the font-settings subscription,
+ * which drops the stale glyph cache before the next paint so changes to font
+ * size / family / line-height don't produce misaligned text from cached glyphs
+ * sized at the previous metrics.
+ *
+ * Tests fire the captured onWriteParsed callback directly (the mock returns a
+ * disposable but does not auto-invoke it) and use vi.useFakeTimers() so the
+ * 32ms setTimeout is deterministic.
+ */
+describe('post-write refresh debounce', () => {
+  // Preserve whatever rAF/cAF prior describe blocks installed so afterAll can
+  // restore — keeps this block hermetic from the other suites in this file.
+  const outerRequestAnimationFrame = global.requestAnimationFrame;
+  const outerCancelAnimationFrame = global.cancelAnimationFrame;
+
+  // Fresh per-test spies captured from the XTerm mock implementation below.
+  // capturedWriteParsedCallback is populated when useXterm subscribes via
+  // xterm.onWriteParsed(); tests fire it manually to simulate a write burst.
+  let refreshSpy: ReturnType<typeof vi.fn>;
+  let clearTextureAtlasSpy: ReturnType<typeof vi.fn>;
+  let writeParsedDisposeSpy: ReturnType<typeof vi.fn>;
+  let capturedWriteParsedCallback: (() => void) | null;
+
+  beforeAll(() => {
+    global.requestAnimationFrame = vi.fn((cb: FrameRequestCallback) => setTimeout(cb, 0) as unknown as number);
+    global.cancelAnimationFrame = vi.fn((id: number) => clearTimeout(id));
+  });
+
+  afterAll(() => {
+    global.requestAnimationFrame = outerRequestAnimationFrame;
+    global.cancelAnimationFrame = outerCancelAnimationFrame;
+  });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    refreshSpy = vi.fn();
+    clearTextureAtlasSpy = vi.fn();
+    writeParsedDisposeSpy = vi.fn();
+    capturedWriteParsedCallback = null;
+
+    // ResizeObserver is referenced by useXterm's resize effect on mount.
+    global.ResizeObserver = vi.fn().mockImplementation(function() {
+      return { observe: vi.fn(), unobserve: vi.fn(), disconnect: vi.fn() };
+    });
+
+    // window.electronAPI is referenced during xterm init (onData -> sendTerminalInput).
+    (window as unknown as { electronAPI: unknown }).electronAPI = {
+      sendTerminalInput: vi.fn(),
+      openExternal: vi.fn(),
+    };
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * Render useXterm with a fresh XTerm mock that captures the onWriteParsed
+   * callback into capturedWriteParsedCallback and wires refresh /
+   * clearTextureAtlas to the suite-scoped spies. Returns dispose + unmount
+   * handles for tests that exercise teardown.
+   */
+  async function renderForDebounce(terminalId = 'test-debounce-terminal') {
+    (XTerm as unknown as Mock).mockImplementation(function() {
+      return {
+        open: vi.fn(),
+        loadAddon: vi.fn(),
+        attachCustomKeyEventHandler: vi.fn(),
+        hasSelection: vi.fn(() => false),
+        getSelection: vi.fn(() => ''),
+        paste: vi.fn(),
+        input: vi.fn(),
+        onData: vi.fn(),
+        onResize: vi.fn(),
+        // Capture the onWriteParsed callback so tests can fire it directly.
+        // The mock does not auto-invoke; tests own the timing. The returned
+        // disposable's dispose spy is asserted on in the dispose-cleanup test.
+        onWriteParsed: vi.fn((cb: () => void) => {
+          capturedWriteParsedCallback = cb;
+          return { dispose: writeParsedDisposeSpy };
+        }),
+        dispose: vi.fn(),
+        write: vi.fn(),
+        parser: {
+          registerOscHandler: vi.fn().mockReturnValue({ dispose: vi.fn() }),
+        },
+        selectAll: vi.fn(),
+        clear: vi.fn(),
+        clearTextureAtlas: clearTextureAtlasSpy,
+        cols: 80,
+        rows: 24,
+        options: {
+          cursorBlink: true,
+          cursorStyle: 'block',
+          fontSize: 14,
+          fontFamily: 'monospace',
+          fontWeight: 'normal',
+          lineHeight: 1,
+          letterSpacing: 0,
+          theme: { cursorAccent: '#000000' },
+          scrollback: 1000,
+        },
+        refresh: refreshSpy,
+      };
+    });
+
+    const { FitAddon } = await import('@xterm/addon-fit');
+    (FitAddon as unknown as Mock).mockImplementation(function() {
+      return { fit: vi.fn(), dispose: vi.fn() };
+    });
+
+    const { WebLinksAddon } = await import('@xterm/addon-web-links');
+    (WebLinksAddon as unknown as Mock).mockImplementation(function() {
+      return {};
+    });
+
+    const { SerializeAddon } = await import('@xterm/addon-serialize');
+    (SerializeAddon as unknown as Mock).mockImplementation(function() {
+      return { serialize: vi.fn(() => ''), dispose: vi.fn() };
+    });
+
+    let hookReturn: ReturnType<typeof useXterm> | null = null;
+
+    const TestWrapper = () => {
+      const result = useXterm({ terminalId });
+      hookReturn = result;
+      return React.createElement('div', { ref: result.terminalRef });
+    };
+
+    const rendered = render(React.createElement(TestWrapper));
+
+    // Any refresh calls inside performInitialFit's deferred raf callback are
+    // bookkeeping (forced repaint after the first fit) — not part of the
+    // debounced post-write path under test. Clear so assertions only count
+    // refreshes triggered by the onWriteParsed callback or font subscription.
+    refreshSpy.mockClear();
+
+    return {
+      unmount: rendered.unmount,
+      dispose: () => hookReturn?.dispose(),
+    };
+  }
+
+  it('single write triggers exactly one refresh within 50ms', async () => {
+    await renderForDebounce();
+
+    expect(capturedWriteParsedCallback).not.toBeNull();
+    if (!capturedWriteParsedCallback) throw new Error('Expected onWriteParsed callback to have been captured');
+
+    // Fire a single write-parsed event — arms the 32ms debounce timer.
+    capturedWriteParsedCallback();
+
+    // Before the timer fires, no refresh yet.
+    expect(refreshSpy).not.toHaveBeenCalled();
+
+    // Advance past the debounce window (32ms + headroom).
+    await vi.advanceTimersByTimeAsync(50);
+
+    // Exactly one refresh, called with (0, rows - 1). rows=24 on the mock, so
+    // refresh(0, 23). This is the post-write full-row repaint that fixes the
+    // phantom-character bug.
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+    expect(refreshSpy).toHaveBeenCalledWith(0, 23);
+  });
+
+  it('five writes within 32ms coalesce to one refresh', async () => {
+    await renderForDebounce();
+
+    if (!capturedWriteParsedCallback) throw new Error('Expected onWriteParsed callback to have been captured');
+
+    // Fire 5 onWriteParsed events back-to-back synchronously. Leading-edge
+    // debounce: the first arms the timer; calls 2-5 are skipped because
+    // pendingRefreshIdRef is non-null. This caps repaints at ~30fps regardless
+    // of burst size, which is the whole point of the fix.
+    capturedWriteParsedCallback();
+    capturedWriteParsedCallback();
+    capturedWriteParsedCallback();
+    capturedWriteParsedCallback();
+    capturedWriteParsedCallback();
+
+    expect(refreshSpy).not.toHaveBeenCalled();
+
+    // Advance past the debounce window — exactly one refresh fires for the
+    // whole burst.
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+    expect(refreshSpy).toHaveBeenCalledWith(0, 23);
+  });
+
+  it('dispose clears pending timeout and disposes handle', async () => {
+    const { dispose } = await renderForDebounce();
+
+    if (!capturedWriteParsedCallback) throw new Error('Expected onWriteParsed callback to have been captured');
+
+    // Fire once to arm the timer.
+    capturedWriteParsedCallback();
+    expect(refreshSpy).not.toHaveBeenCalled();
+
+    // Dispose before the timer fires. Cleanup must clearTimeout the pending id
+    // AND call .dispose() on the onWriteParsed handle so no late refresh fires
+    // against a torn-down xterm instance.
+    dispose();
+
+    // Advance well past the debounce window; the cleared timer must not fire.
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(refreshSpy).not.toHaveBeenCalled();
+    expect(writeParsedDisposeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('font settings subscription clears texture atlas before refresh', async () => {
+    await renderForDebounce();
+
+    // Trigger the font-settings subscription. Any setter that changes state
+    // fires the subscribe() callback in useXterm, which calls
+    // updateTerminalOptions → clearTextureAtlas() then refresh(0, rows - 1).
+    // Use a value different from the current one so the change is real (the
+    // store doesn't dedupe, but using a real change keeps the test honest
+    // against future Zustand behavior).
+    const currentSize = useTerminalFontSettingsStore.getState().fontSize;
+    const newSize = currentSize === 16 ? 15 : 16;
+    act(() => {
+      useTerminalFontSettingsStore.getState().setFontSize(newSize);
+    });
+
+    // Both methods called exactly once on this update.
+    expect(clearTextureAtlasSpy).toHaveBeenCalledTimes(1);
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+    expect(refreshSpy).toHaveBeenCalledWith(0, 23);
+
+    // Verify clearTextureAtlas ran BEFORE refresh via invocationCallOrder.
+    // Order matters: clearing the atlas after the paint would leave the next
+    // frame painting with the stale glyph cache, defeating the fix.
+    const clearOrder = clearTextureAtlasSpy.mock.invocationCallOrder[0];
+    const refreshOrder = refreshSpy.mock.invocationCallOrder[0];
+    expect(clearOrder).toBeLessThan(refreshOrder);
   });
 });
