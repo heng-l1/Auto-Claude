@@ -644,6 +644,7 @@ describe('claude-integration-handler', () => {
 
     const written = mockWriteToPty.mock.calls[0][1] as string;
     expect(written).toContain('--dangerously-skip-permissions');
+    expect(written).toContain('--permission-mode auto');
     expect(terminal.dangerouslySkipPermissions).toBe(true);
   });
 
@@ -667,6 +668,7 @@ describe('claude-integration-handler', () => {
 
     const written = mockWriteToPty.mock.calls[0][1] as string;
     expect(written).not.toContain('--dangerously-skip-permissions');
+    expect(written).not.toContain('--permission-mode auto');
     expect(terminal.dangerouslySkipPermissions).toBe(false);
   });
 
@@ -848,6 +850,7 @@ describe('invokeClaudeAsync', () => {
 
       const written = mockWriteToPty.mock.calls[0][1] as string;
       expect(written).toContain('--dangerously-skip-permissions');
+      expect(written).toContain('--permission-mode auto');
       expect(terminal.dangerouslySkipPermissions).toBe(true);
     });
 

@@ -261,6 +261,16 @@ function escapeShellCommand(cmd: string): string {
 const YOLO_MODE_FLAG = ' --dangerously-skip-permissions';
 
 /**
+ * Flag for Claude's auto permission mode (auto-approve safe actions; classifier still blocks destructive ones).
+ * Paired with the YOLO flag so unattended-coding behavior is preserved in environments where
+ * `--dangerously-skip-permissions` is disabled but `--permission-mode auto` is honored (or vice-versa).
+ * At concatenation sites the YOLO flag must come first and this flag second — both effectively set
+ * --permission-mode, and under last-wins argv parsing `auto` wins (the safer outcome).
+ * Requires Claude Code v2.1.83 or later.
+ */
+const AUTO_PERMISSION_MODE_FLAG = ' --permission-mode auto';
+
+/**
  * Environment variable name for setting Claude Code effort level.
  * When set to EFFORT_MAX_VALUE, enables deepest reasoning in Claude CLI.
  * Injected as a platform-aware shell prefix via buildEnvPrefix().
@@ -1480,8 +1490,8 @@ export function invokeClaude(
   debugLog('[ClaudeIntegration:invokeClaude] Dangerously skip permissions:', dangerouslySkipPermissions);
   debugLog('[ClaudeIntegration:invokeClaude] Effort max:', effortMax);
 
-  // Compute extra flags for YOLO mode
-  const extraFlags = dangerouslySkipPermissions ? YOLO_MODE_FLAG : undefined;
+  // Compute extra flags for YOLO mode (pair --dangerously-skip-permissions with --permission-mode auto)
+  const extraFlags = dangerouslySkipPermissions ? `${YOLO_MODE_FLAG}${AUTO_PERMISSION_MODE_FLAG}` : undefined;
 
   // Compute env vars for effort max mode
   const envVars = effortMax ? { [EFFORT_MAX_ENV_VAR]: EFFORT_MAX_VALUE } : undefined;
@@ -1633,8 +1643,8 @@ export function resumeClaude(
       console.warn('[ClaudeIntegration:resumeClaude] sessionId parameter is deprecated and ignored; using claude --continue instead');
     }
 
-    // Preserve YOLO mode flag from terminal's stored state
-    const extraFlags = terminal.dangerouslySkipPermissions ? YOLO_MODE_FLAG : '';
+    // Preserve YOLO mode flag from terminal's stored state (paired with --permission-mode auto)
+    const extraFlags = terminal.dangerouslySkipPermissions ? `${YOLO_MODE_FLAG}${AUTO_PERMISSION_MODE_FLAG}` : '';
 
     // Preserve effort max env var from terminal's stored state
     const envVarsPrefix = terminal.effortMax
@@ -1711,8 +1721,8 @@ export async function invokeClaudeAsync(
       cwd = fallback;
     }
 
-    // Compute extra flags for YOLO mode
-    const extraFlags = dangerouslySkipPermissions ? YOLO_MODE_FLAG : undefined;
+    // Compute extra flags for YOLO mode (pair --dangerously-skip-permissions with --permission-mode auto)
+    const extraFlags = dangerouslySkipPermissions ? `${YOLO_MODE_FLAG}${AUTO_PERMISSION_MODE_FLAG}` : undefined;
 
     // Compute env vars for effort max mode
     const envVars = effortMax ? { [EFFORT_MAX_ENV_VAR]: EFFORT_MAX_VALUE } : undefined;
@@ -1885,8 +1895,8 @@ export async function resumeClaudeAsync(
       debugLog('[ClaudeIntegration:resumeClaudeAsync] Post-swap resume for terminal:', terminal.id);
     }
 
-    // Preserve YOLO mode flag from terminal's stored state
-    const extraFlags = terminal.dangerouslySkipPermissions ? YOLO_MODE_FLAG : '';
+    // Preserve YOLO mode flag from terminal's stored state (paired with --permission-mode auto)
+    const extraFlags = terminal.dangerouslySkipPermissions ? `${YOLO_MODE_FLAG}${AUTO_PERMISSION_MODE_FLAG}` : '';
 
     // Preserve effort max env var from terminal's stored state
     const envVarsPrefix = terminal.effortMax

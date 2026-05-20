@@ -94,7 +94,7 @@ export function registerTerminalHandlers(
 
         // Build simple command: just "claude" with flags
         let cmd = 'claude';
-        if (yolo) cmd += ' --dangerously-skip-permissions';
+        if (yolo) cmd += ' --dangerously-skip-permissions --permission-mode auto';
         if (yoloMax) cmd = `CLAUDE_CODE_EFFORT_LEVEL=max ${cmd}`;
 
         // Write directly to PTY
