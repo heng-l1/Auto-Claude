@@ -18,6 +18,7 @@ import enErrors from './locales/en/errors.json';
 import frCommon from './locales/fr/common.json';
 import frTerminal from './locales/fr/terminal.json';
 import frSettings from './locales/fr/settings.json';
+import frDialogs from './locales/fr/dialogs.json';
 
 export const defaultNS = 'common';
 
@@ -38,7 +39,8 @@ export const resources = {
   fr: {
     common: frCommon,
     terminal: frTerminal,
-    settings: frSettings
+    settings: frSettings,
+    dialogs: frDialogs
   }
 } as const;
 

@@ -3,6 +3,10 @@
     "expand": "Expand terminal",
     "collapse": "Collapse terminal"
   },
+  "ralphLoop": {
+    "buttonLabel": "Ralph Loop",
+    "buttonTitle": "Start a Ralph Loop in this terminal"
+  },
   "resume": {
     "pending": "Resume Available",
     "pendingTooltip": "Click to resume previous Claude session",

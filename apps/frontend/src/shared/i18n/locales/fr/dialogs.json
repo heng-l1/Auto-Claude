@@ -1,0 +1,14 @@
+{
+  "ralphLoop": {
+    "title": "Lancer la boucle Ralph",
+    "description": "Exécuter /ralph-loop dans ce terminal. Claude itérera sur l'invite jusqu'à ce que la promesse d'achèvement soit remplie ou que le nombre maximum d'itérations soit atteint.",
+    "promptLabel": "Invite",
+    "promptPlaceholder": "Décrivez ce que vous voulez que Ralph fasse (par ex. « Corriger tous les tests qui échouent dans le module auth »)",
+    "promptRequired": "L'invite est requise",
+    "maxIterationsLabel": "Itérations maximales",
+    "maxIterationsPlaceholder": "par ex. 10",
+    "completionPromiseLabel": "Promesse d'achèvement",
+    "completionPromisePlaceholder": "par ex. « Tous les tests passent et le linter est propre »",
+    "runButton": "Exécuter"
+  }
+}

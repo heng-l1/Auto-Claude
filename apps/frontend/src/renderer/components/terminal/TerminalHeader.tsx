@@ -1,4 +1,4 @@
-import { X, Sparkles, TerminalSquare, FolderGit, ExternalLink, GripVertical, Maximize2, Minimize2, RotateCcw, Globe } from 'lucide-react';
+import { X, Sparkles, TerminalSquare, FolderGit, ExternalLink, GripVertical, Maximize2, Minimize2, RotateCcw, Globe, Repeat } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { SyntheticListenerMap } from '@dnd-kit/core/dist/hooks/utilities';
 import type { Task, TerminalWorktreeConfig } from '../../../shared/types';
@@ -21,6 +21,8 @@ interface TerminalHeaderProps {
   associatedTask?: Task;
   onClose: () => void;
   onInvokeClaude: () => void;
+  /** Callback to open the Ralph Loop launcher dialog */
+  onRalphLoop?: () => void;
   onTitleChange: (newTitle: string) => void;
   onTaskSelect: (taskId: string) => void;
   onClearTask: () => void;
@@ -63,6 +65,7 @@ export function TerminalHeader({
   associatedTask,
   onClose,
   onInvokeClaude,
+  onRalphLoop,
   onTitleChange,
   onTaskSelect,
   onClearTask,
@@ -264,6 +267,24 @@ export function TerminalHeader({
           >
             <Sparkles className="h-3 w-3" />
             {terminalCount < 4 && <span>Claude</span>}
+          </Button>
+        )}
+        {status !== 'exited' && onRalphLoop && (
+          <Button
+            variant="ghost"
+            size={terminalCount >= 4 ? 'icon' : 'sm'}
+            className={cn(
+              'h-6 hover:bg-primary/10 hover:text-primary',
+              terminalCount >= 4 ? 'w-6' : 'px-2 text-xs gap-1'
+            )}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRalphLoop();
+            }}
+            title={t('terminal:ralphLoop.buttonTitle')}
+          >
+            <Repeat className="h-3 w-3" />
+            {terminalCount < 4 && <span>{t('terminal:ralphLoop.buttonLabel')}</span>}
           </Button>
         )}
         {/* Expand/collapse button */}

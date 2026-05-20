@@ -12,6 +12,7 @@ import type { TerminalWorktreeConfig } from '../../shared/types';
 import { TerminalHeader } from './terminal/TerminalHeader';
 import { TerminalContextMenu } from './terminal/TerminalContextMenu';
 import { CreateWorktreeDialog } from './terminal/CreateWorktreeDialog';
+import { RalphLoopDialog, buildRalphLoopCommand, type RalphLoopCommandArgs } from './terminal/RalphLoopDialog';
 import { useXterm } from './terminal/useXterm';
 import { usePtyProcess } from './terminal/usePtyProcess';
 import { useTerminalEvents } from './terminal/useTerminalEvents';
@@ -163,6 +164,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
   // Worktree dialog state
   const [showWorktreeDialog, setShowWorktreeDialog] = useState(false);
+
+  // Ralph Loop dialog state
+  const [showRalphLoopDialog, setShowRalphLoopDialog] = useState(false);
 
   // Terminal store
   const terminal = useTerminalStore((state) => state.terminals.find((t) => t.id === id));
@@ -786,6 +790,38 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     }
   }, [id, effectiveCwd, setClaudeMode, terminal?.foregroundProcess, remoteProcesses]);
 
+  // Open the Ralph Loop dialog
+  const handleRalphLoopOpen = useCallback(() => {
+    setShowRalphLoopDialog(true);
+  }, []);
+
+  // Submit Ralph Loop command from the dialog.
+  // If Claude is already running, send the command directly; otherwise launch
+  // Claude (mirroring handleInvokeClaude's local/remote routing) then send the
+  // command after a startup delay to let Claude's prompt initialize.
+  const handleRalphLoopSubmit = useCallback((args: RalphLoopCommandArgs) => {
+    const cmd = buildRalphLoopCommand(args);
+
+    if (terminal?.isClaudeMode) {
+      window.electronAPI.sendTerminalInput(id, cmd + '\r');
+      return;
+    }
+
+    setClaudeMode(id, true);
+    const fg = terminal?.foregroundProcess;
+    const isRemote = !!(fg && remoteProcesses.has(fg));
+    if (isRemote) {
+      window.electronAPI.invokeClaudeInTerminalRemote(id);
+    } else {
+      window.electronAPI.invokeClaudeInTerminal(id, effectiveCwd);
+    }
+    setTimeout(() => {
+      if (isMountedRef.current) {
+        window.electronAPI.sendTerminalInput(id, cmd + '\r');
+      }
+    }, 3000);
+  }, [id, effectiveCwd, setClaudeMode, terminal?.isClaudeMode, terminal?.foregroundProcess, remoteProcesses]);
+
   const handleClick = useCallback(() => {
     onActivate();
     focus();
@@ -1092,6 +1128,7 @@ Please confirm you're ready by saying: I'm ready to work on ${selectedTask.title
         associatedTask={associatedTask}
         onClose={onClose}
         onInvokeClaude={handleInvokeClaude}
+        onRalphLoop={handleRalphLoopOpen}
         onTitleChange={handleTitleChange}
         onTaskSelect={handleTaskSelect}
         onClearTask={handleClearTask}
@@ -1129,6 +1166,14 @@ Please confirm you're ready by saying: I'm ready to work on ${selectedTask.title
           onWorktreeCreated={handleWorktreeCreated}
         />
       )}
+
+      {/* Ralph Loop dialog - rendered outside the projectPath guard so it works
+          regardless of whether a project is open (e.g. raw shell terminals). */}
+      <RalphLoopDialog
+        open={showRalphLoopDialog}
+        onOpenChange={setShowRalphLoopDialog}
+        onSubmit={handleRalphLoopSubmit}
+      />
 
       {/* Context menu */}
       <TerminalContextMenu

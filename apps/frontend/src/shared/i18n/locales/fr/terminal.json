@@ -3,6 +3,10 @@
     "expand": "Agrandir le terminal",
     "collapse": "Réduire le terminal"
   },
+  "ralphLoop": {
+    "buttonLabel": "Boucle Ralph",
+    "buttonTitle": "Démarrer une boucle Ralph dans ce terminal"
+  },
   "resume": {
     "pending": "Reprise disponible",
     "pendingTooltip": "Cliquez pour reprendre la session Claude précédente",
