@@ -5,7 +5,7 @@
  * RalphLoopDialog Tests
  *
  * Covers the seven scenarios from spec.md "QA Acceptance Criteria → Unit Tests":
- *   1. buildRalphLoopCommand — prompt only returns `/ralph-loop "the prompt"`.
+ *   1. buildRalphLoopCommand — prompt only returns `/ralph-loop:ralph-loop "the prompt"`.
  *   2. buildRalphLoopCommand — shell-escape: each of `"`, `\`, `$`, and backtick
  *      is escaped with exactly one backslash inside the surrounding double quotes.
  *   3. buildRalphLoopCommand — maxIterations gating: 5 adds the flag; 0, NaN,
@@ -28,9 +28,9 @@ import { RalphLoopDialog, buildRalphLoopCommand } from '../RalphLoopDialog';
 
 describe('buildRalphLoopCommand', () => {
   // Test 1: prompt only
-  it('should return /ralph-loop "the prompt" with no flags when only prompt is provided', () => {
+  it('should return /ralph-loop:ralph-loop "the prompt" with no flags when only prompt is provided', () => {
     expect(buildRalphLoopCommand({ prompt: 'the prompt' })).toBe(
-      '/ralph-loop "the prompt"'
+      '/ralph-loop:ralph-loop "the prompt"'
     );
   });
 
@@ -38,33 +38,33 @@ describe('buildRalphLoopCommand', () => {
   describe('shell-escape', () => {
     it('should escape a double quote with exactly one backslash', () => {
       // Input prompt: a"b (3 chars: a, ", b)
-      // Expected output: /ralph-loop "a\"b"
+      // Expected output: /ralph-loop:ralph-loop "a\"b"
       expect(buildRalphLoopCommand({ prompt: 'a"b' })).toBe(
-        '/ralph-loop "a\\"b"'
+        '/ralph-loop:ralph-loop "a\\"b"'
       );
     });
 
     it('should escape a backslash with exactly one backslash', () => {
       // Input prompt: a\b (3 chars: a, \, b)
-      // Expected output: /ralph-loop "a\\b"
+      // Expected output: /ralph-loop:ralph-loop "a\\b"
       expect(buildRalphLoopCommand({ prompt: 'a\\b' })).toBe(
-        '/ralph-loop "a\\\\b"'
+        '/ralph-loop:ralph-loop "a\\\\b"'
       );
     });
 
     it('should escape a dollar sign with exactly one backslash', () => {
       // Input prompt: a$b (3 chars: a, $, b)
-      // Expected output: /ralph-loop "a\$b"
+      // Expected output: /ralph-loop:ralph-loop "a\$b"
       expect(buildRalphLoopCommand({ prompt: 'a$b' })).toBe(
-        '/ralph-loop "a\\$b"'
+        '/ralph-loop:ralph-loop "a\\$b"'
       );
     });
 
     it('should escape a backtick with exactly one backslash', () => {
       // Input prompt: a`b (3 chars: a, `, b)
-      // Expected output: /ralph-loop "a\`b"
+      // Expected output: /ralph-loop:ralph-loop "a\`b"
       expect(buildRalphLoopCommand({ prompt: 'a`b' })).toBe(
-        '/ralph-loop "a\\`b"'
+        '/ralph-loop:ralph-loop "a\\`b"'
       );
     });
 
@@ -73,7 +73,7 @@ describe('buildRalphLoopCommand', () => {
       expect(
         buildRalphLoopCommand({ prompt: 'fix `bug` and "test" with $VAR \\path' })
       ).toBe(
-        '/ralph-loop "fix \\`bug\\` and \\"test\\" with \\$VAR \\\\path"'
+        '/ralph-loop:ralph-loop "fix \\`bug\\` and \\"test\\" with \\$VAR \\\\path"'
       );
     });
   });
@@ -82,42 +82,42 @@ describe('buildRalphLoopCommand', () => {
   describe('maxIterations gating', () => {
     it('should include --max-iterations 5 when maxIterations is 5', () => {
       expect(buildRalphLoopCommand({ prompt: 'p', maxIterations: 5 })).toBe(
-        '/ralph-loop "p" --max-iterations 5'
+        '/ralph-loop:ralph-loop "p" --max-iterations 5'
       );
     });
 
     it('should omit the flag when maxIterations is 0', () => {
       expect(buildRalphLoopCommand({ prompt: 'p', maxIterations: 0 })).toBe(
-        '/ralph-loop "p"'
+        '/ralph-loop:ralph-loop "p"'
       );
     });
 
     it('should omit the flag when maxIterations is NaN', () => {
       expect(
         buildRalphLoopCommand({ prompt: 'p', maxIterations: Number.NaN })
-      ).toBe('/ralph-loop "p"');
+      ).toBe('/ralph-loop:ralph-loop "p"');
     });
 
     it('should omit the flag when maxIterations is -1', () => {
       expect(buildRalphLoopCommand({ prompt: 'p', maxIterations: -1 })).toBe(
-        '/ralph-loop "p"'
+        '/ralph-loop:ralph-loop "p"'
       );
     });
 
     it('should omit the flag when maxIterations is Infinity', () => {
       expect(
         buildRalphLoopCommand({ prompt: 'p', maxIterations: Number.POSITIVE_INFINITY })
-      ).toBe('/ralph-loop "p"');
+      ).toBe('/ralph-loop:ralph-loop "p"');
     });
 
     it('should floor 3.7 to 3', () => {
       expect(buildRalphLoopCommand({ prompt: 'p', maxIterations: 3.7 })).toBe(
-        '/ralph-loop "p" --max-iterations 3'
+        '/ralph-loop:ralph-loop "p" --max-iterations 3'
       );
     });
 
     it('should omit the flag when maxIterations is undefined', () => {
-      expect(buildRalphLoopCommand({ prompt: 'p' })).toBe('/ralph-loop "p"');
+      expect(buildRalphLoopCommand({ prompt: 'p' })).toBe('/ralph-loop:ralph-loop "p"');
     });
   });
 
@@ -126,7 +126,7 @@ describe('buildRalphLoopCommand', () => {
     it('should add --completion-promise with a shell-quoted value when non-empty', () => {
       expect(
         buildRalphLoopCommand({ prompt: 'p', completionPromise: 'done' })
-      ).toBe('/ralph-loop "p" --completion-promise "done"');
+      ).toBe('/ralph-loop:ralph-loop "p" --completion-promise "done"');
     });
 
     it('should shell-quote special characters in completionPromise', () => {
@@ -135,23 +135,23 @@ describe('buildRalphLoopCommand', () => {
           prompt: 'p',
           completionPromise: 'value with "quotes" and $VAR'
         })
-      ).toBe('/ralph-loop "p" --completion-promise "value with \\"quotes\\" and \\$VAR"');
+      ).toBe('/ralph-loop:ralph-loop "p" --completion-promise "value with \\"quotes\\" and \\$VAR"');
     });
 
     it('should omit the flag when completionPromise is whitespace-only', () => {
       expect(
         buildRalphLoopCommand({ prompt: 'p', completionPromise: '   ' })
-      ).toBe('/ralph-loop "p"');
+      ).toBe('/ralph-loop:ralph-loop "p"');
     });
 
     it('should omit the flag when completionPromise is empty string', () => {
       expect(
         buildRalphLoopCommand({ prompt: 'p', completionPromise: '' })
-      ).toBe('/ralph-loop "p"');
+      ).toBe('/ralph-loop:ralph-loop "p"');
     });
 
     it('should omit the flag when completionPromise is undefined', () => {
-      expect(buildRalphLoopCommand({ prompt: 'p' })).toBe('/ralph-loop "p"');
+      expect(buildRalphLoopCommand({ prompt: 'p' })).toBe('/ralph-loop:ralph-loop "p"');
     });
   });
 });
