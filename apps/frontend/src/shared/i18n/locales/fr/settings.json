@@ -11,6 +11,17 @@
       "askEveryTime": "Demander à chaque fois",
       "alwaysTmuxWindow": "Toujours créer une fenêtre tmux",
       "alwaysDefaultProfile": "Toujours ouvrir un nouveau terminal"
+    },
+    "yoloMode": {
+      "label": "Mode YOLO",
+      "description": "Démarrer Claude avec --dangerously-skip-permissions et --permission-mode auto, contournant les invites de sécurité lorsque possible. Nécessite Claude Code v2.1.83 ou ultérieur. À utiliser avec une extrême prudence.",
+      "warning": "Ce mode contourne le système de permissions de Claude. Ne l'activez que si vous faites entièrement confiance au code exécuté."
+    },
+    "yoloMaxMode": {
+      "label": "YOLO Max",
+      "description": "Puissance maximale : combine le mode YOLO (--dangerously-skip-permissions et --permission-mode auto) avec le niveau d'effort maximal pour Claude. Nécessite Claude Code v2.1.83 ou ultérieur.",
+      "warning": "YOLO Max active à la fois le contournement des permissions ET l'effort de calcul maximal.",
+      "badge": "MAX"
     }
   },
   "projectSections": {
