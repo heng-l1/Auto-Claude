@@ -51,6 +51,11 @@ import { usePRReviewStore, startPRReview } from '../../../stores/github';
 
 const MAX_NOTES_LENGTH = 5000;
 
+// Stable empty-array reference for the manualFindings selector. Returning a
+// fresh `[]` from a Zustand selector breaks useSyncExternalStore's snapshot
+// caching and triggers a "getSnapshot should be cached" infinite loop.
+const EMPTY_MANUAL_FINDINGS: PRReviewFinding[] = [];
+
 interface PRDetailProps {
   pr: PRData;
   projectId: string;
@@ -275,7 +280,9 @@ export function PRDetail({
   // optional pre-fill (used by "Promote to Finding" in the Reviewer Guidance
   // panel to seed the description from the notes textarea).
   // ========================================================================
-  const manualFindings = usePRReviewStore((s) => s.manualFindings[pr.number] ?? []);
+  const manualFindings = usePRReviewStore(
+    (s) => s.manualFindings[pr.number] ?? EMPTY_MANUAL_FINDINGS,
+  );
   const loadManualFindings = usePRReviewStore((s) => s.loadManualFindings);
   const [addFindingDialog, setAddFindingDialog] = useState<{
     open: boolean;
