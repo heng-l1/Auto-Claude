@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useShallow } from 'zustand/react/shallow';
+import { useStoreWithEqualityFn } from 'zustand/traditional';
 import {
   DndContext,
   DragOverlay,
@@ -45,23 +45,36 @@ interface TerminalGridProps {
 
 export function TerminalGrid({ projectPath, onNewTaskClick, isActive = false }: TerminalGridProps) {
   const { t } = useTranslation('common');
-  // Narrow the Zustand subscription to only the fields TerminalGrid actually reads.
-  // `useShallow` skips re-renders when none of these primitive fields change — notably,
-  // `isClaudeBusy` and `hasActivityAlert` toggles no longer re-render this component.
-  // `title` is included because the drag overlay reads it (line ~676).
-  const allTerminals = useTerminalStore(
-    useShallow((state) =>
-      state.terminals.map((t) => ({
-        id: t.id,
-        title: t.title,
-        projectPath: t.projectPath,
-        status: t.status,
-        isClaudeMode: t.isClaudeMode,
-        displayOrder: t.displayOrder,
-        cwd: t.cwd,
-        foregroundProcess: t.foregroundProcess,
-      }))
-    )
+  // Narrow the Zustand subscription to only the fields TerminalGrid actually reads
+  // via a custom equality function. Re-renders skip when `isClaudeBusy` /
+  // `hasActivityAlert` toggle during Claude streaming — those fields aren't
+  // compared, so the equality fn returns true and the previous reference is kept.
+  // Using `useShallow` with a `.map(t => ({...}))` projection caused an infinite
+  // loop because each call produced new object references, so shallow comparison
+  // never matched and the snapshot was never cached.
+  const allTerminals = useStoreWithEqualityFn(
+    useTerminalStore,
+    (state) => state.terminals,
+    (a, b) => {
+      if (a === b) return true;
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) {
+        const ta = a[i];
+        const tb = b[i];
+        if (ta === tb) continue;
+        if (
+          ta.id !== tb.id ||
+          ta.title !== tb.title ||
+          ta.projectPath !== tb.projectPath ||
+          ta.status !== tb.status ||
+          ta.isClaudeMode !== tb.isClaudeMode ||
+          ta.displayOrder !== tb.displayOrder ||
+          ta.cwd !== tb.cwd ||
+          ta.foregroundProcess !== tb.foregroundProcess
+        ) return false;
+      }
+      return true;
+    }
   );
 
   // Track terminals that are in the grace period before being filtered out
