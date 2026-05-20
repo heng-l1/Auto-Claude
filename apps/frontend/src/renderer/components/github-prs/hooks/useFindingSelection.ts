@@ -3,7 +3,7 @@
  */
 
 import { useCallback } from 'react';
-import type { PRReviewFinding } from './useGitHubPRs';
+import type { PRReviewFinding } from '@shared/types/pr-review-comments';
 import type { SeverityGroup } from '../constants/severity-config';
 
 interface UseFindingSelectionProps {

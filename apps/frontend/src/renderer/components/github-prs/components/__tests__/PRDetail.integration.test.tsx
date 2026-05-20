@@ -40,11 +40,7 @@ Object.defineProperty(window, 'electronAPI', {
       resolveConflicts: vi.fn(),
       onConflictResolutionProgress: vi.fn().mockReturnValue(() => {}),
       onConflictResolutionComplete: vi.fn().mockReturnValue(() => {}),
-      onConflictResolutionError: vi.fn().mockReturnValue(() => {}),
-      // PR Discussion listeners
-      sendPRDiscussionMessage: vi.fn(),
-      onPRDiscussionChunk: vi.fn().mockReturnValue(() => {}),
-      onPRDiscussionError: vi.fn().mockReturnValue(() => {})
+      onConflictResolutionError: vi.fn().mockReturnValue(() => {})
     }
   }
 });

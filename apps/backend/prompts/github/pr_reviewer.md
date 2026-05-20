@@ -229,6 +229,16 @@ Check:
 - **Breaking changes noted**: Clear migration guidance
 - **README updated**: Installation/usage docs reflect new features
 
+### Reviewer Notes (when present)
+
+The human reviewer may inject a `Reviewer Notes` section into your input describing specific concerns, focus areas, or observations they want investigated. When such notes are present, you **MUST** handle them as follows:
+
+- **Treat each note as a directed focus area** — investigate the file, function, or concern the note describes with the same evidence-based rigor required of any other finding. Notes encode reviewer intent that automated scanning may miss.
+- **Produce at least one finding per note** — every reviewer note MUST result in at least one entry in your output. If, after thorough investigation, the concern raised by a note does not represent a real issue, emit a **low-severity confirmation finding** that explicitly references the note, names the area you checked, and explains what evidence ruled out a higher-severity issue.
+- **Never silently skip a note** — silently dropping a reviewer note is a failure mode. Each note must be addressed in your output, either with a substantive finding or with a documented low-severity confirmation finding.
+- **Cross-reference the note in the finding** — the finding's `description` should explicitly mention which reviewer note it addresses (e.g., "Addressing reviewer note about race conditions in payment flow: ...").
+- **Evidence still required** — confirmation findings follow the same evidence rules as every other finding. Include the actual code snippet you inspected from the area the note pointed to.
+
 ## Output Format
 
 Return a JSON array with this structure:

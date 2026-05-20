@@ -8,6 +8,8 @@
  * - Collapsible sections for less important findings
  * - Visual summary of finding counts
  * - Disputed findings shown in a separate collapsible section
+ * - Merges AI review findings with manually-authored findings (UI + terminal)
+ *   into a single sorted list (severity rank → AI-first → authoredAt asc)
  */
 
 import { useState, useMemo } from 'react';
@@ -24,7 +26,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { Button } from '../../ui/button';
 import { cn } from '../../../lib/utils';
-import type { PRReviewFinding } from '../hooks/useGitHubPRs';
+import type { PRReviewFinding } from '@shared/types/pr-review-comments';
 import { useFindingSelection } from '../hooks/useFindingSelection';
 import { FindingsSummary } from './FindingsSummary';
 import { SeverityGroupHeader } from './SeverityGroupHeader';
@@ -34,13 +36,64 @@ import { SEVERITY_ORDER, SEVERITY_CONFIG } from '../constants/severity-config';
 
 interface ReviewFindingsProps {
   findings: PRReviewFinding[];
+  /**
+   * Manually-authored findings for this PR (sourced from the
+   * `manualFindings[prNumber]` slice of `pr-review-store`). Optional — when
+   * omitted, only AI findings are shown. When provided, the two arrays are
+   * merged and sorted (severity rank → AI source first → authoredAt asc) so
+   * AI findings always lead each severity bucket and manual entries within a
+   * bucket are listed in the order they were authored.
+   */
+  manualFindings?: PRReviewFinding[];
   selectedIds: Set<string>;
   postedIds?: Set<string>;
   onSelectionChange: (selectedIds: Set<string>) => void;
 }
 
+// Severity ordering used for the merged-list sort comparator. Mirrors
+// `SEVERITY_ORDER` but as a lookup table for O(1) comparisons.
+const SEVERITY_RANK: Record<PRReviewFinding['severity'], number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+};
+
+/**
+ * Comparator for the merged AI + manual findings list.
+ *
+ * Sort key (in order of precedence):
+ *   1. Severity rank — critical < high < medium < low.
+ *   2. Source — `'ai'` (or missing, for back-compat with pre-`source` records)
+ *      sorts before `'terminal'` / `'manual'`. AI findings always lead each
+ *      severity bucket because they came from an explicit review pass.
+ *   3. `authoredAt` ascending — older manual entries appear above newer ones.
+ *      Findings without an `authoredAt` (legacy AI findings) sort before any
+ *      authored entry so the deterministic original order is preserved.
+ */
+function compareFindings(a: PRReviewFinding, b: PRReviewFinding): number {
+  // 1. Severity rank
+  const sevDiff = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
+  if (sevDiff !== 0) return sevDiff;
+
+  // 2. Source: 'ai' (or undefined for back-compat) first
+  const aIsAi = a.source == null || a.source === 'ai';
+  const bIsAi = b.source == null || b.source === 'ai';
+  if (aIsAi && !bIsAi) return -1;
+  if (!aIsAi && bIsAi) return 1;
+
+  // 3. authoredAt ascending — undefined sorts before defined
+  if (a.authoredAt && b.authoredAt) {
+    return a.authoredAt.localeCompare(b.authoredAt);
+  }
+  if (a.authoredAt) return 1;
+  if (b.authoredAt) return -1;
+  return 0;
+}
+
 export function ReviewFindings({
   findings,
+  manualFindings = [],
   selectedIds,
   postedIds = new Set(),
   onSelectionChange,
@@ -53,10 +106,28 @@ export function ReviewFindings({
   );
   const [disputedExpanded, setDisputedExpanded] = useState(false);
 
+  // Merge AI findings + manual findings into a single sorted list before any
+  // downstream filtering/grouping happens. The sort comparator handles all
+  // three keys (severity → AI-first → authoredAt asc) in one pass so the
+  // existing severity-grouping code below preserves the intended ordering
+  // within each bucket without any further work.
+  //
+  // Each finding carries its own `id` (AI findings use the reviewer-generated
+  // id; manual findings always prefix `manual-`), so there are no collisions
+  // and the `useFindingSelection` selection state continues to work unchanged.
+  const mergedFindings = useMemo(() => {
+    if (manualFindings.length === 0) {
+      // Fast path: nothing to merge. Sorting a freshly-spread AI-only list
+      // would re-order findings the reviewer pipeline already laid out.
+      return findings;
+    }
+    return [...findings, ...manualFindings].sort(compareFindings);
+  }, [findings, manualFindings]);
+
   // Filter out posted findings - only show unposted findings for selection
   const unpostedFindings = useMemo(() =>
-    findings.filter(f => !postedIds.has(f.id)),
-    [findings, postedIds]
+    mergedFindings.filter(f => !postedIds.has(f.id)),
+    [mergedFindings, postedIds]
   );
 
   // Split unposted findings into active vs disputed (single pass)
@@ -73,8 +144,8 @@ export function ReviewFindings({
     return { activeFindings: active, disputedFindings: disputed };
   }, [unpostedFindings]);
 
-  // Check if all findings are posted
-  const allFindingsPosted = findings.length > 0 && unpostedFindings.length === 0;
+  // Check if all findings are posted (across both AI and manual sources)
+  const allFindingsPosted = mergedFindings.length > 0 && unpostedFindings.length === 0;
 
   // Group ACTIVE unposted findings by severity (disputed go in their own section)
   const groupedFindings = useMemo(() => {
@@ -288,8 +359,8 @@ export function ReviewFindings({
         </div>
       )}
 
-      {/* Empty State - no findings at all */}
-      {findings.length === 0 && (
+      {/* Empty State - no findings at all (neither AI nor manual) */}
+      {mergedFindings.length === 0 && (
         <div className="text-center py-8 text-muted-foreground">
           <CheckCircle className="h-8 w-8 mx-auto mb-2 text-success" />
           <p className="text-sm">{t('prReview.noIssuesFound')}</p>

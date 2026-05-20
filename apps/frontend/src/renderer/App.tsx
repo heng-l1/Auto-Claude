@@ -789,10 +789,12 @@ export function App() {
     if (!projectPath) return;
 
     // Build context message
+    const prNumber = pr.number;
     const MAX_FINDINGS = 50;
     // NOTE: ".length" counts UTF-16 code units, which equals bytes for ASCII-only summaries
     // (the typical GitHub PR case). For true byte counting, use new Blob([summary]).size.
-    const MAX_SUMMARY_BYTES = 2048;
+    // Trimmed to 1024 to leave clipboard headroom for the "Recording new findings" primer below.
+    const MAX_SUMMARY_BYTES = 1024;
 
     const truncatedSummary =
       reviewResult.summary.length > MAX_SUMMARY_BYTES
@@ -821,6 +823,45 @@ export function App() {
       (findingsSummary + findingsTail) || 'No findings',
       '',
       'Please help me understand these findings and discuss potential approaches. You can use your tools to read the actual source files if needed.',
+      '',
+      '## Recording new findings',
+      '',
+      'If you identify a new issue worth flagging during our discussion, record it as a manual finding so it appears in the PR review UI for selection and posting.',
+      '',
+      `**File path:** \`.auto-claude/github/pr/manual_findings_${prNumber}.json\` (relative to the project root)`,
+      '',
+      'Follow this **two-step verify-then-write protocol** — do not skip step 1:',
+      '',
+      '1. **Verify** — Use the Read tool on the actual source file to confirm the issue exists at the line you intend to flag. If you cannot pinpoint a line, set `"line": 0` (the post step will route it to the file-level review body).',
+      `2. **Write** — Use the Read tool on \`manual_findings_${prNumber}.json\` (treat a missing file / ENOENT as an empty findings array — do NOT fail). Append your new entry to the \`findings\` array, refresh \`updatedAt\`, then use the Write tool to save the merged JSON back. Preserve every existing entry.`,
+      '',
+      '**File schema** (use this exact shape; when the file does not exist, start from an empty `findings: []`):',
+      '```json',
+      `{
+  "prNumber": ${prNumber},
+  "repo": "${reviewResult.repo}",
+  "updatedAt": "<ISO 8601 timestamp>",
+  "findings": [
+    {
+      "id": "manual-<ISO-with-dashes>-<6-char-hex>",
+      "severity": "critical | high | medium | low",
+      "category": "security | quality | style | test | docs | pattern | performance",
+      "title": "<short summary, max 500 chars>",
+      "description": "<detailed description>",
+      "file": "<repo-relative path>",
+      "line": 0,
+      "endLine": 0,
+      "suggestedFix": "<optional>",
+      "fixable": false,
+      "source": "terminal",
+      "authoredAt": "<ISO 8601 timestamp>",
+      "authoredBy": "terminal-claude"
+    }
+  ]
+}`,
+      '```',
+      '',
+      '`endLine` and `suggestedFix` are optional — omit them when not applicable. The UI watches this file and will surface your finding within ~1s of the Write completing.',
     ].join('\n');
 
     // Switch to terminals view

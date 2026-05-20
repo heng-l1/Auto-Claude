@@ -21,6 +21,8 @@ import {
   ChevronUp,
   StickyNote,
   MessageCircle,
+  Plus,
+  Sparkles,
 } from 'lucide-react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -40,10 +42,11 @@ import { ReviewStatusTree } from './ReviewStatusTree';
 import { PRHeader } from './PRHeader';
 import { ReviewFindings } from './ReviewFindings';
 import { PRLogs } from './PRLogs';
-import { PRDiscussionPanel } from './PRDiscussionPanel';
+import { AddManualFindingDialog } from './AddManualFindingDialog';
 
 import type { PRData, PRReviewResult, PRReviewProgress } from '../hooks/useGitHubPRs';
 import type { NewCommitsCheck, MergeReadiness, PRLogs as PRLogsType, WorkflowsAwaitingApprovalResult, } from '../../../../preload/api/modules/github-api';
+import type { PRReviewFinding } from '@shared/types/pr-review-comments';
 import { usePRReviewStore, startPRReview } from '../../../stores/github';
 
 const MAX_NOTES_LENGTH = 5000;
@@ -260,6 +263,55 @@ export function PRDetail({
   const [notesSaveStatus, setNotesSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [notesExpanded, setNotesExpanded] = useState(false);
   const notesLoadedRef = useRef(false);
+
+  // ========================================================================
+  // Manual Findings State
+  // ========================================================================
+  // Manual findings live alongside AI-generated findings. They're authored
+  // either via the in-app "+ Add Finding" dialog or by terminal Claude writing
+  // to manual_findings_${prNumber}.json. The Zustand store is the source of
+  // truth — this component loads on PR change and reuses store actions for
+  // mutations. `addFindingDialog` controls the dialog open state plus the
+  // optional pre-fill (used by "Promote to Finding" in the Reviewer Guidance
+  // panel to seed the description from the notes textarea).
+  // ========================================================================
+  const manualFindings = usePRReviewStore((s) => s.manualFindings[pr.number] ?? []);
+  const loadManualFindings = usePRReviewStore((s) => s.loadManualFindings);
+  const [addFindingDialog, setAddFindingDialog] = useState<{
+    open: boolean;
+    initialValues?: Partial<PRReviewFinding>;
+  }>({ open: false });
+
+  // Eagerly load manual findings when the PR is selected so the dialog and
+  // findings list can render them immediately. The store's CHANGED listener
+  // keeps them fresh after that.
+  useEffect(() => {
+    if (projectId && pr.number) {
+      void loadManualFindings(projectId, pr.number);
+    }
+  }, [projectId, pr.number, loadManualFindings]);
+
+  // Handler for the "+ Add Finding" button — opens the dialog with an empty
+  // form. Pre-fill is only used by "Promote to Finding".
+  const handleOpenAddFinding = useCallback(() => {
+    setAddFindingDialog({ open: true, initialValues: undefined });
+  }, []);
+
+  // Handler for the "Promote to Finding" button in the Reviewer Guidance
+  // panel. Pre-fills description with the current notes text and sets
+  // severity:'medium' + category:'quality' per the spec.
+  const handlePromoteNoteToFinding = useCallback(() => {
+    const trimmed = notes.trim();
+    if (!trimmed) return;
+    setAddFindingDialog({
+      open: true,
+      initialValues: {
+        description: trimmed,
+        severity: 'medium',
+        category: 'quality',
+      },
+    });
+  }, [notes]);
 
   // Sync with store's newCommitsCheck when it changes (e.g., when switching PRs or after refresh)
   // Always sync to keep local state in sync with store, including null values
@@ -765,6 +817,20 @@ export function PRDetail({
   // Handler for "Run AI Review" that includes notes when available
   // Wraps the parent's onRunReview to pass notes through to the backend
   const handleRunReviewWithNotes = useCallback(() => {
+    // Synchronously flush the 500ms debounced notes save so the just-typed
+    // text is captured by downstream consumers (the followup review IPC reads
+    // notes from the store via getNotes(); the initial review IPC handler
+    // reads from the persisted notes file) before the review IPC fires.
+    // Without this flush, clicking Run within 500ms of the last keystroke
+    // would issue the review with stale notes. Normal typing keeps the
+    // debounce — only the Run path triggers the immediate flush. Guard on
+    // notesLoadedRef to avoid clobbering disk notes during initial load.
+    if (notesLoadedRef.current) {
+      const store = usePRReviewStore.getState();
+      store.setNotes(projectId, pr.number, notes);
+      void store.saveNotesToDisk(projectId, pr.number, notes);
+    }
+
     if (notes.trim()) {
       // Notes present — use startPRReview which passes notes via IPC
       startPRReview(projectId, pr.number, notes.trim());
@@ -1428,6 +1494,27 @@ ${t('prReview.blockedStatusMessageFooter')}`;
           lastPostedAt={postSuccess?.timestamp || (reviewResult?.postedAt ? new Date(reviewResult.postedAt).getTime() : null)}
         />
 
+        {/*
+          "+ Add Finding" button — sits adjacent to the Run Review affordance
+          in ReviewStatusTree. Opens the AddManualFindingDialog so the user
+          can author a manual finding without waiting for an AI review pass.
+          Always rendered (not gated on review status) because manual
+          findings are independent of the AI review lifecycle.
+        */}
+        <div className="flex items-center justify-end gap-2 -mt-2">
+          <Button
+            onClick={handleOpenAddFinding}
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            disabled={isReviewing}
+            title={t('prReview.findings.addManual', { defaultValue: '+ Add Finding' })}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <span>{t('prReview.findings.addManual', { defaultValue: '+ Add Finding' })}</span>
+          </Button>
+        </div>
+
         {/* Action Bar (Legacy Actions that fit under the tree context) */}
         {reviewResult?.success && !isReviewing && (
           <div className="flex flex-wrap items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
@@ -1790,6 +1877,7 @@ ${t('prReview.blockedStatusMessageFooter')}`;
               {/* Interactive Findings with Selection */}
               <ReviewFindings
                 findings={reviewResult.findings}
+                manualFindings={manualFindings}
                 selectedIds={selectedFindingIds}
                 postedIds={postedFindingIds}
                 onSelectionChange={setSelectedFindingIds}
@@ -1930,20 +2018,20 @@ ${t('prReview.blockedStatusMessageFooter')}`;
           </CollapsibleCard>
         )}
 
-        {/* PR Discussion — Interactive chat about review findings */}
-        {reviewResult?.success && !isReviewing && (
-          <PRDiscussionPanel
-            projectId={projectId}
-            prNumber={pr.number}
-            prTitle={pr.title}
-            reviewResult={reviewResult}
-            onPostComment={onPostComment}
-          />
-        )}
-
-        {/* Review Notes — User-provided observations and focus areas for AI review */}
+        {/*
+          Reviewer Guidance — user-provided observations and focus areas
+          included in the next AI review pass. Previously labeled "Notes";
+          renamed to "Reviewer Guidance (for the next review)" so the
+          purpose (guides the AI on the next run, NOT posted to GitHub) is
+          discoverable from the heading alone. The "Promote to Finding"
+          button below lets the user convert free-form guidance into a
+          first-class manual finding that WILL be posted as a review
+          comment.
+        */}
         <CollapsibleCard
-          title={t('prReview.notes.label')}
+          title={t('prReview.notes.label', {
+            defaultValue: 'Reviewer Guidance (for the next review)',
+          })}
           icon={<StickyNote className="h-4 w-4 text-blue-400" />}
           badge={
             <>
@@ -1954,7 +2042,9 @@ ${t('prReview.blockedStatusMessageFooter')}`;
               )}
               {notesSaveStatus === 'saved' && (
                 <span className="text-xs text-success animate-in fade-in duration-200">
-                  {t('prReview.notes.saved')}
+                  {t('prReview.notes.savedDetailed', {
+                    defaultValue: 'Saved — will guide next review',
+                  })}
                 </span>
               )}
               {notes.length > 0 && (
@@ -1978,25 +2068,55 @@ ${t('prReview.blockedStatusMessageFooter')}`;
             />
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs text-muted-foreground">
-                {t('prReview.notes.helpText')}
+                {t('prReview.notes.helpText', {
+                  defaultValue:
+                    'Guidance is included in the AI prompt on the next review run and is NOT posted to GitHub. Use "Promote to Finding" below to turn a note into a postable comment.',
+                })}
               </p>
               <span className="text-xs text-muted-foreground shrink-0">
                 {notes.length}/{MAX_NOTES_LENGTH}
               </span>
             </div>
 
-            {/* Re-review with Notes button — visible after a review completes and notes are non-empty */}
-            {reviewResult?.success && !isReviewing && notes.trim() && (
-              <div className="flex items-center gap-3 pt-2 border-t border-border/50">
+            {/*
+              Action row — visible once the user has typed any guidance.
+              Hosts two complementary actions:
+                - "Promote to Finding" upgrades free-form guidance into a
+                  manual finding (description seeded from the notes text;
+                  severity defaults to medium, category to quality per the
+                  spec).
+                - "Re-review with Notes" re-runs the AI review with the
+                  current notes as injected guidance.
+              Both are gated on notes.trim() so an empty textarea never
+              shows the action row.
+            */}
+            {notes.trim() && (
+              <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-border/50">
                 <Button
-                  onClick={handleReReviewWithNotes}
-                  variant="secondary"
+                  onClick={handlePromoteNoteToFinding}
+                  variant="outline"
                   size="sm"
                   disabled={isReviewing}
+                  title={t('prReview.findings.promoteToFinding', {
+                    defaultValue: 'Promote to Finding',
+                  })}
                 >
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  {t('prReview.notes.reReviewWithNotes')}
+                  <Sparkles className="h-4 w-4 mr-2" />
+                  {t('prReview.findings.promoteToFinding', {
+                    defaultValue: 'Promote to Finding',
+                  })}
                 </Button>
+                {reviewResult?.success && !isReviewing && (
+                  <Button
+                    onClick={handleReReviewWithNotes}
+                    variant="secondary"
+                    size="sm"
+                    disabled={isReviewing}
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    {t('prReview.notes.reReviewWithNotes')}
+                  </Button>
+                )}
               </div>
             )}
           </div>
@@ -2024,6 +2144,24 @@ ${t('prReview.blockedStatusMessageFooter')}`;
           </CardContent>
         </Card>
       </div>
+
+      {/*
+        Add / Edit Manual Finding dialog — controlled by `addFindingDialog`
+        state. The dialog is reused for both fresh adds and the "Promote to
+        Finding" pre-fill flow from the Reviewer Guidance panel. Editing
+        existing manual findings is wired through the FindingItem row
+        actions (pencil icon) in a separate code path that also opens this
+        dialog with `editingId` + `initialValues`.
+      */}
+      <AddManualFindingDialog
+        open={addFindingDialog.open}
+        onOpenChange={(open) =>
+          setAddFindingDialog((prev) => ({ ...prev, open }))
+        }
+        projectId={projectId}
+        pr={pr}
+        initialValues={addFindingDialog.initialValues}
+      />
     </ScrollArea>
   );
 }

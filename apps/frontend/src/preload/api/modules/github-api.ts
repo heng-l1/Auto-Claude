@@ -18,7 +18,9 @@ import type {
   ReviewThread,
   ReplyDraft,
   SuggestedReplyStatus,
-  ReplyClassification
+  ReplyClassification,
+  PRReviewFinding,
+  ManualPRReviewFinding
 } from '../../../shared/types/pr-review-comments';
 import { createIpcListener, invokeIpc, sendIpc, IpcListenerCleanup } from './ipc-utils';
 
@@ -160,6 +162,119 @@ export interface WorkflowsAwaitingApprovalResult {
 export type { PaginatedIssuesResult };
 
 /**
+ * Reasons emitted by the GITHUB_PR_MANUAL_FINDINGS_CHANGED event.
+ *
+ * - `'add' | 'update' | 'delete'` — emitted by the in-app IPC handlers right
+ *   after a successful mutation. The renderer can use these to invalidate its
+ *   local cache without round-tripping a full LIST.
+ * - `'external'` — emitted by the chokidar watcher when an outside writer
+ *   (e.g. Claude running in a discussion terminal via the Write tool, or a
+ *   developer editing the JSON by hand) creates or modifies the file.
+ * - `'file-deleted'` — emitted when the on-disk file is removed. The store
+ *   should clear its slice for that PR.
+ *
+ * Kept in lockstep with `ManualFindingsChangeReason` in
+ * `apps/frontend/src/main/ipc-handlers/github/pr-manual-findings-handlers.ts`
+ * — the two definitions are structurally identical and must change together.
+ */
+export type ManualFindingsChangeReason =
+  | 'add'
+  | 'update'
+  | 'delete'
+  | 'external'
+  | 'file-deleted';
+
+/**
+ * Renderer-side surface for the manual PR findings IPC channels, exposed via
+ * `electronAPI.github.pr.manualFindings.*`. Each method wraps a single
+ * `GITHUB_PR_MANUAL_FINDINGS_*` channel; `onChanged` is the only event
+ * subscription. See the handler module
+ * (`apps/frontend/src/main/ipc-handlers/github/pr-manual-findings-handlers.ts`)
+ * for the authoritative contract — these typings mirror its signatures.
+ */
+export interface ManualFindingsAPI {
+  /**
+   * Return the persisted manual findings for a PR. Empty array when the file
+   * is missing or has no entries; never throws.
+   */
+  list: (
+    projectId: string,
+    prNumber: number,
+  ) => Promise<ManualPRReviewFinding[]>;
+  /**
+   * Append a manual finding. The handler generates `id` and `authoredAt`
+   * server-side and defaults `source` to `'manual'` when omitted, so renderer
+   * callers can submit just the user-facing fields (severity, title, file,
+   * line, description, …). Returns the fully-hydrated finding so the
+   * renderer can sync its store without a follow-up `list`.
+   */
+  add: (
+    projectId: string,
+    prNumber: number,
+    payload: Partial<ManualPRReviewFinding>,
+  ) => Promise<ManualPRReviewFinding | null>;
+  /**
+   * Patch mutable fields on an existing manual finding. Immutable audit-trail
+   * fields (`id`, `source`, `authoredAt`, `authoredBy`) and the AI-only
+   * `validation*` provenance fields are silently dropped by the handler.
+   * Returns `null` when no finding with the given id exists.
+   */
+  update: (
+    projectId: string,
+    prNumber: number,
+    id: string,
+    patch: Partial<ManualPRReviewFinding>,
+  ) => Promise<ManualPRReviewFinding | null>;
+  /**
+   * Remove a manual finding by id. Returns `true` when a finding was removed,
+   * `false` when no finding with the given id existed (so the renderer can
+   * decide whether to surface a "nothing to delete" toast).
+   *
+   * Named `delete_` (with a trailing underscore) because `delete` is a
+   * reserved word in JavaScript and using it as a bare identifier in some
+   * positions (e.g. destructuring) trips linters and confuses readers.
+   */
+  delete_: (
+    projectId: string,
+    prNumber: number,
+    id: string,
+  ) => Promise<boolean>;
+  /**
+   * Subscribe to manual-findings change events. The callback fires with
+   * `(projectId, prNumber, reason)` whenever the on-disk file is mutated —
+   * by an in-app IPC handler (`'add' | 'update' | 'delete'`), by the
+   * chokidar watcher noticing an external write (`'external'`), or by the
+   * file being removed (`'file-deleted'`).
+   *
+   * Returns a cleanup function that removes the listener. The renderer
+   * should call it in `useEffect` cleanup / store teardown to avoid
+   * leaking listeners across component unmounts.
+   */
+  onChanged: (
+    callback: (
+      projectId: string,
+      prNumber: number,
+      reason: ManualFindingsChangeReason,
+    ) => void,
+  ) => IpcListenerCleanup;
+  /**
+   * Run the Haiku-tier extractor against a terminal's scrollback to surface
+   * candidate findings. The handler (Phase 4) strips ANSI escapes from the
+   * terminal's `outputBuffer`, sends the transcript through
+   * `@anthropic-ai/sdk` with `model: 'claude-haiku-4-5'`, parses the JSON
+   * response, and validates each candidate through `PRReviewFindingSchema`.
+   *
+   * Returned candidates have `source: 'terminal'` and pre-generated ids; the
+   * renderer presents them in a confirmation dialog before any are persisted
+   * via `add`.
+   */
+  extract: (
+    terminalId: string,
+    prNumber: number,
+  ) => Promise<ManualPRReviewFinding[]>;
+}
+
+/**
  * GitHub Integration API operations
  */
 export interface GitHubAPI {
@@ -293,11 +408,6 @@ export interface GitHubAPI {
   getPRReview: (projectId: string, prNumber: number) => Promise<PRReviewResult | null>;
   getPRReviewsBatch: (projectId: string, prNumbers: number[]) => Promise<Record<number, PRReviewResult | null>>;
 
-  // PR Discussion (interactive chat about review findings)
-  sendPRDiscussionMessage: (projectId: string, prNumber: number, message: string, systemContext: string) => void;
-  onPRDiscussionChunk: (callback: (projectId: string, prNumber: number, chunk: { type: string; content?: string }) => void) => () => void;
-  onPRDiscussionError: (callback: (projectId: string, prNumber: number, error: string) => void) => () => void;
-
   // External review notification (renderer tells main process about external review completion/timeout)
   notifyExternalReviewComplete: (projectId: string, prNumber: number, result: PRReviewResult | null) => Promise<void>;
 
@@ -306,7 +416,7 @@ export interface GitHubAPI {
   checkMergeReadiness: (projectId: string, prNumber: number) => Promise<MergeReadiness>;
   updatePRBranch: (projectId: string, prNumber: number) => Promise<{ success: boolean; error?: string }>;
   resolveConflicts: (projectId: string, prNumber: number) => void;
-  runFollowupReview: (projectId: string, prNumber: number) => void;
+  runFollowupReview: (projectId: string, prNumber: number, notes?: string) => void;
 
   // PR logs
   getPRLogs: (projectId: string, prNumber: number) => Promise<PRLogs | null>;
@@ -388,6 +498,15 @@ export interface GitHubAPI {
   onSuggestRepliesError: (
     callback: (projectId: string, prNumber: number, error: string) => void
   ) => IpcListenerCleanup;
+
+  /**
+   * Nested namespace for PR-related sub-features. Currently exposes the
+   * manual findings surface (`electronAPI.github.pr.manualFindings.*`); other
+   * PR sub-features may move under this namespace as the surface grows.
+   */
+  pr: {
+    manualFindings: ManualFindingsAPI;
+  };
 }
 
 /**
@@ -426,25 +545,11 @@ export interface PRListResult {
   endCursor?: string | null; // Cursor for fetching next page (null if no more pages)
 }
 
-/**
- * PR review finding
- */
-export interface PRReviewFinding {
-  id: string;
-  severity: 'critical' | 'high' | 'medium' | 'low';
-  category: 'security' | 'quality' | 'style' | 'test' | 'docs' | 'pattern' | 'performance';
-  title: string;
-  description: string;
-  file: string;
-  line: number;
-  endLine?: number;
-  suggestedFix?: string;
-  fixable: boolean;
-  validationStatus?: 'confirmed_valid' | 'dismissed_false_positive' | 'needs_human_review' | null;
-  validationExplanation?: string;
-  sourceAgents?: string[];
-  crossValidated?: boolean;
-}
+// `PRReviewFinding` and `ManualPRReviewFinding` are defined in
+// `shared/types/pr-review-comments.ts`. They are re-exported below for
+// backwards compatibility with renderer consumers (e.g. `useGitHubPRs.ts`
+// re-exports `PRReviewFinding` from this module).
+export type { PRReviewFinding, ManualPRReviewFinding };
 
 /**
  * PR review result
@@ -865,8 +970,8 @@ export const createGitHubAPI = (): GitHubAPI => ({
   updatePRBranch: (projectId: string, prNumber: number): Promise<{ success: boolean; error?: string }> =>
     invokeIpc(IPC_CHANNELS.GITHUB_PR_UPDATE_BRANCH, projectId, prNumber),
 
-  runFollowupReview: (projectId: string, prNumber: number): void =>
-    sendIpc(IPC_CHANNELS.GITHUB_PR_FOLLOWUP_REVIEW, projectId, prNumber),
+  runFollowupReview: (projectId: string, prNumber: number, notes?: string): void =>
+    sendIpc(IPC_CHANNELS.GITHUB_PR_FOLLOWUP_REVIEW, projectId, prNumber, notes),
 
   resolveConflicts: (projectId: string, prNumber: number): void =>
     sendIpc(IPC_CHANNELS.GITHUB_PR_RESOLVE_CONFLICTS, projectId, prNumber),
@@ -946,20 +1051,6 @@ export const createGitHubAPI = (): GitHubAPI => ({
   ): IpcListenerCleanup =>
     createIpcListener(IPC_CHANNELS.GITHUB_PR_STATUS_UPDATE, callback),
 
-  // PR Discussion (interactive chat)
-  sendPRDiscussionMessage: (projectId: string, prNumber: number, message: string, systemContext: string): void =>
-    sendIpc(IPC_CHANNELS.GITHUB_PR_DISCUSSION_SEND, projectId, prNumber, message, systemContext),
-
-  onPRDiscussionChunk: (
-    callback: (projectId: string, prNumber: number, chunk: { type: string; content?: string }) => void
-  ): IpcListenerCleanup =>
-    createIpcListener(IPC_CHANNELS.GITHUB_PR_DISCUSSION_CHUNK, callback),
-
-  onPRDiscussionError: (
-    callback: (projectId: string, prNumber: number, error: string) => void
-  ): IpcListenerCleanup =>
-    createIpcListener(IPC_CHANNELS.GITHUB_PR_DISCUSSION_ERROR, callback),
-
   // PR Review Comment Response operations
   getReviewThreads: (projectId: string, prNumber: number): Promise<PRReviewThreadsResult> =>
     invokeIpc(IPC_CHANNELS.GITHUB_PR_GET_REVIEW_THREADS, projectId, prNumber),
@@ -995,5 +1086,95 @@ export const createGitHubAPI = (): GitHubAPI => ({
   onSuggestRepliesError: (
     callback: (projectId: string, prNumber: number, error: string) => void
   ): IpcListenerCleanup =>
-    createIpcListener(IPC_CHANNELS.GITHUB_PR_SUGGEST_REPLIES_ERROR, callback)
+    createIpcListener(IPC_CHANNELS.GITHUB_PR_SUGGEST_REPLIES_ERROR, callback),
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Manual PR Findings — `electronAPI.github.pr.manualFindings.*`
+  //
+  // Wraps the 6 GITHUB_PR_MANUAL_FINDINGS_* IPC channels exposed by
+  // pr-manual-findings-handlers.ts in the main process. Mutating handlers
+  // (`add`, `update`, `delete_`) serialize through a per-(projectId:prNumber)
+  // async mutex on the main side, so the renderer can fire concurrent calls
+  // without races. `onChanged` covers both in-app mutations and external
+  // writes detected by the chokidar watcher.
+  // ───────────────────────────────────────────────────────────────────────────
+  pr: {
+    manualFindings: {
+      /** manualFindings.list — list persisted findings (channel: GITHUB_PR_MANUAL_FINDINGS_LIST) */
+      list: (
+        projectId: string,
+        prNumber: number,
+      ): Promise<ManualPRReviewFinding[]> =>
+        invokeIpc(
+          IPC_CHANNELS.GITHUB_PR_MANUAL_FINDINGS_LIST,
+          projectId,
+          prNumber,
+        ),
+
+      /** manualFindings.add — append a new finding (channel: GITHUB_PR_MANUAL_FINDINGS_ADD) */
+      add: (
+        projectId: string,
+        prNumber: number,
+        payload: Partial<ManualPRReviewFinding>,
+      ): Promise<ManualPRReviewFinding | null> =>
+        invokeIpc(
+          IPC_CHANNELS.GITHUB_PR_MANUAL_FINDINGS_ADD,
+          projectId,
+          prNumber,
+          payload,
+        ),
+
+      /** manualFindings.update — patch mutable fields (channel: GITHUB_PR_MANUAL_FINDINGS_UPDATE) */
+      update: (
+        projectId: string,
+        prNumber: number,
+        id: string,
+        patch: Partial<ManualPRReviewFinding>,
+      ): Promise<ManualPRReviewFinding | null> =>
+        invokeIpc(
+          IPC_CHANNELS.GITHUB_PR_MANUAL_FINDINGS_UPDATE,
+          projectId,
+          prNumber,
+          id,
+          patch,
+        ),
+
+      /** manualFindings.delete_ — remove a finding by id (channel: GITHUB_PR_MANUAL_FINDINGS_DELETE) */
+      delete_: (
+        projectId: string,
+        prNumber: number,
+        id: string,
+      ): Promise<boolean> =>
+        invokeIpc(
+          IPC_CHANNELS.GITHUB_PR_MANUAL_FINDINGS_DELETE,
+          projectId,
+          prNumber,
+          id,
+        ),
+
+      /** manualFindings.onChanged — subscribe to change events (channel: GITHUB_PR_MANUAL_FINDINGS_CHANGED) */
+      onChanged: (
+        callback: (
+          projectId: string,
+          prNumber: number,
+          reason: ManualFindingsChangeReason,
+        ) => void,
+      ): IpcListenerCleanup =>
+        createIpcListener(
+          IPC_CHANNELS.GITHUB_PR_MANUAL_FINDINGS_CHANGED,
+          callback,
+        ),
+
+      /** manualFindings.extract — run the Haiku scrollback extractor (channel: GITHUB_PR_MANUAL_FINDINGS_EXTRACT) */
+      extract: (
+        terminalId: string,
+        prNumber: number,
+      ): Promise<ManualPRReviewFinding[]> =>
+        invokeIpc(
+          IPC_CHANNELS.GITHUB_PR_MANUAL_FINDINGS_EXTRACT,
+          terminalId,
+          prNumber,
+        ),
+    },
+  },
 });

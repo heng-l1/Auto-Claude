@@ -4,7 +4,7 @@
 
 import { useTranslation } from 'react-i18next';
 import { Badge } from '../../ui/badge';
-import type { PRReviewFinding } from '../hooks/useGitHubPRs';
+import type { PRReviewFinding } from '@shared/types/pr-review-comments';
 
 interface FindingsSummaryProps {
   findings: PRReviewFinding[];

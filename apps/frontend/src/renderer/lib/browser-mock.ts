@@ -256,9 +256,6 @@ const browserMockAPI: ElectronAPI = {
     onConflictResolutionProgress: () => () => {},
     onConflictResolutionComplete: () => () => {},
     onConflictResolutionError: () => () => {},
-    sendPRDiscussionMessage: () => {},
-    onPRDiscussionChunk: () => () => {},
-    onPRDiscussionError: () => () => {},
     // PR review comment response
     getReviewThreads: async () => ({ threads: [], totalCount: 0, unresolvedCount: 0, fetchedAt: new Date().toISOString() }),
     replyToThread: async () => ({ id: '', databaseId: 0, author: null, body: '', createdAt: '', updatedAt: '', isAuthor: true }),
@@ -269,7 +266,22 @@ const browserMockAPI: ElectronAPI = {
     cancelSuggestReplies: () => {},
     onSuggestRepliesChunk: () => () => {},
     onSuggestRepliesComplete: () => () => {},
-    onSuggestRepliesError: () => () => {}
+    onSuggestRepliesError: () => () => {},
+    // Manual PR Findings — `electronAPI.github.pr.manualFindings.*`
+    // Browser-mode stubs: every call is a no-op returning empty data so
+    // story books / unit-test components rendered in jsdom can mount without
+    // crashing on the missing IPC. The real implementation lives in
+    // `apps/frontend/src/preload/api/modules/github-api.ts`.
+    pr: {
+      manualFindings: {
+        list: async () => [],
+        add: async () => null,
+        update: async () => null,
+        delete_: async () => false,
+        onChanged: () => () => {},
+        extract: async () => []
+      }
+    }
   },
 
   // Queue Routing API (rate limit recovery)

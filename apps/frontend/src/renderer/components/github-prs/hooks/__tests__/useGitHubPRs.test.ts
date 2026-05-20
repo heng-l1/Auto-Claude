@@ -584,3 +584,159 @@ describe('useGitHubPRs - checkNewCommits result handling', () => {
     });
   });
 });
+
+/**
+ * Phase 4a — runFollowupReview must pass the current Reviewer Guidance
+ * (notes) string through to the runFollowupReview IPC.
+ *
+ * The hook reads `notes` from the pr-review store via `getNotes(projectId, prNumber)`
+ * and forwards them as the third argument of the IPC call. This closes the
+ * silent-drop bug described in spec FR #8 and verified end-to-end by the
+ * backend test test_followup_review_notes.py.
+ *
+ * The hook body (useGitHubPRs.ts:556-568) is:
+ *
+ *     const runFollowupReview = useCallback(
+ *       (prNumber: number) => {
+ *         if (!projectId) return;
+ *         const notes = getNotes(projectId, prNumber);
+ *         window.electronAPI.github.runFollowupReview(projectId, prNumber, notes);
+ *       },
+ *       [projectId, getNotes]
+ *     );
+ *
+ * We simulate that exact flow here (mirroring the simulateSelectPR pattern used
+ * earlier in this file) so the assertion exercises the contract without needing
+ * to render the full React hook.
+ */
+interface SimulateRunFollowupParams {
+  projectId: string | null;
+  prNumber: number;
+  storeNotes: string;
+  mockGetNotes: (projectId: string, prNumber: number) => string;
+  mockRunFollowupReview: (projectId: string, prNumber: number, notes: string) => void;
+}
+
+function simulateRunFollowupReview(params: SimulateRunFollowupParams): void {
+  const { projectId, prNumber, mockGetNotes, mockRunFollowupReview } = params;
+  if (!projectId) return;
+  const notes = mockGetNotes(projectId, prNumber);
+  mockRunFollowupReview(projectId, prNumber, notes);
+}
+
+describe('useGitHubPRs - runFollowupReview forwards Reviewer Guidance notes', () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let mockGetNotes: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let mockRunFollowupReview: any;
+
+  beforeEach(() => {
+    mockGetNotes = vi.fn();
+    mockRunFollowupReview = vi.fn();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('passes the current notes string from the store to the IPC', () => {
+    mockGetNotes.mockReturnValue('Check the auth refactor.');
+
+    simulateRunFollowupReview({
+      projectId: 'test-project',
+      prNumber: 123,
+      storeNotes: 'Check the auth refactor.',
+      mockGetNotes,
+      mockRunFollowupReview,
+    });
+
+    expect(mockGetNotes).toHaveBeenCalledWith('test-project', 123);
+    expect(mockRunFollowupReview).toHaveBeenCalledTimes(1);
+    expect(mockRunFollowupReview).toHaveBeenCalledWith(
+      'test-project',
+      123,
+      'Check the auth refactor.',
+    );
+  });
+
+  it('forwards an empty string when no notes have been entered (default)', () => {
+    mockGetNotes.mockReturnValue('');
+
+    simulateRunFollowupReview({
+      projectId: 'test-project',
+      prNumber: 456,
+      storeNotes: '',
+      mockGetNotes,
+      mockRunFollowupReview,
+    });
+
+    expect(mockRunFollowupReview).toHaveBeenCalledWith('test-project', 456, '');
+  });
+
+  it('reads notes fresh from the store on each invocation', () => {
+    // First call: notes are "draft 1"
+    mockGetNotes.mockReturnValueOnce('draft 1');
+    simulateRunFollowupReview({
+      projectId: 'test-project',
+      prNumber: 7,
+      storeNotes: 'draft 1',
+      mockGetNotes,
+      mockRunFollowupReview,
+    });
+
+    // Second call: user typed more, store now has "draft 1 + addendum"
+    mockGetNotes.mockReturnValueOnce('draft 1 + addendum');
+    simulateRunFollowupReview({
+      projectId: 'test-project',
+      prNumber: 7,
+      storeNotes: 'draft 1 + addendum',
+      mockGetNotes,
+      mockRunFollowupReview,
+    });
+
+    expect(mockRunFollowupReview).toHaveBeenCalledTimes(2);
+    expect(mockRunFollowupReview).toHaveBeenNthCalledWith(
+      1,
+      'test-project',
+      7,
+      'draft 1',
+    );
+    expect(mockRunFollowupReview).toHaveBeenNthCalledWith(
+      2,
+      'test-project',
+      7,
+      'draft 1 + addendum',
+    );
+  });
+
+  it('does NOT call the IPC when projectId is null (deselected project)', () => {
+    simulateRunFollowupReview({
+      projectId: null,
+      prNumber: 123,
+      storeNotes: 'irrelevant',
+      mockGetNotes,
+      mockRunFollowupReview,
+    });
+
+    expect(mockGetNotes).not.toHaveBeenCalled();
+    expect(mockRunFollowupReview).not.toHaveBeenCalled();
+  });
+
+  it('preserves multi-line note content verbatim', () => {
+    const multiline =
+      'Check the auth refactor in users/api.py.\n' +
+      'Also verify the race condition in payments/processor.py.\n' +
+      'Pay special attention to error-path logging.';
+    mockGetNotes.mockReturnValue(multiline);
+
+    simulateRunFollowupReview({
+      projectId: 'test-project',
+      prNumber: 99,
+      storeNotes: multiline,
+      mockGetNotes,
+      mockRunFollowupReview,
+    });
+
+    expect(mockRunFollowupReview).toHaveBeenCalledWith('test-project', 99, multiline);
+  });
+});

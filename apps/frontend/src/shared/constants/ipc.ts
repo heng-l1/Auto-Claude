@@ -443,11 +443,6 @@ export const IPC_CHANNELS = {
   GITHUB_PR_NOTES_SAVE: 'github:pr:notes:save',        // Save user notes for a PR
   GITHUB_PR_NOTES_LOAD: 'github:pr:notes:load',        // Load user notes for a PR
 
-  // GitHub PR Discussion (interactive chat about review findings)
-  GITHUB_PR_DISCUSSION_SEND: 'github:pr:discussion:send',        // Send a discussion message
-  GITHUB_PR_DISCUSSION_CHUNK: 'github:pr:discussion:chunk',      // Streaming response chunk (main -> renderer)
-  GITHUB_PR_DISCUSSION_ERROR: 'github:pr:discussion:error',      // Error event (main -> renderer)
-
   // GitHub PR Review Comment Threads (user reply workflow)
   GITHUB_PR_GET_REVIEW_THREADS: 'github:pr:getReviewThreads',    // Fetch review threads for a PR
   GITHUB_PR_REPLY_TO_THREAD: 'github:pr:replyToThread',          // Post a reply to a thread
@@ -466,6 +461,14 @@ export const IPC_CHANNELS = {
 
   // GitHub PR Reply Style Learning (future)
   GITHUB_PR_LEARN_REPLY_STYLE: 'github:pr:learnReplyStyle',      // Store edit patterns in memory (placeholder)
+
+  // GitHub PR Manual Findings (human-authored findings tracked alongside AI review findings)
+  GITHUB_PR_MANUAL_FINDINGS_LIST: 'github:pr:manualFindings:list',        // List all manual findings for a PR
+  GITHUB_PR_MANUAL_FINDINGS_ADD: 'github:pr:manualFindings:add',          // Add a new manual finding
+  GITHUB_PR_MANUAL_FINDINGS_UPDATE: 'github:pr:manualFindings:update',    // Update an existing manual finding
+  GITHUB_PR_MANUAL_FINDINGS_DELETE: 'github:pr:manualFindings:delete',    // Delete a manual finding
+  GITHUB_PR_MANUAL_FINDINGS_CHANGED: 'github:pr:manualFindings:changed',  // Event: manual findings changed (main -> renderer)
+  GITHUB_PR_MANUAL_FINDINGS_EXTRACT: 'github:pr:manualFindings:extract',  // Extract manual findings from notes via AI
 
   // GitHub Workflow Approval (for fork PRs)
   GITHUB_WORKFLOWS_AWAITING_APPROVAL: 'github:workflows:awaitingApproval',

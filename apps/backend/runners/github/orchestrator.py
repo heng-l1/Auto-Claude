@@ -646,7 +646,11 @@ class GitHubOrchestrator:
             await result.save(self.github_dir)
             return result
 
-    async def followup_review_pr(self, pr_number: int) -> PRReviewResult:
+    async def followup_review_pr(
+        self,
+        pr_number: int,
+        reviewer_notes: str = "",
+    ) -> PRReviewResult:
         """
         Perform a focused follow-up review of a PR.
 
@@ -657,6 +661,9 @@ class GitHubOrchestrator:
 
         Args:
             pr_number: The PR number to review
+            reviewer_notes: Optional human-provided notes, observations, or focus
+                areas to inject into the AI review prompt. Default empty string
+                preserves back-compat for callers that don't pass notes.
 
         Returns:
             PRReviewResult with follow-up analysis
@@ -969,7 +976,9 @@ class GitHubOrchestrator:
                         pr_number=pr_number,
                     ),
                 )
-                result = await reviewer.review_followup(followup_context)
+                result = await reviewer.review_followup(
+                    followup_context, reviewer_notes=reviewer_notes
+                )
 
             # Fallback: ensure CI failures block merge even if AI didn't factor it in
             # (CI status was already passed to AI via followup_context.ci_status)

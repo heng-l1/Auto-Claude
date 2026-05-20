@@ -7,6 +7,8 @@
  * Used across IPC boundary (main process, preload, renderer).
  */
 
+import { z } from 'zod';
+
 /**
  * A single comment within a review thread
  */
@@ -152,4 +154,218 @@ export interface ReplyDraftsFile {
   drafts: Record<string, ReplyDraft>;
   /** ISO timestamp when drafts were last saved */
   savedAt: string;
+}
+
+// ============================================================================
+// PR Review Findings
+// ============================================================================
+// Canonical home for `PRReviewFinding`. Previously this interface was
+// duplicated in both `main/ipc-handlers/github/pr-handlers.ts` and
+// `preload/api/modules/github-api.ts`; both modules now re-export from here
+// to keep a single source of truth across the IPC boundary.
+
+/**
+ * A finding produced by a PR review pass — by the AI reviewer, by Claude
+ * running in a discussion terminal, or by the human via the "+ Add Finding"
+ * dialog. All three sources share the same shape; the optional `source`
+ * discriminator tells callers how the finding was produced.
+ *
+ * Fields are kept back-compat with the previous duplicate declarations:
+ *   - Pre-existing fields (id, severity, ..., crossValidated) are preserved
+ *     unchanged; the optional `validation*`, `sourceAgents`, `crossValidated`
+ *     fields stay optional so older serialized findings keep parsing.
+ *   - Three new optional fields support manual finding authoring:
+ *       `source`     — who produced the finding ('ai' | 'terminal' | 'manual')
+ *       `authoredAt` — ISO 8601 timestamp when the finding was authored
+ *       `authoredBy` — opaque author identifier (user name, 'terminal-extraction', ...)
+ */
+export interface PRReviewFinding {
+  /** Stable identifier — `manual-<iso>-<6char>` for manual/terminal sources */
+  id: string;
+  /** Severity ranking — drives the verdict and the emoji prefix */
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  /** Finding category */
+  category: 'security' | 'quality' | 'style' | 'test' | 'docs' | 'pattern' | 'performance';
+  /** One-line headline shown in the findings list */
+  title: string;
+  /** Detailed description (Markdown) posted as the comment body */
+  description: string;
+  /** File path relative to repo root — empty/unknown allowed for file-level notes */
+  file: string;
+  /** First line of the finding's range (0 means "no specific line") */
+  line: number;
+  /** Last line of the range — when set and `> line`, posts as multi-line range */
+  endLine?: number;
+  /** Optional suggested fix snippet (Markdown / code fence) */
+  suggestedFix?: string;
+  /** Whether the finding has an automatable fix */
+  fixable: boolean;
+  /** Cross-validation outcome from the AI reviewer pipeline */
+  validationStatus?: 'confirmed_valid' | 'dismissed_false_positive' | 'needs_human_review' | null;
+  /** Free-form explanation accompanying `validationStatus` */
+  validationExplanation?: string;
+  /** Agents that surfaced this finding (cross-validation provenance) */
+  sourceAgents?: string[];
+  /** Whether the finding was confirmed by more than one agent */
+  crossValidated?: boolean;
+  /** Who produced the finding — default `'ai'` when omitted (back-compat) */
+  source?: 'ai' | 'terminal' | 'manual';
+  /** ISO 8601 timestamp when the finding was authored */
+  authoredAt?: string;
+  /** Opaque author identifier (e.g. user name, 'terminal-extraction') */
+  authoredBy?: string;
+}
+
+/**
+ * Semantic alias for findings authored by a human or by Claude in a
+ * discussion terminal — i.e. `source !== 'ai'`. The shape is identical to
+ * `PRReviewFinding`; the alias exists to make call sites self-documenting
+ * where the intent is "this is a manually authored finding".
+ */
+export type ManualPRReviewFinding = PRReviewFinding;
+
+// ============================================================================
+// Zod Schemas + Safe Loaders (manual findings persistence)
+// ============================================================================
+// These schemas validate manual finding payloads at IPC boundaries and when
+// rehydrating .auto-claude/github/pr/manual_findings_<prNumber>.json files
+// from disk. The shape mirrors the `PRReviewFinding` interface above one-for-
+// one (including the back-compat optional `validation*`, `sourceAgents`,
+// `crossValidated` fields and the new `source`/`authoredAt`/`authoredBy`
+// authorship fields). Pattern follows apps/frontend/src/main/agent/
+// phase-event-schema.ts.
+
+/**
+ * Zod schema mirroring the `PRReviewFinding` interface. Use this with
+ * `safeParse` to validate one finding at a time; mass-parsing through this
+ * schema's `parse` will throw on the first bad entry, which is not what
+ * `loadManualFindingsSafe` wants (we skip-and-log per entry).
+ *
+ * Note: every optional field on the interface is `.optional()` here so older
+ * serialized findings (pre-`source`/`authoredAt`/`authoredBy`) still parse.
+ */
+export const PRReviewFindingSchema = z.object({
+  id: z.string(),
+  severity: z.enum(['critical', 'high', 'medium', 'low']),
+  category: z.enum([
+    'security',
+    'quality',
+    'style',
+    'test',
+    'docs',
+    'pattern',
+    'performance',
+  ]),
+  title: z.string(),
+  description: z.string(),
+  file: z.string(),
+  line: z.number().int(),
+  endLine: z.number().int().optional(),
+  suggestedFix: z.string().optional(),
+  fixable: z.boolean(),
+  // Preserved cross-validation provenance fields (optional for back-compat)
+  validationStatus: z
+    .enum([
+      'confirmed_valid',
+      'dismissed_false_positive',
+      'needs_human_review',
+    ])
+    .nullable()
+    .optional(),
+  validationExplanation: z.string().optional(),
+  sourceAgents: z.array(z.string()).optional(),
+  crossValidated: z.boolean().optional(),
+  // New manual-authoring fields (optional — `'ai'` is the implied default)
+  source: z.enum(['ai', 'terminal', 'manual']).optional(),
+  authoredAt: z.string().optional(),
+  authoredBy: z.string().optional(),
+});
+
+/**
+ * Zod schema for the persisted `manual_findings_<prNumber>.json` file. The
+ * file stores the PR number + repo slug + ISO timestamp of the last write +
+ * the array of findings (each validated against `PRReviewFindingSchema`).
+ */
+export const ManualFindingsFileSchema = z.object({
+  prNumber: z.number().int().positive(),
+  repo: z.string(),
+  updatedAt: z.iso.datetime(),
+  findings: z.array(PRReviewFindingSchema),
+});
+
+/**
+ * Type-inferred view of a validated manual findings file.
+ */
+export type ManualFindingsFile = z.infer<typeof ManualFindingsFileSchema>;
+
+/**
+ * Best-effort Sentry breadcrumb emitter for shared (process-agnostic) code.
+ *
+ * `pr-review-comments.ts` lives under `apps/frontend/src/shared/` and is
+ * imported by BOTH the Electron main bundle and the renderer bundle. We
+ * therefore cannot import `@sentry/electron/main` or `@sentry/electron/
+ * renderer` directly here — each is process-specific and would break the
+ * other bundle. Instead we reach into `globalThis.__SENTRY__.hub`, which
+ * Sentry v7 (the version pinned in package.json) populates after `init()`
+ * runs in whichever process is hosting us. If Sentry is not initialised
+ * (tests, forks without DSN, very early startup) the call no-ops silently.
+ *
+ * Mirrors the intent of `safeBreadcrumb` in `apps/frontend/src/main/
+ * sentry.ts:187` but without the process coupling.
+ */
+function emitSentryBreadcrumb(breadcrumb: SentryBreadcrumb): void {
+  try {
+    const sentryGlobal = (
+      globalThis as {
+        __SENTRY__?: {
+          hub?: { addBreadcrumb?: (b: SentryBreadcrumb) => void };
+        };
+      }
+    ).__SENTRY__;
+    sentryGlobal?.hub?.addBreadcrumb?.(breadcrumb);
+  } catch {
+    /* Sentry not initialized — swallow */
+  }
+}
+
+/**
+ * Validate a manual findings payload safely.
+ *
+ * - Returns `[]` for missing, null, non-object, or non-shaped input — this is
+ *   intentional: a freshly-created PR has no findings file yet, and we don't
+ *   want callers to have to special-case "file not found / file empty".
+ * - Uses **per-entry `safeParse`** so a single malformed finding (e.g. an
+ *   older record missing a now-required field, a corrupted JSON line) does
+ *   not nuke the whole list. Invalid entries record a Sentry breadcrumb
+ *   under category `manual-findings` and are silently skipped.
+ * - Valid entries are returned in their original order.
+ *
+ * @param raw - The decoded JSON value (or anything). Typically the result of
+ *              `JSON.parse(readFileSync(...))`.
+ * @returns Validated `PRReviewFinding[]`. Never throws.
+ */
+export function loadManualFindingsSafe(raw: unknown): PRReviewFinding[] {
+  if (!raw || typeof raw !== 'object') {
+    return [];
+  }
+  const file = raw as { findings?: unknown };
+  if (!Array.isArray(file.findings)) {
+    return [];
+  }
+
+  const findings: PRReviewFinding[] = [];
+  for (const entry of file.findings) {
+    const parsed = PRReviewFindingSchema.safeParse(entry);
+    if (!parsed.success) {
+      emitSentryBreadcrumb({
+        category: 'manual-findings',
+        level: 'warning',
+        message: 'Skipped invalid entry',
+        data: { error: parsed.error.message },
+      });
+      continue;
+    }
+    findings.push(parsed.data as PRReviewFinding);
+  }
+  return findings;
 }

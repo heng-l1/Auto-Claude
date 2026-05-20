@@ -49,6 +49,53 @@
     "postingApproval": "Approbation en cours...",
     "suggestions": "avec {{count}} suggestions",
     "contextCopied": "Contexte de la PR copié dans le presse-papiers — collez-le dans l'invite de Claude",
-    "contextCopyFailed": "Échec de la copie du contexte de la PR dans le presse-papiers"
+    "contextCopyFailed": "Échec de la copie du contexte de la PR dans le presse-papiers",
+    "findings": {
+      "source": {
+        "ai": "IA",
+        "manual": "Manuel",
+        "terminal": "Terminal"
+      },
+      "addManual": "+ Ajouter un constat",
+      "editManual": "Modifier le constat",
+      "deleteManual": "Supprimer le constat",
+      "deleteConfirm": "Supprimer ce constat manuel ?",
+      "promoteToFinding": "Promouvoir en constat"
+    },
+    "addFindingDialog": {
+      "title": "Ajouter un constat manuel",
+      "severity": "Gravité",
+      "file": "Fichier",
+      "line": "Ligne",
+      "description": "Description",
+      "category": "Catégorie",
+      "endLine": "Ligne de fin",
+      "suggestedFix": "Correction suggérée",
+      "moreDetails": "Plus de détails",
+      "submit": "Ajouter le constat",
+      "cancel": "Annuler"
+    },
+    "extractDialog": {
+      "title": "Capturer les constats du terminal",
+      "capture": "Capturer les constats",
+      "extracting": "Extraction des constats…",
+      "noFindings": "Aucun constat détecté dans cette conversation",
+      "cancel": "Annuler",
+      "add": "Ajouter"
+    },
+    "notes": {
+      "label": "Conseils du relecteur (pour la prochaine revue)",
+      "placeholder": "Ajoutez des notes, observations ou axes à examiner...",
+      "reReviewWithNotes": "Relancer la revue avec les notes",
+      "saved": "Notes enregistrées",
+      "savedDetailed": "Enregistré — guidera la prochaine revue",
+      "savingNotes": "Enregistrement des notes...",
+      "loadingNotes": "Chargement des notes...",
+      "noNotes": "Aucune note pour le moment",
+      "clearNotes": "Effacer les notes",
+      "pastNotes": "Notes précédentes du relecteur récupérées depuis la mémoire",
+      "charLimit": "Notes tronquées à {{max}} caractères",
+      "helpText": "Ces notes guident la prochaine revue IA de cette PR. Utilisez-les pour partager du contexte, des axes prioritaires ou des points à surveiller. Les conseils sont inclus dans le prompt de la prochaine revue IA et conservés avec la revue afin de persister entre les suivis."
+    }
   }
 }

@@ -11,7 +11,7 @@ import {
 
 // Re-export types for consumers
 export type { PRData, PRReviewResult, PRReviewProgress };
-export type { PRReviewFinding } from "../../../../preload/api/modules/github-api";
+export type { PRReviewFinding } from "@shared/types/pr-review-comments";
 
 interface UseGitHubPRsOptions {
   /** Whether the component is currently active/visible */
@@ -102,6 +102,8 @@ export function useGitHubPRs(
   const setNewCommitsCheckAction = usePRReviewStore((state) => state.setNewCommitsCheck);
   const registerRefreshCallback = usePRReviewStore((state) => state.registerRefreshCallback);
   const unregisterRefreshCallback = usePRReviewStore((state) => state.unregisterRefreshCallback);
+  // Selector to read reviewer notes for a PR — used to thread Notes through follow-up reviews
+  const getNotes = usePRReviewStore((state) => state.getNotes);
 
   // Get review state for the selected PR from the store - optimized with targeted selector
   // Only subscribes to changes for this specific PR, not all PRs
@@ -555,10 +557,14 @@ export function useGitHubPRs(
     (prNumber: number) => {
       if (!projectId) return;
 
+      // Read reviewer notes from the store and pass them through so the followup
+      // reviewer has the same guidance context as a fresh review.
+      const notes = getNotes(projectId, prNumber);
+
       // Main process handles XState state transition and subprocess launch
-      window.electronAPI.github.runFollowupReview(projectId, prNumber);
+      window.electronAPI.github.runFollowupReview(projectId, prNumber, notes);
     },
-    [projectId]
+    [projectId, getNotes]
   );
 
   const checkNewCommits = useCallback(

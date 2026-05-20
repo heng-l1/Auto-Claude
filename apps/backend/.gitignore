@@ -65,6 +65,13 @@ tests/
 # Exception: Allow colocated tests within integrations/graphiti
 !integrations/graphiti/tests/
 
+# Exception: Allow colocated tests within core/workspace
+!core/workspace/tests/
+
+# Exception: Allow colocated tests within runners/github/services
+# (Phase 4a — reviewer-notes wiring tests live here)
+!runners/github/services/tests/
+
 # Auto Claude data directory
 .auto-claude/
 

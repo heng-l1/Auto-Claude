@@ -3,7 +3,8 @@ import type {
   PRReviewProgress,
   PRReviewResult,
   NewCommitsCheck,
-  PRReviewStatePayload
+  PRReviewStatePayload,
+  ManualFindingsChangeReason
 } from '../../../preload/api/modules/github-api';
 import type {
   ChecksStatus,
@@ -11,6 +12,7 @@ import type {
   MergeableState,
   PRStatusUpdate
 } from '../../../shared/types/pr-status';
+import type { ManualPRReviewFinding } from '../../../shared/types/pr-review-comments';
 
 /**
  * PR review state for a single PR
@@ -47,6 +49,15 @@ interface PRReviewStoreState {
   // Key: `${projectId}:${prNumber}`
   prReviews: Record<string, PRReviewState>;
 
+  /**
+   * Manually-authored PR review findings, keyed by PR number.
+   * Populated lazily via `loadManualFindings` and kept in sync with the on-disk
+   * `manual_findings_<prNumber>.json` files through the
+   * `GITHUB_PR_MANUAL_FINDINGS_CHANGED` event listener (see
+   * `initializePRReviewListeners`).
+   */
+  manualFindings: Record<number, ManualPRReviewFinding[]>;
+
   // XState state change handler
   handlePRReviewStateChange: (key: string, payload: PRReviewStatePayload) => void;
 
@@ -74,6 +85,34 @@ interface PRReviewStoreState {
   /** Save notes to disk via IPC */
   saveNotesToDisk: (projectId: string, prNumber: number, notes: string) => Promise<void>;
 
+  // Manual findings actions
+  /**
+   * Fetch the persisted manual findings for the given PR via IPC and store the
+   * resulting list under `manualFindings[prNumber]`. Silently no-ops on errors —
+   * manual findings are non-critical and the UI will simply show AI findings only.
+   */
+  loadManualFindings: (projectId: string, prNumber: number) => Promise<void>;
+  /**
+   * Author a new manual finding. The main process generates the canonical id /
+   * authoredAt / source fields and emits a `…_CHANGED` event after the write;
+   * the listener re-fetches the list, so we don't need to optimistically update
+   * the store here. Returns the fully-hydrated finding (or null when the IPC
+   * fails / returns null).
+   */
+  addManualFinding: (projectId: string, prNumber: number, payload: Partial<ManualPRReviewFinding>) => Promise<ManualPRReviewFinding | null>;
+  /**
+   * Patch mutable fields on an existing manual finding. Immutable audit-trail
+   * fields (`id`, `source`, `authoredAt`, `authoredBy`) are silently dropped by
+   * the handler. Returns the updated finding or null when no finding matched.
+   */
+  updateManualFinding: (projectId: string, prNumber: number, id: string, patch: Partial<ManualPRReviewFinding>) => Promise<ManualPRReviewFinding | null>;
+  /**
+   * Remove a manual finding by id. Returns `true` when a finding was removed.
+   */
+  deleteManualFinding: (projectId: string, prNumber: number, id: string) => Promise<boolean>;
+  /** Read-only selector — returns the current manual findings for a PR (empty array when none). */
+  getManualFindings: (prNumber: number) => ManualPRReviewFinding[];
+
   // Selectors
   getPRReviewState: (projectId: string, prNumber: number) => PRReviewState | null;
   getActivePRReviews: (projectId: string) => PRReviewState[];
@@ -89,6 +128,7 @@ const refreshCallbacks = new Set<() => void>();
 export const usePRReviewStore = create<PRReviewStoreState>((set, get) => ({
   // Initial state
   prReviews: {},
+  manualFindings: {},
 
   // XState state change handler — maps XState state/context back to PRReviewState shape
   handlePRReviewStateChange: (key: string, payload: PRReviewStatePayload) => {
@@ -337,6 +377,62 @@ export const usePRReviewStore = create<PRReviewStoreState>((set, get) => ({
     }
   },
 
+  // Manual findings actions
+  loadManualFindings: async (projectId: string, prNumber: number) => {
+    try {
+      const findings = await window.electronAPI.github.pr.manualFindings.list(projectId, prNumber);
+      set((state) => ({
+        manualFindings: {
+          ...state.manualFindings,
+          [prNumber]: findings ?? []
+        }
+      }));
+    } catch (error) {
+      // Silently fail — manual findings are non-critical; surface as empty list.
+      console.error('[PRReviewStore] Failed to load manual findings:', error);
+      set((state) => ({
+        manualFindings: {
+          ...state.manualFindings,
+          [prNumber]: state.manualFindings[prNumber] ?? []
+        }
+      }));
+    }
+  },
+
+  addManualFinding: async (projectId: string, prNumber: number, payload: Partial<ManualPRReviewFinding>) => {
+    try {
+      // The handler emits a CHANGED event after the write — the store will
+      // re-fetch via the global listener, so we don't need to mutate state here.
+      // Returning the hydrated finding lets the caller use the new id/authoredAt.
+      return await window.electronAPI.github.pr.manualFindings.add(projectId, prNumber, payload);
+    } catch (error) {
+      console.error('[PRReviewStore] Failed to add manual finding:', error);
+      return null;
+    }
+  },
+
+  updateManualFinding: async (projectId: string, prNumber: number, id: string, patch: Partial<ManualPRReviewFinding>) => {
+    try {
+      return await window.electronAPI.github.pr.manualFindings.update(projectId, prNumber, id, patch);
+    } catch (error) {
+      console.error('[PRReviewStore] Failed to update manual finding:', error);
+      return null;
+    }
+  },
+
+  deleteManualFinding: async (projectId: string, prNumber: number, id: string) => {
+    try {
+      return await window.electronAPI.github.pr.manualFindings.delete_(projectId, prNumber, id);
+    } catch (error) {
+      console.error('[PRReviewStore] Failed to delete manual finding:', error);
+      return false;
+    }
+  },
+
+  getManualFindings: (prNumber: number) => {
+    return get().manualFindings[prNumber] ?? [];
+  },
+
   // Selectors
   getPRReviewState: (projectId: string, prNumber: number) => {
     const { prReviews } = get();
@@ -397,11 +493,34 @@ export function initializePRReviewListeners(): void {
         `[PRReviewStore] GitHub auth changed from "${data.oldUsername ?? 'none'}" to "${data.newUsername}". ` +
         `Clearing all PR review state.`
       );
-      // Clear all PR review state since the token has changed
-      usePRReviewStore.setState({ prReviews: {} });
+      // Clear all PR review + manual finding state since the token has changed
+      usePRReviewStore.setState({ prReviews: {}, manualFindings: {} });
     }
   );
   cleanupFunctions.push(cleanupAuthChanged);
+
+  // Listen for manual-findings change events — emitted by the main process for
+  // both in-app mutations (`add`/`update`/`delete`) and chokidar-detected
+  // external writes (`external` / `file-deleted`). On `file-deleted` we clear
+  // the slice for that PR; on every other reason we re-fetch the canonical list.
+  if (window.electronAPI?.github?.pr?.manualFindings?.onChanged) {
+    const cleanupManualFindingsChanged = window.electronAPI.github.pr.manualFindings.onChanged(
+      (projectId: string, prNumber: number, reason: ManualFindingsChangeReason) => {
+        if (reason === 'file-deleted') {
+          usePRReviewStore.setState((state) => ({
+            manualFindings: {
+              ...state.manualFindings,
+              [prNumber]: []
+            }
+          }));
+          return;
+        }
+        // 'add' | 'update' | 'delete' | 'external' — re-fetch the canonical list
+        void usePRReviewStore.getState().loadManualFindings(projectId, prNumber);
+      }
+    );
+    cleanupFunctions.push(cleanupManualFindingsChanged);
+  }
 
   // Listen for PR status polling updates (CI checks, reviews, mergeability)
   const cleanupStatusUpdate = window.electronAPI.github.onPRStatusUpdate(

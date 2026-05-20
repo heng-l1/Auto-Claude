@@ -121,9 +121,17 @@ class FollowupReviewer:
     async def review_followup(
         self,
         context: FollowupReviewContext,
+        reviewer_notes: str | None = None,
     ) -> PRReviewResult:
         """
         Perform a focused follow-up review.
+
+        Args:
+            context: FollowupReviewContext with previous review and changes since.
+            reviewer_notes: Optional human-provided notes, observations, or focus
+                areas to inject into the AI review prompt. When provided, these
+                appear as a high-priority guidance section for the AI reviewer.
+                Mirrors the canonical pattern in pr_review_engine.run_review_pass.
 
         Returns:
             PRReviewResult with updated findings and resolution status
@@ -163,7 +171,9 @@ class FollowupReviewer:
         # Use AI-powered review if enabled and there are significant changes
         if self.use_ai and len(context.diff_since_review) > 100:
             try:
-                ai_result = await self._run_ai_review(context, resolved, unresolved)
+                ai_result = await self._run_ai_review(
+                    context, resolved, unresolved, reviewer_notes=reviewer_notes
+                )
                 if ai_result:
                     # AI review successful - use its findings
                     new_findings = ai_result.get("new_findings", [])
@@ -587,12 +597,22 @@ class FollowupReviewer:
         context: FollowupReviewContext,
         resolved: list[PRReviewFinding],
         unresolved: list[PRReviewFinding],
+        reviewer_notes: str | None = None,
     ) -> dict[str, Any] | None:
         """
         Run AI-powered follow-up review using structured outputs.
 
         Uses Claude Agent SDK's native structured output support to guarantee
         valid JSON responses matching the FollowupReviewResponse schema.
+
+        Args:
+            context: FollowupReviewContext with previous review and changes since.
+            resolved: Previous findings determined to be resolved.
+            unresolved: Previous findings determined to be unresolved.
+            reviewer_notes: Optional human-provided notes to inject into the
+                review prompt. When provided, these appear as a high-priority
+                guidance section before the context block. Mirrors the canonical
+                pattern in pr_review_engine.run_review_pass (lines 229-243).
 
         Returns parsed AI response with finding resolutions and new findings,
         or None if AI review fails.
@@ -646,13 +666,8 @@ class FollowupReviewer:
             ]
         )
 
-        # Build the full message
-        user_message = f"""
-{prompt_template}
-
----
-
-## Context for This Review
+        # Build the context section (everything after the prompt + --- separator)
+        context_section = f"""## Context for This Review
 
 ### PREVIOUS REVIEW SUMMARY:
 {context.previous_review.summary}
@@ -690,6 +705,30 @@ class FollowupReviewer:
 
 Analyze this follow-up review context and provide your structured response.
 """
+
+        # Inject reviewer notes between prompt_template and context_section if provided.
+        # Heading + body match the canonical pattern at pr_review_engine.py:229-243
+        # verbatim — keep them in sync with the directive in pr_reviewer.md.
+        if reviewer_notes and reviewer_notes.strip():
+            notes_section = (
+                "### Reviewer Notes\n"
+                "The human reviewer has provided the following observations and guidance.\n"
+                "Pay special attention to these areas during your analysis:\n\n"
+                f"{reviewer_notes.strip()}\n"
+            )
+            user_message = (
+                prompt_template
+                + "\n\n---\n\n"
+                + notes_section
+                + "\n\n"
+                + context_section
+            )
+            safe_print(
+                f"[Followup] Injected reviewer notes ({len(reviewer_notes)} chars) into follow-up review",
+                flush=True,
+            )
+        else:
+            user_message = prompt_template + "\n\n---\n\n" + context_section
 
         try:
             # Use Claude Agent SDK query() with structured outputs

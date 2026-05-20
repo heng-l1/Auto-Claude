@@ -504,17 +504,18 @@
       "hideMore": "Hide {{count}} more"
     },
     "notes": {
-      "label": "Review Notes",
+      "label": "Reviewer Guidance (for the next review)",
       "placeholder": "Add notes, observations, or areas to focus on...",
       "reReviewWithNotes": "Re-review with Notes",
       "saved": "Notes saved",
+      "savedDetailed": "Saved — will guide next review",
       "savingNotes": "Saving notes...",
       "loadingNotes": "Loading notes...",
       "noNotes": "No notes yet",
       "clearNotes": "Clear notes",
       "pastNotes": "Past reviewer notes recalled from memory",
       "charLimit": "Notes truncated to {{max}} characters",
-      "helpText": "Notes will be included in the AI review and saved for future reference"
+      "helpText": "These notes guide the next AI review of this PR. Use them to share context, focus areas, or things the reviewer should look out for. Guidance is included in the next AI review prompt and saved with the review so it persists across follow-ups."
     },
     "reviewSummary": "Review Summary",
     "verdict": {
@@ -543,7 +544,40 @@
     "draftSaved": "Draft saved",
     "replyPosted": "Reply posted",
     "replyError": "Failed to post reply",
-    "outdatedThread": "Outdated"
+    "outdatedThread": "Outdated",
+    "findings": {
+      "source": {
+        "ai": "AI",
+        "manual": "Manual",
+        "terminal": "Terminal"
+      },
+      "addManual": "+ Add Finding",
+      "editManual": "Edit finding",
+      "deleteManual": "Delete finding",
+      "deleteConfirm": "Delete this manual finding?",
+      "promoteToFinding": "Promote to Finding"
+    },
+    "addFindingDialog": {
+      "title": "Add Manual Finding",
+      "severity": "Severity",
+      "file": "File",
+      "line": "Line",
+      "description": "Description",
+      "category": "Category",
+      "endLine": "End Line",
+      "suggestedFix": "Suggested Fix",
+      "moreDetails": "More Details",
+      "submit": "Add Finding",
+      "cancel": "Cancel"
+    },
+    "extractDialog": {
+      "title": "Capture Findings from Terminal",
+      "capture": "Capture Findings",
+      "extracting": "Extracting findings…",
+      "noFindings": "No findings detected in this conversation",
+      "cancel": "Cancel",
+      "add": "Add"
+    }
   },
   "downloads": {
     "toggleExpand": "Toggle download details",

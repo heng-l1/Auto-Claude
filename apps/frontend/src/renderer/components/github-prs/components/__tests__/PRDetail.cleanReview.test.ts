@@ -5,18 +5,9 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { PRReviewFinding } from '@shared/types/pr-review-comments';
 
 // Types for PR review data
-interface PRReviewFinding {
-  id: string;
-  severity: 'critical' | 'high' | 'medium' | 'low';
-  category: string;
-  file: string;
-  line: number;
-  description: string;
-  suggestedFix?: string;
-}
-
 interface PRReviewResult {
   success: boolean;
   overallStatus: 'approve' | 'request_changes' | 'comment';
@@ -49,9 +40,11 @@ function createTestFinding(severity: PRReviewFinding['severity'], id: string = '
     id,
     severity,
     category: 'quality',
+    title: `Test ${severity} severity issue`,
     file: 'src/test.ts',
     line: 10,
-    description: `Test ${severity} severity issue`
+    description: `Test ${severity} severity issue`,
+    fixable: false
   };
 }
 

@@ -326,8 +326,25 @@ async def cmd_followup_review_pr(args) -> int:
             flush=True,
         )
 
+    # Read reviewer notes from file if provided
+    reviewer_notes = ""
+    notes_file = getattr(args, "notes_file", None)
+    if notes_file:
+        try:
+            loaded_notes = Path(notes_file).read_text(encoding="utf-8").strip()
+            if loaded_notes:
+                reviewer_notes = loaded_notes
+                if debug:
+                    safe_print(
+                        f"[DEBUG] Loaded reviewer notes from {notes_file} ({len(reviewer_notes)} chars)"
+                    )
+        except (FileNotFoundError, PermissionError, UnicodeDecodeError) as e:
+            safe_print(f"Warning: Could not read notes file '{notes_file}': {e}")
+
     try:
-        result = await orchestrator.followup_review_pr(args.pr_number)
+        result = await orchestrator.followup_review_pr(
+            args.pr_number, reviewer_notes=reviewer_notes
+        )
     except ValueError as e:
         safe_print(f"\nFollow-up review failed: {e}")
         return 1
@@ -1159,6 +1176,12 @@ def main():
         help="Follow-up review of a PR (after contributor changes)",
     )
     followup_parser.add_argument("pr_number", type=int, help="PR number to review")
+    followup_parser.add_argument(
+        "--notes-file",
+        type=str,
+        default=None,
+        help="Path to a file containing reviewer notes to inject into the review",
+    )
 
     # triage command
     triage_parser = subparsers.add_parser("triage", help="Triage issues")

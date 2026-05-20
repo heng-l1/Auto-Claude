@@ -43,12 +43,16 @@ import type {
   PRReviewThreadsResult,
   ReplyDraft,
   ReplyDraftsFile,
+  PRReviewFinding,
+  ManualPRReviewFinding,
 } from "../../../shared/types/pr-review-comments";
 import { getPRStatusPoller } from "../../services/pr-status-poller";
 import { PRReviewStateManager } from "../../pr-review-state-manager";
 import { notificationService } from "../../notification-service";
 import { safeBreadcrumb, safeCaptureException } from "../../sentry";
 import { sanitizeForSentry } from "../../../shared/utils/sentry-privacy";
+import { writeFileAtomicSync } from "../../utils/atomic-file";
+import { loadManualFindings } from "./pr-manual-findings-handlers";
 import type {
   StartPollingRequest,
   StopPollingRequest,
@@ -441,13 +445,28 @@ export function parsePatchForNewFileLines(patch: string | null | undefined): Set
 
 /**
  * Review comment produced by buildReviewComments().
- * Includes optional subject_type for file-level comments.
+ * Includes optional subject_type for file-level comments, and optional
+ * start_line/start_side/side for multi-line range comments (GitHub REST API).
+ *
+ * Multi-line range contract (GitHub):
+ * - `line` is the **last** line of the range
+ * - `start_line` is the **first** line; must be strictly less than `line`
+ *   (start_line >= line returns HTTP 422)
+ * - Both `side` and `start_side` must match — typically `'RIGHT'` for
+ *   additions/context lines
+ * - `start_line`/`start_side` are mutually exclusive with `subject_type: 'file'`
  */
 export interface ReviewComment {
   path: string;
   line?: number;
   body: string;
   subject_type?: "line" | "file";
+  /** First line of a multi-line range (must be strictly less than `line`). */
+  start_line?: number;
+  /** Side of the diff for `start_line` (`'RIGHT'` for additions/context). */
+  start_side?: "LEFT" | "RIGHT";
+  /** Side of the diff for `line` — defaults to `'RIGHT'` server-side when omitted. */
+  side?: "LEFT" | "RIGHT";
 }
 
 /**
@@ -480,7 +499,12 @@ export function buildReviewComments(
     if (f.file && f.line && f.line > 0) {
       const emoji =
         { critical: "🔴", high: "🟠", medium: "🟡", low: "🔵" }[f.severity] || "⚪";
-      let commentBody = `${emoji} **[${f.severity.toUpperCase()}] ${f.title}**\n\n${f.description}`;
+      // Prepend 👤 glyph for manual/terminal-authored findings so reviewers
+      // can tell at a glance that the finding wasn't surfaced by the AI
+      // reviewer. AI findings (default `source: 'ai'` or omitted source)
+      // stay unchanged for back-compat with existing review comments.
+      const sourceGlyph = f.source && f.source !== "ai" ? "👤 " : "";
+      let commentBody = `${sourceGlyph}${emoji} **[${f.severity.toUpperCase()}] ${f.title}**\n\n${f.description}`;
       const suggestedFix = f.suggestedFix?.trim();
       if (suggestedFix) {
         commentBody += `\n\n**Suggested fix:**\n\`\`\`\n${suggestedFix}\n\`\`\``;
@@ -493,11 +517,43 @@ export function buildReviewComments(
         // Diff-aware routing: validate line against the PR diff
         const validLines = fileLineMap.get(normalizedPath);
         if (validLines) {
-          if (validLines.has(f.line)) {
-            // Line is in the diff — post as inline line-level comment
+          // Multi-line range support — cascade is strict; branch order matters.
+          //   (1) both endpoints in diff → multi-line range (start_line/start_side + line/side)
+          //   (2) only `line` in diff   → single-line at f.line
+          //   (3) only `endLine` in diff → single-line at f.endLine (FR #6 "in-diff endpoint")
+          //   (4) neither in diff       → file-level body entry
+          //
+          // Defensive: if endLine <= line (degenerate or inverted range), omit
+          // start_line/start_side to avoid GitHub HTTP 422 — start_line MUST be
+          // strictly less than line per the REST API contract.
+          const lineInDiff = validLines.has(f.line);
+          const endLineInDiff =
+            f.endLine != null && f.endLine > 0 && validLines.has(f.endLine);
+
+          if (lineInDiff && endLineInDiff) {
+            if (f.endLine != null && f.endLine > f.line) {
+              // Valid multi-line range — both endpoints in diff and endLine > line
+              inlineComments.push({
+                path: normalizedPath,
+                start_line: f.line,
+                start_side: "RIGHT",
+                line: f.endLine,
+                side: "RIGHT",
+                body: commentBody,
+              });
+            } else {
+              // Defensive: endLine === line (or <= line) — single-line at f.line
+              // to avoid GitHub 422 on start_line >= line
+              inlineComments.push({ path: normalizedPath, line: f.line, body: commentBody });
+            }
+          } else if (lineInDiff) {
+            // Single-line at f.line
             inlineComments.push({ path: normalizedPath, line: f.line, body: commentBody });
+          } else if (endLineInDiff) {
+            // FR #6: only the endpoint is in-diff — anchor inline comment there
+            inlineComments.push({ path: normalizedPath, line: f.endLine, body: commentBody });
           } else {
-            // Line is NOT in the diff — add as formatted markdown for the review body
+            // Neither endpoint is in the diff — surface as file-level body entry
             fileLevelEntries.push(`- **${normalizedPath}** (line ${f.line}): ${commentBody}`);
           }
         } else {
@@ -576,25 +632,12 @@ function getClaudeMdEnv(project: Project): Record<string, string> | undefined {
   return project.settings?.useClaudeMd !== false ? { USE_CLAUDE_MD: "true" } : undefined;
 }
 
-/**
- * PR review finding from AI analysis
- */
-export interface PRReviewFinding {
-  id: string;
-  severity: "critical" | "high" | "medium" | "low";
-  category: "security" | "quality" | "style" | "test" | "docs" | "pattern" | "performance";
-  title: string;
-  description: string;
-  file: string;
-  line: number;
-  endLine?: number;
-  suggestedFix?: string;
-  fixable: boolean;
-  validationStatus?: "confirmed_valid" | "dismissed_false_positive" | "needs_human_review" | null;
-  validationExplanation?: string;
-  sourceAgents?: string[];
-  crossValidated?: boolean;
-}
+// `PRReviewFinding` and `ManualPRReviewFinding` are defined in
+// `shared/types/pr-review-comments.ts`. They are re-exported below for
+// backwards compatibility with consumers that previously imported them
+// directly from this module (e.g. the preload `github-api.ts` and the
+// renderer hook `useGitHubPRs.ts`).
+export type { PRReviewFinding, ManualPRReviewFinding };
 
 /**
  * Complete PR review result
@@ -2820,14 +2863,25 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
         }
 
         try {
-          // Filter findings if selection provided
+          // Merge AI-generated findings with user/terminal-authored manual findings.
+          // Both lists share the PRReviewFinding shape; manual findings carry
+          // `source !== 'ai'` so downstream code (buildReviewComments) can render
+          // them with the 👤 glyph prefix without any other branching.
+          const manual = loadManualFindings(project, prNumber);
+          const allFindings = [...result.findings, ...manual.findings];
+
+          // Filter findings if selection provided. Filter against the COMBINED
+          // list so manual selections survive — keying off result.findings here
+          // would silently drop every manual finding from the post payload.
           const selectedSet = selectedFindingIds ? new Set(selectedFindingIds) : null;
           const findings = selectedSet
-            ? result.findings.filter((f) => selectedSet.has(f.id))
-            : result.findings;
+            ? allFindings.filter((f) => selectedSet.has(f.id))
+            : allFindings;
 
           debugLog("Posting findings", {
-            total: result.findings.length,
+            aiTotal: result.findings.length,
+            manualTotal: manual.findings.length,
+            combinedTotal: allFindings.length,
             selected: findings.length,
           });
 
@@ -3007,7 +3061,11 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
             const sanitizedData = sanitizeNetworkData(rawData);
             const data = JSON.parse(sanitizedData);
             data.review_id = reviewId;
-            // Track posted findings to enable follow-up review
+            // Track posted findings to enable follow-up review. `findings` here
+            // is the merged AI + manual list (filtered by selection), so this
+            // captures both kinds — the followup-review delta logic keys on IDs
+            // and must see manual finding IDs too to skip already-posted manual
+            // findings on the next pass.
             data.has_posted_findings = true;
             const newPostedIds = findings.map((f) => f.id);
             const existingPostedIds = data.posted_finding_ids || [];
@@ -3766,11 +3824,41 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
 
             const config = getGitHubConfig(project);
             const { model, thinkingLevel } = getGitHubPRSettings();
+
+          // Read persisted notes (if any) and write to temp file for subprocess
+          const githubDir = getGitHubDir(project);
+          let notesFilePath: string | null = null;
+          try {
+            const notesPath = path.join(githubDir, "pr", `notes_${prNumber}.json`);
+            if (fs.existsSync(notesPath)) {
+              const notesContent = fs.readFileSync(notesPath, "utf-8");
+              const notesData = JSON.parse(sanitizeNetworkData(notesContent));
+              const notes = typeof notesData.notes === "string" ? notesData.notes.trim() : "";
+              if (notes) {
+                fs.mkdirSync(githubDir, { recursive: true });
+                const tmpNotesPath = path.join(githubDir, "tmp_review_notes.txt");
+                writeFileAtomicSync(tmpNotesPath, notes, "utf-8");
+                notesFilePath = tmpNotesPath;
+                debugLog("Wrote follow-up review notes to temp file", { notesFilePath });
+              }
+            }
+          } catch (err) {
+            debugLog("Failed to write follow-up review notes temp file", {
+              error: err instanceof Error ? err.message : err,
+            });
+            notesFilePath = null;
+          }
+
+          const followupAdditionalArgs = [prNumber.toString()];
+          if (notesFilePath) {
+            followupAdditionalArgs.push("--notes-file", notesFilePath);
+          }
+
           const args = buildRunnerArgs(
             getRunnerPath(backendPath),
             project.path,
             "followup-review-pr",
-            [prNumber.toString()],
+            followupAdditionalArgs,
             { model, thinkingLevel }
           );
 
@@ -4492,82 +4580,12 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
     }
   );
 
-  // PR Discussion — interactive chat about review findings
-  // Maintains per-PR conversation history and streams responses via InsightsExecutor
-  const discussionHistories = new Map<string, Array<{ role: string; content: string }>>();
-  let discussionExecutor: import("../../insights/insights-executor").InsightsExecutor | null = null;
-
-  async function getDiscussionExecutor() {
-    if (!discussionExecutor) {
-      const { InsightsExecutor } = await import("../../insights/insights-executor");
-      const { InsightsConfig } = await import("../../insights/config");
-      discussionExecutor = new InsightsExecutor(new InsightsConfig());
-    }
-    return discussionExecutor;
-  }
-
   const sendToWindow = (channel: string, ...args: unknown[]) => {
     const win = getMainWindow();
     if (win && !win.isDestroyed()) {
       win.webContents.send(channel, ...args);
     }
   };
-
-  ipcMain.on(
-    IPC_CHANNELS.GITHUB_PR_DISCUSSION_SEND,
-    async (_, projectId: string, prNumber: number, message: string, systemContext: string) => {
-      const discussionKey = `pr-discussion-${projectId}-${prNumber}`;
-
-      try {
-        const projectPath = await withProjectOrNull(projectId, async (project) => project.path);
-        if (!projectPath) {
-          sendToWindow(IPC_CHANNELS.GITHUB_PR_DISCUSSION_ERROR, projectId, prNumber, "Project not found");
-          return;
-        }
-
-        // Get or create conversation history
-        let history = discussionHistories.get(discussionKey);
-        if (!history) {
-          history = [
-            { role: "user", content: `Here is the PR review context for our discussion:\n\n${systemContext}` },
-            { role: "assistant", content: "I've reviewed the PR context and findings. I can use Read, Glob, and Grep to explore the source files. What would you like to discuss?" },
-          ];
-          discussionHistories.set(discussionKey, history);
-        }
-
-        history.push({ role: "user", content: message });
-
-        const executor = await getDiscussionExecutor();
-
-        // Stream text chunks to renderer
-        const chunkHandler = (pid: string, chunk: { type: string; content?: string }) => {
-          if (pid === discussionKey && chunk.type === "text" && chunk.content) {
-            sendToWindow(IPC_CHANNELS.GITHUB_PR_DISCUSSION_CHUNK, projectId, prNumber, chunk);
-          }
-        };
-        executor.on("stream-chunk", chunkHandler);
-
-        try {
-          const result = await executor.execute(discussionKey, projectPath, message, history);
-          history.push({ role: "assistant", content: result.fullResponse });
-          sendToWindow(IPC_CHANNELS.GITHUB_PR_DISCUSSION_CHUNK, projectId, prNumber, {
-            type: "done",
-            content: result.fullResponse,
-          });
-        } catch (execError) {
-          sendToWindow(IPC_CHANNELS.GITHUB_PR_DISCUSSION_ERROR, projectId, prNumber,
-            execError instanceof Error ? execError.message : "Discussion failed"
-          );
-        } finally {
-          executor.removeAllListeners("stream-chunk");
-        }
-      } catch (error) {
-        sendToWindow(IPC_CHANNELS.GITHUB_PR_DISCUSSION_ERROR, projectId, prNumber,
-          error instanceof Error ? error.message : "Discussion failed"
-        );
-      }
-    }
-  );
 
   // ──────────────────────────────────────────────────────────────
   // PR Review Comment Thread Handlers

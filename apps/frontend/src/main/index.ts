@@ -58,6 +58,10 @@ import { isProfileAuthenticated } from './claude-profile/profile-utils';
 import { isMacOS, isWindows } from './platform';
 import { ptyDaemonClient } from './terminal/pty-daemon-client';
 import { restoreAutoPRReviewOnStartup } from './services/auto-pr-review-helpers';
+import {
+  registerPRManualFindingsHandlers,
+  stopAllManualFindingsWatchers,
+} from './ipc-handlers/github/pr-manual-findings-handlers';
 import type { AppSettings, AuthFailureInfo } from '../shared/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -487,6 +491,23 @@ app.whenReady().then(() => {
   // Setup IPC handlers (pass pythonEnvManager for Python path management)
   setupIpcHandlers(agentManager, terminalManager, () => mainWindow, pythonEnvManager);
 
+  // Register PR manual findings IPC handlers + chokidar watcher lifecycle.
+  // Done here (not through setupIpcHandlers) so the per-project watchers
+  // can be paired with the matching `stopAllManualFindingsWatchers()` call
+  // in the before-quit handler below — same shape as
+  // `initializeUsageMonitorForwarding` / `getUsageMonitor().stop()`.
+  //
+  // The terminal-output-buffer accessor lets the Haiku scrollback extractor
+  // (GITHUB_PR_MANUAL_FINDINGS_EXTRACT) reach the live `outputBuffer` on a
+  // TerminalProcess without coupling the handlers module to the
+  // TerminalManager class. Passed as a getter (not a captured Map) so a
+  // dev-mode terminal-manager swap remains reachable.
+  registerPRManualFindingsHandlers(
+    () => mainWindow,
+    (terminalId) =>
+      terminalManager?.getTerminal(terminalId)?.outputBuffer ?? null,
+  );
+
   // Create window
   createWindow();
 
@@ -654,6 +675,10 @@ app.on('before-quit', (event) => {
       if (terminalManager) {
         await terminalManager.killAll();
       }
+
+      // Close all chokidar watchers for manual PR findings so their native
+      // fs.watch handles do not outlive the JS environment.
+      await stopAllManualFindingsWatchers();
 
       // Shut down PTY daemon client AFTER terminal cleanup completes,
       // ensuring all kill commands reach PTY processes before the daemon disconnects
