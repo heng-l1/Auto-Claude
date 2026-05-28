@@ -795,32 +795,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     setShowRalphLoopDialog(true);
   }, []);
 
-  // Submit Ralph Loop command from the dialog.
-  // If Claude is already running, send the command directly; otherwise launch
-  // Claude (mirroring handleInvokeClaude's local/remote routing) then send the
-  // command after a startup delay to let Claude's prompt initialize.
+  // Submit Ralph Loop command from the dialog. Sends the slash command as-is;
+  // the user is responsible for having Claude already running in the terminal.
   const handleRalphLoopSubmit = useCallback((args: RalphLoopCommandArgs) => {
-    const cmd = buildRalphLoopCommand(args);
-
-    if (terminal?.isClaudeMode) {
-      window.electronAPI.sendTerminalInput(id, cmd + '\r');
-      return;
-    }
-
-    setClaudeMode(id, true);
-    const fg = terminal?.foregroundProcess;
-    const isRemote = !!(fg && remoteProcesses.has(fg));
-    if (isRemote) {
-      window.electronAPI.invokeClaudeInTerminalRemote(id);
-    } else {
-      window.electronAPI.invokeClaudeInTerminal(id, effectiveCwd);
-    }
-    setTimeout(() => {
-      if (isMountedRef.current) {
-        window.electronAPI.sendTerminalInput(id, cmd + '\r');
-      }
-    }, 3000);
-  }, [id, effectiveCwd, setClaudeMode, terminal?.isClaudeMode, terminal?.foregroundProcess, remoteProcesses]);
+    window.electronAPI.sendTerminalInput(id, buildRalphLoopCommand(args) + '\r');
+  }, [id]);
 
   const handleClick = useCallback(() => {
     onActivate();
